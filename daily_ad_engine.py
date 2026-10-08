@@ -224,6 +224,69 @@ def title_similarity(a, b):
     return len(aa & bb) / len(aa | bb)
 
 
+
+def comparison_tokens(p):
+    raw = title(p).lower().split("|")[0]
+    raw = re.sub(r"[^a-z0-9]+", " ", raw)
+    b_tokens = set(clean(brand(p)).split())
+
+    stop = {
+        "smartphone","smart","phone","mobile","android","with","the",
+        "new","latest","official","5g","4g","gb","tb","ram","storage",
+        "mah","inch","online","buy","sale","original"
+    }
+
+    out = []
+    for tok in raw.split():
+        if tok in b_tokens or tok in stop:
+            continue
+        if re.fullmatch(r"\d+(?:\.\d+)?(?:gb|tb|mah|hz|w|inch|cm)", tok):
+            continue
+        if tok in {"black","white","blue","green","red","grey","gray",
+                   "silver","gold","pink","purple","orange","yellow",
+                   "titanium","navy","brown","violet","indus"}:
+            continue
+        out.append(tok)
+
+    return out[:12]
+
+
+def shared_model_strength(a, b):
+    ta = comparison_tokens(a)
+    tb = comparison_tokens(b)
+
+    if not ta or not tb:
+        return 0.0, set()
+
+    common = set(ta) & set(tb)
+    if not common:
+        return 0.0, set()
+
+    # Strong signal: shared alphanumeric model tokens.
+    model_common = {
+        x for x in common
+        if re.search(r"[a-z]", x) and re.search(r"\d", x)
+    }
+
+    # Numeric model token such as iPhone 15 / Galaxy S25.
+    numeric_common = {
+        x for x in common
+        if re.fullmatch(r"[a-z]*\d{2,4}[a-z]*", x)
+    }
+
+    union = set(ta) | set(tb)
+    jaccard = len(common) / len(union) if union else 0.0
+
+    score = jaccard
+
+    if model_common:
+        score += 0.45
+
+    elif numeric_common:
+        score += 0.35
+
+    return min(score, 1.0), common
+
 def compatible_specs(a, b):
     for wanted in (("ram",), ("storage", "rom")):
         av = spec_value(a, wanted)
@@ -510,80 +573,124 @@ def build_brand_ads(docs):
 
 
 def build_comparison_ads(docs):
-    groups = defaultdict(lambda: defaultdict(list))
+    """
+    Cross-platform same-product comparison.
+
+    Strategy:
+      1. Same normalized brand.
+      2. Strong shared model/title tokens.
+      3. RAM/storage compatibility when available.
+      4. All three platforms required.
+      5. Reject suspiciously large price spreads (>35%).
+    """
+
+    by_brand = defaultdict(lambda: defaultdict(list))
 
     for p in docs:
         b = normalize_brand(p)
-        mk = model_signature(p)
+        pf = platform(p)
 
-        if b and mk:
-            groups[(b, mk)][platform(p)].append(p)
+        if b and pf in PLATFORMS:
+            by_brand[b][pf].append(p)
 
     candidates = []
 
-    for (b, mk), by_platform in groups.items():
+    for b, by_pf in by_brand.items():
 
-        if not all(pf in by_platform for pf in PLATFORMS):
+        if not all(pf in by_pf for pf in PLATFORMS):
             continue
 
-        # Pick one candidate per platform, preferring lower price
-        # but only after checking compatibility.
-        selected = {}
+        amazon_items = by_pf["amazon"]
 
-        for pf in PLATFORMS:
-            selected[pf] = min(
-                by_platform[pf],
-                key=lambda x: (price(x), -rating_num(x))
-            )
+        for a in amazon_items:
 
-        if not all(
-            compatible_specs(selected["amazon"], selected[pf])
-            for pf in ("flipkart", "croma")
-        ):
-            continue
+            best_f = None
+            best_c = None
+            best_score_f = 0.0
+            best_score_c = 0.0
 
-        similarities = [
-            title_similarity(selected["amazon"], selected["flipkart"]),
-            title_similarity(selected["amazon"], selected["croma"]),
-        ]
+            for f in by_pf["flipkart"]:
+                if not compatible_specs(a, f):
+                    continue
 
-        if max(similarities) < 0.35:
-            continue
+                score, common = shared_model_strength(a, f)
 
-        prices = {
-            pf: price(selected[pf])
-            for pf in PLATFORMS
-        }
+                if score > best_score_f:
+                    best_score_f = score
+                    best_f = f
 
-        low = min(prices.values())
-        high = max(prices.values())
+            for c in by_pf["croma"]:
+                if not compatible_specs(a, c):
+                    continue
 
-        if low <= 0:
-            continue
+                score, common = shared_model_strength(a, c)
 
-        spread_pct = ((high - low) / high) * 100
+                if score > best_score_c:
+                    best_score_c = score
+                    best_c = c
 
-        # Reject obvious false matches.
-        if spread_pct > MAX_COMPARISON_SPREAD_PCT:
-            continue
+            if not best_f or not best_c:
+                continue
 
-        saving = high - low
+            # Require a genuine model signal on both comparisons.
+            if best_score_f < 0.45 or best_score_c < 0.45:
+                continue
 
-        if (saving / high) * 100 < MIN_COMPARISON_SAVING_PCT:
-            continue
+            prices = {
+                "amazon": price(a),
+                "flipkart": price(best_f),
+                "croma": price(best_c),
+            }
 
-        candidates.append({
-            "brand": brand(selected["amazon"]),
-            "model": mk,
-            "selected": selected,
-            "prices": prices,
-            "spread_pct": round(spread_pct, 2),
-            "saving": round(saving, 2),
-            "saving_pct": round((saving / high) * 100, 2),
-        })
+            if any(v <= 0 for v in prices.values()):
+                continue
+
+            low = min(prices.values())
+            high = max(prices.values())
+
+            spread_pct = ((high - low) / high) * 100
+
+            # Reject suspicious cross-product matches.
+            if spread_pct > MAX_COMPARISON_SPREAD_PCT:
+                continue
+
+            saving = high - low
+            saving_pct = (saving / high) * 100
+
+            if saving_pct < MIN_COMPARISON_SAVING_PCT:
+                continue
+
+            candidates.append({
+                "brand": brand(a),
+                "model": model_signature(a),
+                "amazon": a,
+                "flipkart": best_f,
+                "croma": best_c,
+                "prices": prices,
+                "spread_pct": round(spread_pct, 2),
+                "saving": round(saving, 2),
+                "saving_pct": round(saving_pct, 2),
+                "score": round(min(best_score_f, best_score_c), 3),
+            })
+
+    # Deduplicate by product IDs.
+    unique = {}
+    for item in candidates:
+        key = (
+            normalize_brand(item["amazon"]),
+            model_signature(item["amazon"]),
+        )
+
+        old = unique.get(key)
+
+        if old is None or item["score"] > old["score"]:
+            unique[key] = item
+
+    candidates = list(unique.values())
 
     candidates.sort(
         key=lambda x: (
+            x["score"],
             x["saving_pct"],
             x["saving"],
         ),
@@ -594,7 +701,11 @@ def build_comparison_ads(docs):
 
     for item in candidates[:MAX_COMPARISON_ADS]:
 
-        selected = item["selected"]
+        selected = {
+            "amazon": item["amazon"],
+            "flipkart": item["flipkart"],
+            "croma": item["croma"],
+        }
 
         ads.append({
             "ad_type": "price_comparison",
@@ -612,6 +723,7 @@ def build_comparison_ads(docs):
             "saving_inr": item["saving"],
             "saving_percent": item["saving_pct"],
             "price_spread_percent": item["spread_pct"],
+            "match_score": item["score"],
             "products": {
                 pf: product_payload(selected[pf])
                 for pf in PLATFORMS
