@@ -1,0 +1,122 @@
+{
+  "version": "1.0",
+  "brand": {
+    "name": "TrustFolio",
+    "website_url": "https://www.trustfolio.in/",
+    "play_store_url": "https://play.google.com/store/apps/details?id=com.trustfolio.app",
+    "tagline": "Compare • Save • Shop Smart",
+    "fixed_branding": true,
+    "fixed_elements": [
+      "TrustFolio logo",
+      "trustfolio.in",
+      "Compare • Save • Shop Smart"
+    ],
+    "optional_fixed_elements": [
+      "Available on Google Play"
+    ]
+  },
+  "creative_defaults": {
+    "image_feed": {
+      "width": 1080,
+      "height": 1350,
+      "orientation": "portrait"
+    },
+    "image_square": {
+      "width": 1080,
+      "height": 1080,
+      "orientation": "square"
+    },
+    "story_reel": {
+      "width": 1080,
+      "height": 1920,
+      "orientation": "vertical"
+    },
+    "video_reel": {
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "max_seconds": 15
+    },
+    "safe_margin_percent": 6
+  },
+  "ad_types": {
+    "budget_recommendation": {
+      "template": "Best {display_category} Under ₹{budget}",
+      "primary_cta": "Compare on TrustFolio",
+      "landing_mode": "category"
+    },
+    "brand_recommendation": {
+      "template": "Best {brand} {display_category} Under ₹{budget}",
+      "primary_cta": "Compare on TrustFolio",
+      "landing_mode": "category"
+    },
+    "price_comparison": {
+      "template": "Compare {brand} {model}",
+      "primary_cta": "See Price Comparison",
+      "landing_mode": "category"
+    }
+  },
+  "links": {
+    "category_url_template": "https://www.trustfolio.in/category/{route_slug}/",
+    "category_route_pattern_verified": true,
+    "verified_example": {
+      "category": "speakers",
+      "route_slug": "bluetooth-speakers",
+      "url": "https://www.trustfolio.in/category/bluetooth-speakers/"
+    },
+    "route_slug_overrides": {
+      "speakers": "bluetooth-speakers"
+    },
+    "default_route_slug_strategy": "use_engine_category_slug_until_frontend_route_map_is_verified",
+    "budget_query_parameter": {
+      "enabled": false,
+      "parameter": "budget",
+      "reason": "Frontend support for automatic budget selection is not yet verified"
+    },
+    "product_deep_link": {
+      "enabled": false,
+      "template": null,
+      "reason": "A live TrustFolio product-detail route was not verified; do not invent a production URL"
+    },
+    "carousel_behavior": {
+      "enabled": true,
+      "card_destination": "category_landing",
+      "future_card_destination": "product_deep_link"
+    },
+    "tracking": {
+      "enabled": true,
+      "parameters": {
+        "utm_source": "social",
+        "utm_medium": "paid_social",
+        "utm_campaign": "trustfolio_daily_ads"
+      }
+    }
+  },
+  "platforms": {
+    "facebook": {
+      "image_feed": true,
+      "carousel": true,
+      "reel": true,
+      "story": true
+    },
+    "instagram": {
+      "image_feed": true,
+      "carousel": true,
+      "reel": true,
+      "story": true
+    },
+    "youtube": {
+      "shorts": true
+    },
+    "other_connected_accounts": {
+      "inherit": "story_reel_video_templates"
+    }
+  },
+  "quality_rules": {
+    "never_change_product_price_in_creative": true,
+    "never_invent_product_specs": true,
+    "never_invent_platform_price": true,
+    "use_master_ad_json_as_single_source_of_truth": true,
+    "branding_is_locked": true
+  }
+}
