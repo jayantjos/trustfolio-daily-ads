@@ -97,7 +97,10 @@ PRODUCTS_PER_AD = 5
 MIN_PLATFORMS_FOR_RECOMMENDATION = 2
 MIN_COMPARISON_SAVING_PCT = 2.0
 MAX_COMPARISON_SPREAD_PCT = 35.0
-MONGO_LIMIT = 5000
+
+# Scan the full category dataset. The earlier 5,000-document cap
+# could silently hide valid products and cross-platform matches.
+MONGO_LIMIT = None
 
 GENERIC_BRANDS = {
     "add", "ai", "android", "bluetooth", "computer", "desktop",
@@ -689,9 +692,12 @@ def load_docs(category):
         "availability": 1,
     }
 
-    raw = list(
-        products.find(query, projection).limit(MONGO_LIMIT)
-    )
+    cursor = products.find(query, projection)
+
+    if MONGO_LIMIT:
+        cursor = cursor.limit(MONGO_LIMIT)
+
+    raw = list(cursor)
 
     return [x for x in raw if valid(x, category)]
 def budget_targets(category):
@@ -1085,7 +1091,7 @@ def main():
         "source": "Trustfolio MongoDB",
         "generated_from_live_mongodb": True,
         "trustfolio_backend_unchanged": True,
-        "engine": "daily_ad_engine_20_v1",
+        "engine": "daily_ad_engine_20_v2",
         "categories": CATEGORIES,
         "platforms_required": list(PLATFORMS),
         "rules": {
