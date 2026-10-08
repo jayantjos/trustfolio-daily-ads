@@ -8,7 +8,7 @@ from pathlib import Path
 BASE = Path.home() / "new_scraper"
 MANIFEST = BASE / "ads" / "trustfolio_infographic_payload_v1.json"
 OUT = BASE / "ads" / "generated_creatives" / "feed"
-RENDERER = BASE / "ads" / "creative_renderer_v3.py"
+RENDERER = BASE / "ads" / "creative_renderer_v7.py"
 
 sys.path.insert(0, str(RENDERER.parent))
 import creative_renderer_v7 as renderer
@@ -24,7 +24,7 @@ def main():
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     ads = data.get("ads", [])
     if not ads:
-        raise SystemExit("No ads found in creative generation manifest")
+        raise SystemExit("No ads found in infographic payload")
 
     if out_dir.exists():
         shutil.rmtree(out_dir)
