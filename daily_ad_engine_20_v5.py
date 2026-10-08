@@ -55,11 +55,11 @@ CATEGORY_DISPLAY = {
     "microwave-ovens": "Microwave Ovens",
 }
 
-# Category relevance is used only for ad selection. The MongoDB category
-# itself is never modified.
+# Ad-selection relevance rules. These only filter products for ads;
+# MongoDB category data is never modified.
 CATEGORY_RELEVANCE = {
     "smartwatches": {
-        "must_any": ["smartwatch", "smart watch", "watch"],
+        "must_any": ["smartwatch", "smart watch", " watch "],
         "exclude_any": ["watch strap", "watch band", "watch case", "screen protector"],
     },
     "headphones-earbuds": {
@@ -71,7 +71,7 @@ CATEGORY_RELEVANCE = {
         "exclude_any": ["speaker stand", "replacement", "remote only"],
     },
     "ceiling-fans": {
-        "must_any": ["ceiling fan", "ceilingfans", "ceiling fan"],
+        "must_any": ["ceiling fan"],
         "exclude_any": ["chain extender", "extension chain", "fan cord", "replacement"],
     },
     "water-purifiers": {
@@ -91,7 +91,7 @@ CATEGORY_RELEVANCE = {
         "exclude_any": ["monitor only", "keyboard only", "mouse only"],
     },
     "geysers": {
-        "must_any": ["geyser", "water heater", "water heater for home"],
+        "must_any": ["geyser", "water heater"],
         "exclude_any": ["heater rod only", "heating element only", "immersion rod only"],
     },
     "laptops": {
@@ -99,7 +99,7 @@ CATEGORY_RELEVANCE = {
         "exclude_any": ["laptop bag", "laptop stand", "laptop sleeve", "replacement"],
     },
     "smart-phones": {
-        "must_any": ["smartphone", "smart phone", "mobile phone", "mobile", "android phone"],
+        "must_any": ["smartphone", "smart phone", "mobile phone", "mobile", " phone "],
         "exclude_any": ["phone case", "screen protector", "replacement", "dummy phone", "feature phone"],
     },
     "refrigerators": {
@@ -119,11 +119,11 @@ CATEGORY_RELEVANCE = {
         "exclude_any": ["vacuum bag", "vacuum filter only", "replacement", "vacuum part"],
     },
     "air-conditioners": {
-        "must_any": ["air conditioner", "air conditioning", "split ac", "window ac", "inverter ac", " ac "],
+        "must_any": ["air conditioner", "split ac", "window ac", "inverter ac", " ac "],
         "exclude_any": ["deep freezer", "freezer", "air cooler", "ac cover"],
     },
     "induction-cooktops": {
-        "must_any": ["induction cooktop", "induction cooktop stove", "induction stove", "induction"],
+        "must_any": ["induction cooktop", "induction stove", "induction"],
         "exclude_any": ["hookah", "coil hot plate", "hot plate", "radiant cooktop", "gas stove", "cookware", "pan only"],
     },
     "washing-machines": {
@@ -139,6 +139,7 @@ CATEGORY_RELEVANCE = {
         "exclude_any": ["otg", "oven toaster grill", "toaster oven", "electric oven"],
     },
 }
+
 
 BUDGET_TARGETS = {
     "smartwatches": [2000, 3000, 5000, 7500, 10000, 15000, 20000, 30000],
@@ -194,12 +195,22 @@ GENERIC_BRANDS = {
     "10", "10 1", "2025", "7"
 }
 
+
 SELLER_WORDS = {
     "store", "shop", "online", "seller", "trader", "traders",
     "retail", "retailer", "hub", "mart", "enterprise", "enterprises",
     "world", "deals",
 }
 
+BRAND_GENERIC_WORDS = {
+    "drone", "drones", "assembled", "computer", "desktop", "laptop",
+    "tablet", "mobile", "phone", "smart", "wireless", "earbuds",
+    "headphones", "speaker", "speakers", "fan", "ceiling", "cooler",
+    "air", "water", "aqua", "purifier", "geyser", "heater",
+    "microwave", "oven", "induction", "cooktop", "washing", "machine",
+    "vacuum", "cleaner", "electronics", "store", "shop", "online",
+    "brand", "generic", "unknown", "unbranded",
+}
 
 GENERIC_MODEL_WORDS = {
     "smartphone", "smart", "phone", "mobile", "android",
@@ -781,14 +792,6 @@ def comparison_variants_compatible(products_for_model, category):
 
 
 def category_relevance_score(p, category):
-    """
-    Score title relevance for ad selection.
-
-    Returns:
-      -1 for an explicitly excluded product
-       0 for no clear category signal
-      1+ for a relevant product
-    """
     rule = CATEGORY_RELEVANCE.get(category)
     if not rule:
         return 1
@@ -799,12 +802,10 @@ def category_relevance_score(p, category):
         if bad in text:
             return -1
 
-    score = 0
-    for good in rule.get("must_any", []):
-        if good in text:
-            score += 1
-
-    return score
+    return sum(
+        1 for good in rule.get("must_any", [])
+        if good in text
+    )
 
 
 def is_category_relevant(p, category):
@@ -1053,10 +1054,6 @@ def product_payload(p):
 
 
 def choose_model_groups(candidates, category, limit=PRODUCTS_PER_AD):
-    """
-    Pick distinct model groups while explicitly maximizing platform diversity
-    and excluding obvious accessory/irrelevant products.
-    """
     filtered = [
         p for p in candidates
         if is_category_relevant(p, category)
@@ -1078,7 +1075,6 @@ def choose_model_groups(candidates, category, limit=PRODUCTS_PER_AD):
 
     group_items = list(groups.items())
 
-    # Strong groups first, but favor groups that add platform coverage.
     group_items.sort(
         key=lambda kv: (
             len({platform(x) for x in kv[1]}),
@@ -1091,13 +1087,14 @@ def choose_model_groups(candidates, category, limit=PRODUCTS_PER_AD):
 
     selected = []
     used_platforms = set()
+    used_group_keys = set()
 
-    # Pass 1: deliberately acquire missing platforms.
-    for _, items in group_items:
+    # First pass: ensure Amazon/Flipkart/Croma coverage when possible.
+    for key, items in group_items:
         if len(selected) >= limit:
             break
 
-        best = sorted(
+        candidates_sorted = sorted(
             items,
             key=lambda x: (
                 platform(x) in used_platforms,
@@ -1105,26 +1102,21 @@ def choose_model_groups(candidates, category, limit=PRODUCTS_PER_AD):
                 -rating_num(x),
                 price(x),
             )
-        )[0]
+        )
 
-        if platform(best) not in used_platforms:
-            selected.append(best)
-            used_platforms.add(platform(best))
+        pick = candidates_sorted[0]
 
-    # Pass 2: fill remaining slots with new models and strong relevance.
-    for _, items in group_items:
-        if len(selected) >= limit:
-            break
+        if platform(pick) not in used_platforms:
+            selected.append(pick)
+            used_platforms.add(platform(pick))
+            used_group_keys.add(key)
 
-        if any(
-            model_signature(existing) == next(iter(
-                [model_signature(items[0])]
-            ))
-            for existing in selected
-        ):
+    # Second pass: fill remaining unique model groups.
+    for key, items in group_items:
+        if len(selected) >= limit or key in used_group_keys:
             continue
 
-        best = sorted(
+        pick = sorted(
             items,
             key=lambda x: (
                 -category_relevance_score(x, category),
@@ -1134,7 +1126,8 @@ def choose_model_groups(candidates, category, limit=PRODUCTS_PER_AD):
             )
         )[0]
 
-        selected.append(best)
+        selected.append(pick)
+        used_group_keys.add(key)
 
     return selected[:limit]
 
@@ -1229,9 +1222,7 @@ def build_budget_ads(docs, category):
         ads.append({
             "ad_type": "budget_recommendation",
             "category": category,
-            "headline": (
-                f"Best {display} Under ₹{budget:,}"
-            ),
+            "headline": f"Best {display} Under ₹{budget:,}",
             "budget_inr": budget,
             "platforms": sorted(selected_platforms),
             "products": [product_payload(x) for x in selected],
@@ -1242,3 +1233,441 @@ def build_budget_ads(docs, category):
 
     return ads
 
+
+def safe_brand(b):
+    b = clean(b)
+
+    if not b:
+        return False
+
+    if b in GENERIC_BRANDS or b in BRAND_GENERIC_WORDS:
+        return False
+
+    if len(b) < 3:
+        return False
+
+    if re.fullmatch(r"[\d\s.+-]+", b):
+        return False
+
+    if any(word in b.split() for word in SELLER_WORDS):
+        return False
+
+    if len(b.split()) > 4:
+        return False
+
+    return True
+
+
+def leading_brand(p):
+    b = normalize_brand(p)
+    t = clean(title(p))
+    return bool(b and t and (t == b or t.startswith(b + " ")))
+
+
+def build_brand_ads(docs, category):
+    brand_docs = defaultdict(list)
+
+    for p in docs:
+        b = normalize_brand(p)
+
+        if (
+            safe_brand(b)
+            and leading_brand(p)
+            and is_category_relevant(p, category)
+        ):
+            brand_docs[b].append(p)
+
+    brand_candidates = []
+
+    for b, items in brand_docs.items():
+        groups = defaultdict(list)
+
+        for p in items:
+            key = (
+                model_signature(p),
+                spec_value(p, ("ram",))
+                if category in MEMORY_VARIANT_CATEGORIES else "",
+                spec_value(p, ("storage", "rom"))
+                if category in MEMORY_VARIANT_CATEGORIES else "",
+            )
+
+            if key[0]:
+                groups[key].append(p)
+
+        if len(groups) < 3:
+            continue
+
+        platform_count = len({platform(x) for x in items})
+
+        if platform_count < MIN_PLATFORMS_FOR_RECOMMENDATION:
+            continue
+
+        brand_candidates.append(
+            (b, items, groups, platform_count)
+        )
+
+    brand_candidates.sort(
+        key=lambda x: (
+            x[3],
+            len(x[2]),
+            max(category_relevance_score(p, category) for p in x[1]),
+        ),
+        reverse=True,
+    )
+
+    ads = []
+    display_category = CATEGORY_DISPLAY.get(
+        category,
+        category.replace("-", " ").title()
+    )
+
+    for b, items, groups, platform_count in brand_candidates:
+        all_prices = sorted(price(x) for x in items)
+        target = all_prices[len(all_prices) // 2]
+
+        candidates = [
+            x for x in items
+            if price(x) <= target * 1.10
+            and is_category_relevant(x, category)
+        ]
+
+        selected = choose_model_groups(
+            candidates,
+            category,
+        )
+
+        if len(selected) < 3:
+            continue
+
+        selected_platforms = all_platforms(selected)
+
+        if len(selected_platforms) < MIN_PLATFORMS_FOR_RECOMMENDATION:
+            continue
+
+        display_brand = brand(selected[0]) or b.title()
+
+        ads.append({
+            "ad_type": "brand_recommendation",
+            "category": category,
+            "brand": display_brand,
+            "headline": f"Best {display_brand} {display_category} Under ₹{round(target):,}",
+            "budget_inr": round(target),
+            "platforms": sorted(selected_platforms),
+            "products": [product_payload(x) for x in selected],
+        })
+
+        if len(ads) >= MAX_BRAND_ADS:
+            break
+
+    return ads
+
+
+def build_comparison_ads(docs, category):
+    """
+    Conservative cross-platform same-product comparison.
+
+    A comparison requires:
+      - exact normalized brand
+      - exact strict comparison model signature
+      - compatible explicit variant attributes
+      - memory-category RAM/storage compatibility
+      - all 3 platforms
+      - <=35% price spread
+      - >=2% saving
+    """
+    by_identity = defaultdict(lambda: defaultdict(list))
+
+    for p in docs:
+        b = normalize_brand(p)
+        model = comparison_model_signature(p)
+        pf = platform(p)
+
+        if b and model and pf in PLATFORMS:
+            by_identity[(b, model)][pf].append(p)
+
+    candidates = []
+
+    for (b, model), by_pf in by_identity.items():
+        if not all(pf in by_pf for pf in PLATFORMS):
+            continue
+
+        best_combo = None
+        best_key = None
+
+        for a in by_pf["amazon"]:
+            for f in by_pf["flipkart"]:
+                for croma_item in by_pf["croma"]:
+                    combo = [a, f, croma_item]
+
+                    if not variants_compatible(combo, category):
+                        continue
+
+                    if not comparison_variants_compatible(combo, category):
+                        continue
+
+                    prices = {
+                        "amazon": price(a),
+                        "flipkart": price(f),
+                        "croma": price(croma_item),
+                    }
+
+                    if any(v <= 0 for v in prices.values()):
+                        continue
+
+                    low = min(prices.values())
+                    high = max(prices.values())
+                    spread_pct = ((high - low) / high) * 100
+
+                    if spread_pct > MAX_COMPARISON_SPREAD_PCT:
+                        continue
+
+                    saving = high - low
+                    saving_pct = (saving / high) * 100
+
+                    if saving_pct < MIN_COMPARISON_SAVING_PCT:
+                        continue
+
+                    if category in MEMORY_VARIANT_CATEGORIES:
+                        variant = inferred_variant(combo)
+                        completeness = sum(
+                            bool(variant_parts(x)["ram"])
+                            + bool(variant_parts(x)["storage"])
+                            for x in combo
+                        )
+                    else:
+                        variant = {
+                            "ram": "",
+                            "storage": "",
+                        }
+                        completeness = 0
+
+                    avg_rating = sum(
+                        rating_num(x) for x in combo
+                    )
+
+                    key = (
+                        completeness,
+                        saving_pct,
+                        avg_rating,
+                    )
+
+                    if best_combo is None or key > best_key:
+                        best_combo = combo
+                        best_key = key
+
+        if best_combo is None:
+            continue
+
+        a, f, croma_item = best_combo
+
+        prices = {
+            "amazon": price(a),
+            "flipkart": price(f),
+            "croma": price(croma_item),
+        }
+
+        low = min(prices.values())
+        high = max(prices.values())
+        spread_pct = ((high - low) / high) * 100
+        saving = high - low
+        saving_pct = (saving / high) * 100
+
+        variant = (
+            inferred_variant(best_combo)
+            if category in MEMORY_VARIANT_CATEGORIES
+            else {"ram": "", "storage": ""}
+        )
+
+        candidates.append({
+            "brand": brand(a),
+            "model": model,
+            "variant": variant,
+            "amazon": a,
+            "flipkart": f,
+            "croma": croma_item,
+            "prices": prices,
+            "spread_pct": round(spread_pct, 2),
+            "saving": round(saving, 2),
+            "saving_pct": round(saving_pct, 2),
+            "score": 1.0,
+        })
+
+    unique = {}
+
+    for item in candidates:
+        key = (
+            normalize_brand(item["amazon"]),
+            item["model"],
+            item["variant"].get("ram", ""),
+            item["variant"].get("storage", ""),
+        )
+
+        old = unique.get(key)
+
+        if old is None or item["saving_pct"] > old["saving_pct"]:
+            unique[key] = item
+
+    candidates = list(unique.values())
+
+    candidates.sort(
+        key=lambda x: (
+            x["saving_pct"],
+            x["saving"],
+        ),
+        reverse=True,
+    )
+
+    ads = []
+
+    for item in candidates[:MAX_COMPARISON_ADS]:
+        selected = {
+            "amazon": item["amazon"],
+            "flipkart": item["flipkart"],
+            "croma": item["croma"],
+        }
+
+        display_model = pretty_model(item["model"])
+        headline = f"Compare {item['brand']} {display_model}"
+
+        if category in MEMORY_VARIANT_CATEGORIES:
+            variant_text = []
+
+            if item["variant"]["ram"]:
+                variant_text.append(
+                    item["variant"]["ram"].upper()
+                )
+
+            if item["variant"]["storage"]:
+                variant_text.append(
+                    item["variant"]["storage"].upper()
+                )
+
+            if variant_text:
+                headline += " " + " ".join(variant_text)
+
+        ads.append({
+            "ad_type": "price_comparison",
+            "category": category,
+            "brand": item["brand"],
+            "model": item["model"],
+            "variant": item["variant"],
+            "headline": headline,
+            "platforms": list(PLATFORMS),
+            "prices": item["prices"],
+            "best_platform": min(
+                item["prices"],
+                key=item["prices"].get
+            ),
+            "best_price_inr": min(item["prices"].values()),
+            "saving_inr": item["saving"],
+            "saving_percent": item["saving_pct"],
+            "price_spread_percent": item["spread_pct"],
+            "match_score": item["score"],
+            "products": {
+                pf: product_payload(selected[pf])
+                for pf in PLATFORMS
+            },
+        })
+
+    return ads
+
+
+def main():
+    all_ads = []
+    category_results = {}
+    total_eligible = 0
+
+    print("=" * 88)
+    print("TRUSTFOLIO DAILY AD ENGINE - 20 CATEGORY TEST V5")
+    print("=" * 88)
+    print("Categories:", len(CATEGORIES))
+    print("Platforms :", ", ".join(PLATFORMS))
+    print()
+
+    for category in CATEGORIES:
+        docs = load_docs(category)
+        counts = Counter(platform(x) for x in docs)
+
+        budget_ads = build_budget_ads(docs, category)
+        brand_ads = build_brand_ads(docs, category)
+        comparison_ads = build_comparison_ads(docs, category)
+
+        category_ads = budget_ads + brand_ads + comparison_ads
+        all_ads.extend(category_ads)
+        total_eligible += len(docs)
+
+        category_results[category] = {
+            "display_name": CATEGORY_DISPLAY.get(category, category),
+            "eligible_products": len(docs),
+            "platform_counts": dict(counts),
+            "budget_ads": len(budget_ads),
+            "brand_ads": len(brand_ads),
+            "comparison_ads": len(comparison_ads),
+            "total_ads": len(category_ads),
+        }
+
+        print(
+            f"{category:22} | products={len(docs):5d} "
+            f"| budget={len(budget_ads):2d} "
+            f"| brand={len(brand_ads):2d} "
+            f"| compare={len(comparison_ads):2d} "
+            f"| total={len(category_ads):2d}"
+        )
+
+    output = {
+        "brand": {
+            "name": "Trustfolio",
+            "website": "https://www.trustfolio.in",
+            "app": "Trustfolio",
+        },
+        "generated_at": datetime.now().isoformat(),
+        "source": "Trustfolio MongoDB",
+        "generated_from_live_mongodb": True,
+        "trustfolio_backend_unchanged": True,
+        "engine": "daily_ad_engine_20_v5",
+        "categories": CATEGORIES,
+        "platforms_required": list(PLATFORMS),
+        "rules": {
+            "budget_ads": "unique models; minimum 2 platforms; category-specific consumer budget bands",
+            "brand_ads": "safe brand; unique models; minimum 2 platforms",
+            "comparison_ads": "exact brand + model; memory categories additionally match RAM/storage; all 3 platforms; <=35% price spread",
+        },
+        "stats": {
+            "categories": len(CATEGORIES),
+            "eligible_products_total": total_eligible,
+            "budget_ads": sum(x["budget_ads"] for x in category_results.values()),
+            "brand_ads": sum(x["brand_ads"] for x in category_results.values()),
+            "comparison_ads": sum(x["comparison_ads"] for x in category_results.values()),
+            "total_ads": len(all_ads),
+            "categories_with_ads": sum(
+                1 for x in category_results.values()
+                if x["total_ads"] > 0
+            ),
+        },
+        "category_results": category_results,
+        "ads": all_ads,
+    }
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(
+        json.dumps(output, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    print()
+    print("=" * 88)
+    print("TOTAL ELIGIBLE PRODUCTS:", total_eligible)
+    print("TOTAL BUDGET ADS       :", output["stats"]["budget_ads"])
+    print("TOTAL BRAND ADS        :", output["stats"]["brand_ads"])
+    print("TOTAL COMPARISON ADS   :", output["stats"]["comparison_ads"])
+    print("TOTAL ADS              :", output["stats"]["total_ads"])
+    print("CATEGORIES WITH ADS    :", output["stats"]["categories_with_ads"])
+    print("OUTPUT                 :", OUT)
+    print("=" * 88)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    finally:
+        client.close()
