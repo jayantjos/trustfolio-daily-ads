@@ -107,13 +107,39 @@ def normalize_brand(p):
     return clean(brand(p))
 
 
+def extract_capacities(value):
+    """
+    Extract capacities from messy source values.
+
+    Examples:
+      "4 GB" -> ["4gb"]
+      "4GB + 128GB" -> ["4gb", "128gb"]
+      "6+128GB" -> ["6gb", "128gb"]
+      "6/128 GB" -> ["6gb", "128gb"]
+    """
+    text = clean(value)
+
+    matches = re.findall(
+        r"\b(\d{1,4})\s*(gb|tb)\b",
+        text
+    )
+
+    return [
+        amount + unit
+        for amount, unit in matches
+    ]
+
+
 def spec_value(p, names):
     """
-    Return a normalized RAM/storage value.
+    Return one normalized RAM/storage value.
 
-    The function uses structured specifications first and then title parsing.
-    For storage, titles such as "128 GB", "128GB Storage", and "2 TB"
-    are supported.
+    Structured specs are preferred, but messy values such as
+    "4GB + 128GB" are parsed instead of being returned raw.
+
+    For combined memory strings:
+      RAM     -> first capacity
+      Storage -> last capacity
     """
     specs = p.get("specifications") or {}
     normalized = {
@@ -124,16 +150,34 @@ def spec_value(p, names):
 
     wanted_clean = [clean(x) for x in names]
     is_ram = "ram" in wanted_clean
+    is_storage = not is_ram
 
     for wanted in wanted_clean:
         for key, value in normalized.items():
             if key == wanted or wanted in key:
-                return clean(value)
+                caps = extract_capacities(value)
+
+                if caps:
+                    return caps[0] if is_ram else caps[-1]
 
     t = title(p).lower()
 
     if is_ram:
-        m = re.search(r"\b(\d{1,3})\s*(gb|tb)\s*ram\b", t)
+        # Common phone notation: 6+128GB, 6GB+128GB, 6/128GB.
+        combined = re.search(
+            r"\b(\d{1,3})\s*(gb|tb)?\s*(?:\+|/)\s*"
+            r"(\d{1,4})\s*(gb|tb)\b",
+            t
+        )
+        if combined:
+            return combined.group(1) + (
+                combined.group(2) or combined.group(4)
+            )
+
+        m = re.search(
+            r"\b(\d{1,3})\s*(gb|tb)\s*ram\b",
+            t
+        )
         if m:
             return m.group(1) + m.group(2)
 
@@ -147,24 +191,28 @@ def spec_value(p, names):
     if m:
         return m.group(1) + m.group(2)
 
-    # Otherwise use standalone GB/TB capacities, excluding the RAM
-    # capacity when an explicit RAM value exists.
-    capacities = list(
-        re.finditer(r"\b(\d{1,4})\s*(gb|tb)\b", t)
+    # Combined notation where storage is the second capacity.
+    combined = re.search(
+        r"\b(\d{1,3})\s*(gb|tb)?\s*(?:\+|/)\s*"
+        r"(\d{1,4})\s*(gb|tb)\b",
+        t
     )
+    if combined:
+        return combined.group(3) + combined.group(4)
+
+    capacities = extract_capacities(t)
 
     ram_match = re.search(
         r"\b(\d{1,3})\s*(gb|tb)\s*ram\b",
         t
     )
 
-    for m in capacities:
-        value = m.group(1) + m.group(2)
-
-        if ram_match and m.start() == ram_match.start():
-            continue
-
-        return value
+    for capacity in capacities:
+        if ram_match:
+            ram_capacity = ram_match.group(1) + ram_match.group(2)
+            if capacity == ram_capacity:
+                continue
+        return capacity
 
     return ""
 
@@ -452,286 +500,25 @@ def pretty_model(model):
         (r"\biphone\b", "iPhone"),
         (r"\bnord\b", "Nord"),
         (r"\bpixel\b", "Pixel"),
+        (r"\brealme\b", "realme"),
     ]
 
     for pattern, replacement in replacements:
         text = re.sub(pattern, replacement, text, flags=re.I)
 
+    # Normalize model tokens such as a07 -> A07, 16x -> 16X.
+    def fix_model_token(match):
+        prefix = match.group(1)
+        suffix = match.group(2)
+        return prefix.title() + suffix.upper()
+
+    text = re.sub(
+        r"\b([a-z]{1,3})(\d+[a-z0-9]*)\b",
+        fix_model_token,
+        text
+    )
+
     return text
-
-
-def product_payload(p):
-    return {
-        "product_id": str(
-            p.get("product_id")
-            or p.get("id")
-            or p.get("asin")
-            or p.get("_id")
-            or p.get("product_url")
-            or ""
-        ),
-        "title": title(p),
-        "brand": brand(p),
-        "price_inr": round(price(p), 2),
-        "rating": (
-            p.get("average_rating")
-            if p.get("average_rating") not in (None, "")
-            else p.get("rating")
-        ),
-        "image_url": p.get("main_image") or p.get("image") or "",
-        "product_url": p.get("product_url") or "",
-        "platform": platform(p),
-        "category": CATEGORY,
-        "specifications": p.get("specifications") or {},
-        "model_signature": model_signature(p),
-    }
-
-
-def choose_model_groups(candidates, limit=PRODUCTS_PER_AD):
-    """
-    Picks distinct model groups, while maximizing platform coverage.
-    """
-
-    groups = defaultdict(list)
-
-    for p in candidates:
-        key = (
-            model_signature(p),
-            spec_value(p, ("ram",)),
-            spec_value(p, ("storage", "rom")),
-        )
-        if key[0]:
-            groups[key].append(p)
-
-    group_items = list(groups.items())
-
-    # First prefer groups that exist on more platforms.
-    group_items.sort(
-        key=lambda kv: (
-            len({platform(x) for x in kv[1]}),
-            max(rating_num(x) for x in kv[1]),
-            -min(price(x) for x in kv[1]),
-        ),
-        reverse=True,
-    )
-
-    selected = []
-    used_platforms = set()
-
-    # Pass 1: get platform coverage.
-    for _, items in group_items:
-        if len(selected) >= limit:
-            break
-
-        available = sorted(
-            items,
-            key=lambda x: (
-                platform(x) in used_platforms,
-                -rating_num(x),
-                price(x),
-            )
-        )
-
-        pick = available[0]
-        selected.append(pick)
-        used_platforms.add(platform(pick))
-
-    # Pass 2: additional unique models.
-    return selected[:limit]
-
-
-def all_platforms(items):
-    return {platform(x) for x in items}
-
-
-def has_min_platforms(items, minimum=MIN_PLATFORMS_FOR_RECOMMENDATION):
-    return len(all_platforms(items)) >= minimum
-
-
-def load_docs():
-    query = {
-        "category": CATEGORY,
-        "price_ready": True,
-        "availability": "available",
-        "platform": {"$in": list(PLATFORMS)},
-    }
-
-    projection = {
-        "product_id": 1,
-        "id": 1,
-        "asin": 1,
-        "_id": 1,
-        "title": 1,
-        "brand": 1,
-        "price": 1,
-        "price_inr": 1,
-        "average_rating": 1,
-        "rating": 1,
-        "main_image": 1,
-        "image": 1,
-        "product_url": 1,
-        "platform": 1,
-        "category": 1,
-        "specifications": 1,
-        "price_ready": 1,
-        "availability": 1,
-    }
-
-    raw = list(products.find(query, projection).limit(MONGO_LIMIT))
-    return [x for x in raw if valid(x)]
-
-
-def budget_targets():
-    # Useful consumer-facing budget bands.
-    # We only keep bands for which at least 2 platforms have
-    # eligible products under the budget.
-    return [10000, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000]
-
-
-def build_budget_ads(docs):
-    ads = []
-
-    for budget in budget_targets():
-
-        candidates = [
-            x for x in docs
-            if price(x) <= budget
-        ]
-
-        candidates.sort(
-            key=lambda x: (
-                abs(price(x) - budget),
-                -rating_num(x),
-            )
-        )
-
-        selected = choose_model_groups(candidates)
-
-        if len(selected) < 3:
-            continue
-
-        if not has_min_platforms(selected):
-            continue
-
-        # Prefer 3 platforms; 2 is acceptable when data doesn't
-        # provide all three.
-        ads.append({
-            "ad_type": "budget_recommendation",
-            "category": CATEGORY,
-            "headline": f"Best Smartphones Under ₹{budget:,}",
-            "budget_inr": budget,
-            "platforms": sorted(all_platforms(selected)),
-            "products": [product_payload(x) for x in selected],
-        })
-
-        if len(ads) >= MAX_BUDGET_ADS:
-            break
-
-    return ads
-
-
-def safe_brand(b):
-    b = clean(b)
-    return bool(
-        b
-        and b not in GENERIC_BRANDS
-        and len(b) >= 2
-        and not re.fullmatch(r"[\d\s.+-]+", b)
-    )
-
-
-def leading_brand(p):
-    b = normalize_brand(p)
-    t = clean(title(p))
-    return bool(b and t and (t == b or t.startswith(b + " ")))
-
-
-def build_brand_ads(docs):
-    brand_docs = defaultdict(list)
-
-    for p in docs:
-        b = normalize_brand(p)
-        if safe_brand(b) and leading_brand(p):
-            brand_docs[b].append(p)
-
-    brand_candidates = []
-
-    for b, items in brand_docs.items():
-
-        groups = defaultdict(list)
-
-        for p in items:
-            key = (
-                model_signature(p),
-                spec_value(p, ("ram",)),
-                spec_value(p, ("storage", "rom")),
-            )
-
-            if key[0]:
-                groups[key].append(p)
-
-        if len(groups) < 3:
-            continue
-
-        pfs = {platform(x) for x in items}
-
-        if len(pfs) < 2:
-            continue
-
-        brand_candidates.append((b, items, groups))
-
-    brand_candidates.sort(
-        key=lambda x: (
-            len(x[2]),
-            len({platform(p) for p in x[1]}),
-        ),
-        reverse=True,
-    )
-
-    ads = []
-
-    for b, items, groups in brand_candidates:
-
-        # Target around the median brand price.
-        all_prices = sorted(price(x) for x in items)
-        target = all_prices[len(all_prices) // 2]
-
-        candidates = [
-            x for x in items
-            if price(x) <= target * 1.10
-        ]
-
-        candidates.sort(
-            key=lambda x: (
-                abs(price(x) - target),
-                -rating_num(x),
-            )
-        )
-
-        selected = choose_model_groups(candidates)
-
-        if len(selected) < 3:
-            continue
-
-        if not has_min_platforms(selected):
-            continue
-
-        display_brand = brand(selected[0]) or b.title()
-
-        ads.append({
-            "ad_type": "brand_recommendation",
-            "category": CATEGORY,
-            "brand": display_brand,
-            "headline": f"Best {display_brand} Smartphones Under ₹{round(target):,}",
-            "budget_inr": round(target),
-            "platforms": sorted(all_platforms(selected)),
-            "products": [product_payload(x) for x in selected],
-        })
-
-        if len(ads) >= MAX_BRAND_ADS:
-            break
-
-    return ads
 
 
 def build_comparison_ads(docs):
@@ -944,7 +731,7 @@ def main():
         "source": "Trustfolio MongoDB",
         "generated_from_live_mongodb": True,
         "trustfolio_backend_unchanged": True,
-        "engine": "daily_ad_engine_test_v4",
+        "engine": "daily_ad_engine_test_v5",
         "category": CATEGORY,
         "platforms_required": list(PLATFORMS),
         "rules": {
@@ -970,7 +757,7 @@ def main():
     )
 
     print("=" * 78)
-    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V4")
+    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V5")
     print("=" * 78)
     print("Eligible products:", len(docs))
     print("Platform counts  :", dict(counts))
