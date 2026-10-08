@@ -108,38 +108,22 @@ def normalize_brand(p):
 
 
 def extract_capacities(value):
-    """
-    Extract capacities from messy source values.
-
-    Examples:
-      "4 GB" -> ["4gb"]
-      "4GB + 128GB" -> ["4gb", "128gb"]
-      "6+128GB" -> ["6gb", "128gb"]
-      "6/128 GB" -> ["6gb", "128gb"]
-    """
     text = clean(value)
-
-    matches = re.findall(
-        r"\b(\d{1,4})\s*(gb|tb)\b",
-        text
-    )
-
     return [
         amount + unit
-        for amount, unit in matches
+        for amount, unit in re.findall(r"\b(\d{1,4})\s*(gb|tb)\b", text)
     ]
 
 
 def spec_value(p, names):
     """
-    Return one normalized RAM/storage value.
+    Normalize RAM/storage from structured specs or product title.
 
-    Structured specs are preferred, but messy values such as
-    "4GB + 128GB" are parsed instead of being returned raw.
-
-    For combined memory strings:
-      RAM     -> first capacity
-      Storage -> last capacity
+    Handles:
+      4GB RAM, 128GB Storage
+      6+128GB
+      6GB+128GB
+      6/128GB
     """
     specs = p.get("specifications") or {}
     normalized = {
@@ -150,40 +134,33 @@ def spec_value(p, names):
 
     wanted_clean = [clean(x) for x in names]
     is_ram = "ram" in wanted_clean
-    is_storage = not is_ram
 
     for wanted in wanted_clean:
         for key, value in normalized.items():
             if key == wanted or wanted in key:
                 caps = extract_capacities(value)
-
                 if caps:
                     return caps[0] if is_ram else caps[-1]
+                return clean(value)
 
     t = title(p).lower()
 
-    if is_ram:
-        # Common phone notation: 6+128GB, 6GB+128GB, 6/128GB.
-        combined = re.search(
-            r"\b(\d{1,3})\s*(gb|tb)?\s*(?:\+|/)\s*"
-            r"(\d{1,4})\s*(gb|tb)\b",
-            t
-        )
-        if combined:
-            return combined.group(1) + (
-                combined.group(2) or combined.group(4)
-            )
+    combined = re.search(
+        r"\b(\d{1,3})\s*(gb|tb)?\s*(?:\+|/)\s*"
+        r"(\d{1,4})\s*(gb|tb)\b",
+        t
+    )
 
-        m = re.search(
-            r"\b(\d{1,3})\s*(gb|tb)\s*ram\b",
-            t
-        )
+    if is_ram:
+        if combined:
+            return combined.group(1) + (combined.group(2) or combined.group(4))
+
+        m = re.search(r"\b(\d{1,3})\s*(gb|tb)\s*ram\b", t)
         if m:
             return m.group(1) + m.group(2)
 
         return ""
 
-    # Explicit storage / ROM wording.
     m = re.search(
         r"\b(\d{1,4})\s*(gb|tb)\s*(?:storage|rom)\b",
         t
@@ -191,21 +168,11 @@ def spec_value(p, names):
     if m:
         return m.group(1) + m.group(2)
 
-    # Combined notation where storage is the second capacity.
-    combined = re.search(
-        r"\b(\d{1,3})\s*(gb|tb)?\s*(?:\+|/)\s*"
-        r"(\d{1,4})\s*(gb|tb)\b",
-        t
-    )
     if combined:
         return combined.group(3) + combined.group(4)
 
     capacities = extract_capacities(t)
-
-    ram_match = re.search(
-        r"\b(\d{1,3})\s*(gb|tb)\s*ram\b",
-        t
-    )
+    ram_match = re.search(r"\b(\d{1,3})\s*(gb|tb)\s*ram\b", t)
 
     for capacity in capacities:
         if ram_match:
@@ -481,9 +448,6 @@ def inferred_variant(products_for_model):
 
 
 def pretty_model(model):
-    """
-    Human-friendly model text for the ad headline.
-    """
     text = str(model or "").strip()
 
     replacements = [
@@ -506,19 +470,11 @@ def pretty_model(model):
     for pattern, replacement in replacements:
         text = re.sub(pattern, replacement, text, flags=re.I)
 
-    # Normalize model tokens such as a07 -> A07, 16x -> 16X.
-    def fix_model_token(match):
-        prefix = match.group(1)
-        suffix = match.group(2)
-        return prefix.title() + suffix.upper()
-
-    text = re.sub(
+    return re.sub(
         r"\b([a-z]{1,3})(\d+[a-z0-9]*)\b",
-        fix_model_token,
+        lambda m: m.group(1).title() + m.group(2).upper(),
         text
     )
-
-    return text
 
 
 def build_comparison_ads(docs):
@@ -731,7 +687,7 @@ def main():
         "source": "Trustfolio MongoDB",
         "generated_from_live_mongodb": True,
         "trustfolio_backend_unchanged": True,
-        "engine": "daily_ad_engine_test_v5",
+        "engine": "daily_ad_engine_test_v6",
         "category": CATEGORY,
         "platforms_required": list(PLATFORMS),
         "rules": {
@@ -757,7 +713,7 @@ def main():
     )
 
     print("=" * 78)
-    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V5")
+    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V6")
     print("=" * 78)
     print("Eligible products:", len(docs))
     print("Platform counts  :", dict(counts))
