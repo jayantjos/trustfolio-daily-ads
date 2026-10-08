@@ -52,11 +52,30 @@ def build_manifest(data: dict, config: dict) -> dict:
         landing_url = category_url(category, config, ad_id, ad_type)
 
         products = []
-        for product in (ad.get("products") or []):
+        raw_products = ad.get("products") or []
+
+        # Budget/brand ads store products as a list.
+        # Price-comparison ads store products as a platform-keyed dict:
+        # {"amazon": {...}, "flipkart": {...}, "croma": {...}}.
+        if isinstance(raw_products, dict):
+            iterable = raw_products.items()
+        elif isinstance(raw_products, list):
+            iterable = ((None, product) for product in raw_products)
+        else:
+            iterable = ()
+
+        for platform_key, product in iterable:
+            if not isinstance(product, dict):
+                continue
+
+            product_copy = dict(product)
+
+            if platform_key:
+                product_copy["comparison_platform"] = platform_key
+
             # Current safe behavior: each product/card points to the
             # TrustFolio category landing page. Product-specific deep links
             # stay disabled until a real TrustFolio product route exists.
-            product_copy = dict(product)
             product_copy["click_url"] = landing_url
             product_copy["product_deep_link"] = None
             products.append(product_copy)
