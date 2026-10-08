@@ -89,7 +89,7 @@ def build_caption(ad, brand):
     else:
         body = (
             f"Explore selected products, prices and trusted shopping options "
-            f"on {brand['name']}.{price_line}"
+            f"on {brand['brand_name']}.{price_line}"
         )
 
     hashtags = [
