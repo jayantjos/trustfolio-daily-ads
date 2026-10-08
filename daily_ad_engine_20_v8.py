@@ -1203,7 +1203,7 @@ def product_payload(p):
             if p.get("average_rating") not in (None, "")
             else p.get("rating")
         ),
-        "image_url": p.get("main_image") or p.get("image") or "",
+        "image_url": p.get("main_image") or p.get("image") or p.get("image_url") or "",
         "product_url": p.get("product_url") or "",
         "platform": platform(p),
         "category": p.get("category") or "",
@@ -1326,6 +1326,7 @@ def load_docs(category):
         "rating": 1,
         "main_image": 1,
         "image": 1,
+        "image_url": 1,
         "product_url": 1,
         "platform": 1,
         "category": 1,
