@@ -68,26 +68,32 @@ def fit_text(draw, text, max_width, start_size, min_size=18, bold=False):
     return font(min_size, bold)
 
 
-def rounded(draw, xy, radius, fill, outline=None, width=1):
-    draw.rounded_rectangle(xy, radius=radius, fill=fill, outline=outline, width=width)
+def draw_card(img, draw, x, y, w, h, product, product_image):
+    draw.rounded_rectangle(
+        (x, y, x + w, y + h),
+        radius=24,
+        fill=WHITE,
+        outline=BORDER,
+        width=2,
+    )
 
+    image_x = x + 18
+    image_y = y + 18
+    image_w = w - 36
+    image_h = 185
 
-def draw_card(draw, x, y, w, h, product, image):
-    rounded(draw, (x, y, x + w, y + h), 24, WHITE, BORDER, 2)
+    draw.rounded_rectangle(
+        (image_x, image_y, image_x + image_w, image_y + image_h),
+        radius=18,
+        fill=(250, 251, 253),
+    )
+    img.paste(product_image, (image_x, image_y), product_image)
 
-    # Product image area
-    img_box = (x + 18, y + 18, w - 36, 185)
-    canvas = Image.new("RGBA", (img_box[2], img_box[3]), (255, 255, 255, 0))
-    canvas.alpha_composite(image, ((canvas.width - image.width) // 2, (canvas.height - image.height) // 2))
-    # mask into a white rectangle
-    draw.rounded_rectangle((x + 18, y + 18, x + w - 18, y + 203), 18, fill=(250, 251, 253))
-    base = ImageDraw.Draw(draw._image)
-    base.bitmap((x + 18, y + 18), canvas, fill=None)
-
-    title = product.get("title", "")
+    title = " ".join(str(product.get("title", "")).split())
     if len(title) > 48:
         title = title[:47].rstrip() + "…"
-    tf = fit_text(draw, title, w - 36, 22, 16, True)
+
+    tf = fit_text(draw, title, w - 36, 21, 16, True)
     draw.multiline_text(
         (x + 18, y + 220),
         title,
@@ -98,12 +104,18 @@ def draw_card(draw, x, y, w, h, product, image):
     )
 
     price = product.get("price_display", "")
-    pf = fit_text(draw, str(price), w - 36, 28, 20, True)
-    draw.text((x + 18, y + h - 78), str(price), font=pf, fill=ACCENT)
+    if price:
+        pf = fit_text(draw, str(price), w - 36, 28, 20, True)
+        draw.text((x + 18, y + h - 78), str(price), font=pf, fill=ACCENT)
 
     platform = product.get("platform", "")
     if platform:
-        draw.text((x + 18, y + h - 40), platform.title(), font=font(15), fill=MUTED)
+        draw.text(
+            (x + 18, y + h - 40),
+            str(platform).title(),
+            font=font(15),
+            fill=MUTED,
+        )
 
 
 def render(ad):
@@ -114,33 +126,27 @@ def render(ad):
     img = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
 
-    # Header / fixed branding
     draw.text((60, 48), "TrustFolio", font=font(38, True), fill=INK)
     draw.text((60, 95), "Compare • Save • Shop Smart", font=font(20), fill=MUTED)
+
+    try:
+        logo = Image.open(io.BytesIO(get_bytes(LOGO_URL))).convert("RGBA")
+        logo.thumbnail((150, 70), Image.Resampling.LANCZOS)
+        img.paste(logo, (W - 60 - logo.width, 48), logo)
+        draw = ImageDraw.Draw(img)
+    except Exception as e:
+        print(f"[WARN] logo failed: {e}")
 
     headline = ad.get("headline") or "Smart shopping made simple"
     hf = fit_text(draw, headline, W - 120, 42, 26, True)
     draw.text((60, 145), headline, font=hf, fill=INK)
-
-    # Fixed logo mark from the live TrustFolio site; fall back to text only.
-    try:
-        logo = Image.open(io.BytesIO(get_bytes(LOGO_URL))).convert("RGBA")
-        logo.thumbnail((150, 70), Image.Resampling.LANCZOS)
-        img.alpha_composite(logo, (W - 60 - logo.width, 48)) if img.mode == "RGBA" else img.paste(
-            logo, (W - 60 - logo.width, 48), logo
-        )
-        draw = ImageDraw.Draw(img)
-    except Exception as e:
-        print(f"[WARN] logo failed: {e}")
 
     products = (ad.get("image_ad") or {}).get("products", [])[:5]
     if not products:
         raise RuntimeError(f"{ad_id}: no products found in image_ad")
 
     card_w, card_h = 300, 395
-    gap = 30
     row_y = 235
-
     positions = [
         (60, row_y),
         (390, row_y),
@@ -151,13 +157,22 @@ def render(ad):
 
     for product, (x, y) in zip(products, positions):
         pimg = load_remote_image(product.get("image_url", ""), (264, 185))
-        draw_card(draw, x, y, card_w, card_h, product, pimg)
+        draw_card(img, draw, x, y, card_w, card_h, product, pimg)
 
     footer_y = 1115
     draw.line((60, footer_y, W - 60, footer_y), fill=BORDER, width=2)
-    cta = "Compare on TrustFolio"
-    draw.text((60, footer_y + 25), cta, font=font(28, True), fill=INK)
-    draw.text((60, footer_y + 67), "trustfolio.in", font=font(20, True), fill=ACCENT)
+    draw.text(
+        (60, footer_y + 25),
+        "Compare on TrustFolio",
+        font=font(28, True),
+        fill=INK,
+    )
+    draw.text(
+        (60, footer_y + 67),
+        "trustfolio.in",
+        font=font(20, True),
+        fill=ACCENT,
+    )
     draw.text(
         (W - 60, footer_y + 70),
         "Prices can change • Verify before checkout",
