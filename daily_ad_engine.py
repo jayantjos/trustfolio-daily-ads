@@ -37,7 +37,7 @@ GENERIC_MODEL_WORDS = {
 
 MODEL_SUFFIX_WORDS = {
     "fe", "pro", "plus", "max", "mini", "lite", "ultra",
-    "neo", "power", "edge", "prime", "play", "note"
+    "neo", "power", "edge", "prime", "play", "note", "se"
 }
 
 
@@ -957,7 +957,7 @@ def main():
         "source": "Trustfolio MongoDB",
         "generated_from_live_mongodb": True,
         "trustfolio_backend_unchanged": True,
-        "engine": "daily_ad_engine_test_v3",
+        "engine": "daily_ad_engine_test_v7",
         "category": CATEGORY,
         "platforms_required": list(PLATFORMS),
         "rules": {
@@ -983,7 +983,7 @@ def main():
     )
 
     print("=" * 78)
-    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V3")
+    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V7")
     print("=" * 78)
     print("Eligible products:", len(docs))
     print("Platform counts  :", dict(counts))
