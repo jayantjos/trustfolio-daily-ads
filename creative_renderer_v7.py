@@ -79,7 +79,7 @@ def render(payload_ad):
     renderer.OUT_DIR = OUT_DIR
     renderer.VERSION = "V7"
     renderer.render(adapted)
-    output = OUT_DIR / f"{adapted["ad_id"]}_premium_1080x1350.png"
+    output = OUT_DIR / f"{adapted['ad_id']}_premium_1080x1350.png"
     add_cursor(output)
     return adapted.get("ad_id", "")
 
