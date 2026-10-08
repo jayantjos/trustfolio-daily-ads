@@ -44,6 +44,8 @@ def get_bytes(url):
 
 
 def load_remote_image(url, box):
+    if not url:
+        raise ValueError("missing image_url in creative manifest")
     try:
         raw = get_bytes(url)
         img = Image.open(io.BytesIO(raw)).convert("RGBA")
@@ -54,8 +56,7 @@ def load_remote_image(url, box):
         canvas.alpha_composite(img, (x, y))
         return canvas
     except Exception as e:
-        print(f"[WARN] image failed: {url} -> {e}")
-        return Image.new("RGBA", box, (238, 242, 247, 255))
+        raise RuntimeError(f"product image download failed: {url} -> {e}") from e
 
 
 def fit_text(draw, text, max_width, start_size, min_size=18, bold=False):
