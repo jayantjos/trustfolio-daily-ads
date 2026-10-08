@@ -363,32 +363,73 @@ def normalize_capacity(value):
     return f"{amount:g}gb"
 
 
-def variant_signature(p):
+def variant_parts(p):
     """
-    Exact variant identity used only for cross-platform comparisons.
+    Return individually detectable variant fields.
 
-    A comparison is safe only when both RAM and storage are known.
+    Empty means the source did not expose that field clearly.
+    Missing information is treated as UNKNOWN, not as a mismatch.
     """
-    ram = normalize_capacity(spec_value(p, ("ram",)))
-    storage = normalize_capacity(
-        spec_value(p, ("storage", "rom"))
-    )
-
-    if not ram or not storage:
-        return None
-
-    return ram, storage
+    return {
+        "ram": normalize_capacity(spec_value(p, ("ram",))),
+        "storage": normalize_capacity(
+            spec_value(p, ("storage", "rom"))
+        ),
+    }
 
 
-def compatible_specs(a, b):
-    av = variant_signature(a)
-    bv = variant_signature(b)
+def variants_compatible(products_for_model):
+    """
+    Compare RAM/storage across a candidate cross-platform product set.
 
-    # For comparison ads, missing variant data is not safe.
-    if av is None or bv is None:
+    Rules:
+      - If a value is known on multiple platforms, every known value
+        must agree.
+      - Missing values are allowed.
+      - Storage must be known on at least two platforms so we have
+        meaningful evidence that the exact storage variant matches.
+      - If RAM is known on multiple platforms, it must also agree.
+    """
+    parts = [variant_parts(p) for p in products_for_model]
+
+    known_storage = [
+        x["storage"] for x in parts if x["storage"]
+    ]
+    known_ram = [
+        x["ram"] for x in parts if x["ram"]
+    ]
+
+    if len(known_storage) < 2:
         return False
 
-    return av == bv
+    if len(set(known_storage)) != 1:
+        return False
+
+    if known_ram and len(set(known_ram)) != 1:
+        return False
+
+    return True
+
+
+def inferred_variant(products_for_model):
+    """
+    Build the best available variant identity from agreeing source data.
+    """
+    parts = [variant_parts(p) for p in products_for_model]
+
+    storage = next(
+        (x["storage"] for x in parts if x["storage"]),
+        ""
+    )
+    ram = next(
+        (x["ram"] for x in parts if x["ram"]),
+        ""
+    )
+
+    return {
+        "ram": ram,
+        "storage": storage,
+    }
 
 
 def pretty_model(model):
@@ -695,117 +736,140 @@ def build_brand_ads(docs):
 
 def build_comparison_ads(docs):
     """
-    Cross-platform exact same-product / exact same-variant comparison.
+    Cross-platform same-product comparison with strict model matching
+    and conservative variant matching.
 
-    Strict rules:
-      1. Same normalized brand.
-      2. Same conservative model identity.
-      3. Exact RAM must match.
-      4. Exact storage must match.
-      5. All three platforms required.
-      6. Price spread must be <= MAX_COMPARISON_SPREAD_PCT.
-      7. Minimum savings must be >= MIN_COMPARISON_SAVING_PCT.
-
-    This intentionally rejects cases such as:
-      Redmi Note 14 Pro+ 5G vs Redmi Note 14 Pro 5G
-      iPhone 18 Pro 1TB vs iPhone 18 Pro 2TB
+    Important:
+      - Exact model identity is mandatory.
+      - Pro vs Pro+ remains different.
+      - If RAM/storage are known on multiple platforms, values must match.
+      - Missing RAM on one platform is allowed when the other platforms
+        establish the same RAM.
+      - Storage must be known and identical on at least two platforms.
+      - All three platforms are required.
     """
-    by_identity = defaultdict(lambda: defaultdict(list))
+    by_brand_model = defaultdict(lambda: defaultdict(list))
 
     for p in docs:
         b = normalize_brand(p)
         model = model_signature(p)
         pf = platform(p)
-        variant = variant_signature(p)
 
-        if (
-            b
-            and model
-            and variant is not None
-            and pf in PLATFORMS
-        ):
-            key = (b, model, variant)
-            by_identity[key][pf].append(p)
+        if b and model and pf in PLATFORMS:
+            by_brand_model[(b, model)][pf].append(p)
 
     candidates = []
 
-    for (b, model, variant), by_pf in by_identity.items():
+    for (b, model), by_pf in by_brand_model.items():
 
         if not all(pf in by_pf for pf in PLATFORMS):
             continue
 
-        # Pick the best listing on each platform for this exact
-        # brand + model + RAM + storage identity.
-        selected = {}
+        # Try candidate combinations because a platform can contain
+        # multiple variants of the same model.
+        best_combo = None
+        best_key = None
 
-        for pf in PLATFORMS:
-            selected[pf] = min(
-                by_pf[pf],
-                key=lambda x: (
-                    price(x),
-                    -rating_num(x),
-                )
-            )
+        for a in by_pf["amazon"]:
+            for f in by_pf["flipkart"]:
+                for c in by_pf["croma"]:
+
+                    combo = [a, f, c]
+
+                    if not variants_compatible(combo):
+                        continue
+
+                    prices = {
+                        "amazon": price(a),
+                        "flipkart": price(f),
+                        "croma": price(c),
+                    }
+
+                    if any(v <= 0 for v in prices.values()):
+                        continue
+
+                    low = min(prices.values())
+                    high = max(prices.values())
+
+                    spread_pct = ((high - low) / high) * 100
+
+                    if spread_pct > MAX_COMPARISON_SPREAD_PCT:
+                        continue
+
+                    saving = high - low
+                    saving_pct = (saving / high) * 100
+
+                    if saving_pct < MIN_COMPARISON_SAVING_PCT:
+                        continue
+
+                    variant = inferred_variant(combo)
+
+                    # Prefer:
+                    # 1. More complete RAM/storage evidence
+                    # 2. Better price saving
+                    # 3. Better average rating
+                    known_fields = sum(
+                        1
+                        for pf in PLATFORMS
+                        for key, value in variant_parts(
+                            {"brand": "", "title": ""}
+                        ).items()
+                        if False
+                    )
+
+                    completeness = sum(
+                        bool(variant_parts(x)["ram"])
+                        for x in combo
+                    ) + sum(
+                        bool(variant_parts(x)["storage"])
+                        for x in combo
+                    )
+
+                    avg_rating = sum(
+                        rating_num(x) for x in combo
+                    )
+
+                    key = (
+                        completeness,
+                        saving_pct,
+                        avg_rating,
+                    )
+
+                    if best_combo is None or key > best_key:
+                        best_combo = combo
+                        best_key = key
+
+        if best_combo is None:
+            continue
+
+        a, f, c = best_combo
 
         prices = {
-            pf: price(selected[pf])
-            for pf in PLATFORMS
+            "amazon": price(a),
+            "flipkart": price(f),
+            "croma": price(c),
         }
-
-        if any(v <= 0 for v in prices.values()):
-            continue
 
         low = min(prices.values())
         high = max(prices.values())
-
         spread_pct = ((high - low) / high) * 100
-
-        if spread_pct > MAX_COMPARISON_SPREAD_PCT:
-            continue
-
         saving = high - low
         saving_pct = (saving / high) * 100
-
-        if saving_pct < MIN_COMPARISON_SAVING_PCT:
-            continue
-
-        # Strong score because the identity itself is exact.
-        score = 1.0
+        variant = inferred_variant(best_combo)
 
         candidates.append({
-            "brand": brand(selected["amazon"]),
+            "brand": brand(a),
             "model": model,
-            "variant": {
-                "ram": variant[0],
-                "storage": variant[1],
-            },
-            "amazon": selected["amazon"],
-            "flipkart": selected["flipkart"],
-            "croma": selected["croma"],
+            "variant": variant,
+            "amazon": a,
+            "flipkart": f,
+            "croma": c,
             "prices": prices,
             "spread_pct": round(spread_pct, 2),
             "saving": round(saving, 2),
             "saving_pct": round(saving_pct, 2),
-            "score": score,
+            "score": 1.0,
         })
-
-    # Deduplicate by exact identity.
-    unique = {}
-
-    for item in candidates:
-        key = (
-            normalize_brand(item["amazon"]),
-            item["model"],
-            item["variant"]["ram"],
-            item["variant"]["storage"],
-        )
-
-        old = unique.get(key)
-
-        if old is None or item["saving_pct"] > old["saving_pct"]:
-            unique[key] = item
-
-    candidates = list(unique.values())
 
     candidates.sort(
         key=lambda x: (
@@ -826,17 +890,29 @@ def build_comparison_ads(docs):
 
         display_model = pretty_model(item["model"])
 
+        variant_parts_text = []
+        if item["variant"]["ram"]:
+            variant_parts_text.append(
+                item["variant"]["ram"].upper()
+            )
+        if item["variant"]["storage"]:
+            variant_parts_text.append(
+                item["variant"]["storage"].upper()
+            )
+
+        variant_text = " ".join(variant_parts_text)
+
+        headline = f"Compare {item['brand']} {display_model}"
+        if variant_text:
+            headline += f" {variant_text}"
+
         ads.append({
             "ad_type": "price_comparison",
             "category": CATEGORY,
             "brand": item["brand"],
             "model": item["model"],
             "variant": item["variant"],
-            "headline": (
-                f"Compare {item['brand']} {display_model} "
-                f"{item['variant']['ram'].upper()} "
-                f"{item['variant']['storage'].upper()}"
-            ),
+            "headline": headline,
             "platforms": list(PLATFORMS),
             "prices": item["prices"],
             "best_platform": min(
@@ -877,13 +953,13 @@ def main():
         "source": "Trustfolio MongoDB",
         "generated_from_live_mongodb": True,
         "trustfolio_backend_unchanged": True,
-        "engine": "daily_ad_engine_test_v3",
+        "engine": "daily_ad_engine_test_v4",
         "category": CATEGORY,
         "platforms_required": list(PLATFORMS),
         "rules": {
             "budget_ads": "unique models; minimum 2 platforms",
             "brand_ads": "safe brand; unique models; minimum 2 platforms",
-            "comparison_ads": "exact brand + model + RAM + storage; all 3 platforms; <=35% price spread",
+            "comparison_ads": "exact brand + model; matching known RAM/storage; storage verified on 2+ platforms; all 3 platforms; <=35% price spread",
         },
         "stats": {
             "eligible_products": len(docs),
@@ -903,7 +979,7 @@ def main():
     )
 
     print("=" * 78)
-    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V3")
+    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V4")
     print("=" * 78)
     print("Eligible products:", len(docs))
     print("Platform counts  :", dict(counts))
