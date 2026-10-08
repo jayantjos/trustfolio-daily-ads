@@ -108,6 +108,13 @@ def normalize_brand(p):
 
 
 def spec_value(p, names):
+    """
+    Return a normalized RAM/storage value.
+
+    The function uses structured specifications first and then title parsing.
+    For storage, titles such as "128 GB", "128GB Storage", and "2 TB"
+    are supported.
+    """
     specs = p.get("specifications") or {}
     normalized = {
         clean(k): clean(v)
@@ -115,79 +122,126 @@ def spec_value(p, names):
         if v not in (None, "")
     }
 
-    for wanted in names:
-        wanted = clean(wanted)
+    wanted_clean = [clean(x) for x in names]
+    is_ram = "ram" in wanted_clean
+
+    for wanted in wanted_clean:
         for key, value in normalized.items():
             if key == wanted or wanted in key:
-                return value
+                return clean(value)
 
-    t = clean(title(p))
+    t = title(p).lower()
 
-    if "ram" in wanted:
-        m = re.search(r"\b(\d{1,3})\s*gb\s*ram\b", t)
-        if m:
-            return m.group(1) + "gb"
-    else:
-        m = re.search(r"\b(\d{1,4})\s*(gb|tb)\s*(?:storage|rom)\b", t)
+    if is_ram:
+        m = re.search(r"\b(\d{1,3})\s*(gb|tb)\s*ram\b", t)
         if m:
             return m.group(1) + m.group(2)
+
+        return ""
+
+    # Explicit storage / ROM wording.
+    m = re.search(
+        r"\b(\d{1,4})\s*(gb|tb)\s*(?:storage|rom)\b",
+        t
+    )
+    if m:
+        return m.group(1) + m.group(2)
+
+    # Otherwise use standalone GB/TB capacities, excluding the RAM
+    # capacity when an explicit RAM value exists.
+    capacities = list(
+        re.finditer(r"\b(\d{1,4})\s*(gb|tb)\b", t)
+    )
+
+    ram_match = re.search(
+        r"\b(\d{1,3})\s*(gb|tb)\s*ram\b",
+        t
+    )
+
+    for m in capacities:
+        value = m.group(1) + m.group(2)
+
+        if ram_match and m.start() == ram_match.start():
+            continue
+
+        return value
 
     return ""
 
 
 def model_signature(p):
     """
-    Extracts an actual smartphone model identifier.
+    Extract a conservative smartphone model identity.
 
-    Strong examples:
-      S25 FE -> s25 fe
-      K14x   -> k14x
-      16T    -> 16t
-      2a     -> 2a
-      iPhone 15 -> 15
+    Examples:
+      Samsung Galaxy A37 5G       -> galaxy a37
+      Apple iPhone 18 Pro         -> iphone 18 pro
+      Redmi Note 14 Pro+ 5G       -> note 14 pro plus
+      OnePlus 13R                 -> 13r
     """
-
     raw = title(p).lower()
     raw = raw.split("|")[0]
+    raw = raw.replace("+", " plus ")
     raw = re.sub(r"[^a-z0-9]+", " ", raw)
     tokens = raw.split()
+
+    brand_tokens = set(clean(brand(p)).split())
 
     candidates = []
 
     for i, token in enumerate(tokens):
-        if token in GENERIC_MODEL_WORDS:
+        if token in GENERIC_MODEL_WORDS or token in brand_tokens:
             continue
 
-        # Alphanumeric model code containing letters + digits.
-        if re.fullmatch(r"(?=.*[a-z])(?=.*\d)[a-z0-9]{2,10}", token):
-            candidates.append(token)
+        is_alnum_model = re.fullmatch(
+            r"(?=.*[a-z])(?=.*\d)[a-z0-9]{2,10}",
+            token
+        )
 
-            if i + 1 < len(tokens):
-                nxt = tokens[i + 1]
-                if nxt in MODEL_SUFFIX_WORDS:
-                    candidates.append(nxt)
+        is_numeric_model = re.fullmatch(r"\d{2,4}", token)
+
+        if not (is_alnum_model or is_numeric_model):
             continue
 
-        # Pure model number such as iPhone 15 / S24.
-        if re.fullmatch(r"\d{2,4}", token):
-            candidates.append(token)
+        part = []
 
-            if i + 1 < len(tokens):
-                nxt = tokens[i + 1]
-                if nxt in MODEL_SUFFIX_WORDS:
-                    candidates.append(nxt)
+        # Keep one useful family word immediately before the model.
+        if i > 0:
+            prev = tokens[i - 1]
+            if prev in {"galaxy", "iphone", "note", "nord", "pixel"}:
+                part.append(prev)
+
+        part.append(token)
+
+        # Keep consecutive model suffixes such as:
+        # pro, plus -> "pro plus"
+        j = i + 1
+        while j < len(tokens) and tokens[j] in MODEL_SUFFIX_WORDS:
+            part.append(tokens[j])
+            j += 1
+
+        candidates.append(part)
 
     if candidates:
-        return " ".join(dict.fromkeys(candidates[:3]))
+        # Prefer the longest useful model phrase.
+        best = max(
+            candidates,
+            key=lambda x: (
+                len(x),
+                sum(
+                    1 for t in x
+                    if re.search(r"\d", t)
+                )
+            )
+        )
+        return " ".join(dict.fromkeys(best))
 
-    # Fallback for unusual products with no numeric model.
-    brand_tokens = set(clean(brand(p)).split())
+    # Conservative fallback for unusual titles.
     fallback = [
         t for t in tokens
         if t not in GENERIC_MODEL_WORDS
         and t not in brand_tokens
     ]
-
     return " ".join(fallback[:3])
 
 
@@ -287,15 +341,82 @@ def shared_model_strength(a, b):
 
     return min(score, 1.0), common
 
+def normalize_capacity(value):
+    """
+    Normalize capacities to GB so 1024GB and 1TB compare consistently.
+    """
+    v = clean(value)
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)(gb|tb)", v)
+
+    if not m:
+        return ""
+
+    amount = float(m.group(1))
+    unit = m.group(2)
+
+    if unit == "tb":
+        amount *= 1024
+
+    if amount.is_integer():
+        return str(int(amount)) + "gb"
+
+    return f"{amount:g}gb"
+
+
+def variant_signature(p):
+    """
+    Exact variant identity used only for cross-platform comparisons.
+
+    A comparison is safe only when both RAM and storage are known.
+    """
+    ram = normalize_capacity(spec_value(p, ("ram",)))
+    storage = normalize_capacity(
+        spec_value(p, ("storage", "rom"))
+    )
+
+    if not ram or not storage:
+        return None
+
+    return ram, storage
+
+
 def compatible_specs(a, b):
-    for wanted in (("ram",), ("storage", "rom")):
-        av = spec_value(a, wanted)
-        bv = spec_value(b, wanted)
+    av = variant_signature(a)
+    bv = variant_signature(b)
 
-        if av and bv and av != bv:
-            return False
+    # For comparison ads, missing variant data is not safe.
+    if av is None or bv is None:
+        return False
 
-    return True
+    return av == bv
+
+
+def pretty_model(model):
+    """
+    Human-friendly model text for the ad headline.
+    """
+    text = str(model or "").strip()
+
+    replacements = [
+        (r"\bpro plus\b", "Pro+"),
+        (r"\bplus\b", "+"),
+        (r"\bfe\b", "FE"),
+        (r"\bultra\b", "Ultra"),
+        (r"\bmax\b", "Max"),
+        (r"\bmini\b", "Mini"),
+        (r"\blite\b", "Lite"),
+        (r"\bpro\b", "Pro"),
+        (r"\bnote\b", "Note"),
+        (r"\bgalaxy\b", "Galaxy"),
+        (r"\biphone\b", "iPhone"),
+        (r"\bnord\b", "Nord"),
+        (r"\bpixel\b", "Pixel"),
+    ]
+
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text, flags=re.I)
+
+    return text
 
 
 def product_payload(p):
@@ -574,123 +695,120 @@ def build_brand_ads(docs):
 
 def build_comparison_ads(docs):
     """
-    Cross-platform same-product comparison.
+    Cross-platform exact same-product / exact same-variant comparison.
 
-    Strategy:
+    Strict rules:
       1. Same normalized brand.
-      2. Strong shared model/title tokens.
-      3. RAM/storage compatibility when available.
-      4. All three platforms required.
-      5. Reject suspiciously large price spreads (>35%).
-    """
+      2. Same conservative model identity.
+      3. Exact RAM must match.
+      4. Exact storage must match.
+      5. All three platforms required.
+      6. Price spread must be <= MAX_COMPARISON_SPREAD_PCT.
+      7. Minimum savings must be >= MIN_COMPARISON_SAVING_PCT.
 
-    by_brand = defaultdict(lambda: defaultdict(list))
+    This intentionally rejects cases such as:
+      Redmi Note 14 Pro+ 5G vs Redmi Note 14 Pro 5G
+      iPhone 18 Pro 1TB vs iPhone 18 Pro 2TB
+    """
+    by_identity = defaultdict(lambda: defaultdict(list))
 
     for p in docs:
         b = normalize_brand(p)
+        model = model_signature(p)
         pf = platform(p)
+        variant = variant_signature(p)
 
-        if b and pf in PLATFORMS:
-            by_brand[b][pf].append(p)
+        if (
+            b
+            and model
+            and variant is not None
+            and pf in PLATFORMS
+        ):
+            key = (b, model, variant)
+            by_identity[key][pf].append(p)
 
     candidates = []
 
-    for b, by_pf in by_brand.items():
+    for (b, model, variant), by_pf in by_identity.items():
 
         if not all(pf in by_pf for pf in PLATFORMS):
             continue
 
-        amazon_items = by_pf["amazon"]
+        # Pick the best listing on each platform for this exact
+        # brand + model + RAM + storage identity.
+        selected = {}
 
-        for a in amazon_items:
+        for pf in PLATFORMS:
+            selected[pf] = min(
+                by_pf[pf],
+                key=lambda x: (
+                    price(x),
+                    -rating_num(x),
+                )
+            )
 
-            best_f = None
-            best_c = None
-            best_score_f = 0.0
-            best_score_c = 0.0
+        prices = {
+            pf: price(selected[pf])
+            for pf in PLATFORMS
+        }
 
-            for f in by_pf["flipkart"]:
-                if not compatible_specs(a, f):
-                    continue
+        if any(v <= 0 for v in prices.values()):
+            continue
 
-                score, common = shared_model_strength(a, f)
+        low = min(prices.values())
+        high = max(prices.values())
 
-                if score > best_score_f:
-                    best_score_f = score
-                    best_f = f
+        spread_pct = ((high - low) / high) * 100
 
-            for c in by_pf["croma"]:
-                if not compatible_specs(a, c):
-                    continue
+        if spread_pct > MAX_COMPARISON_SPREAD_PCT:
+            continue
 
-                score, common = shared_model_strength(a, c)
+        saving = high - low
+        saving_pct = (saving / high) * 100
 
-                if score > best_score_c:
-                    best_score_c = score
-                    best_c = c
+        if saving_pct < MIN_COMPARISON_SAVING_PCT:
+            continue
 
-            if not best_f or not best_c:
-                continue
+        # Strong score because the identity itself is exact.
+        score = 1.0
 
-            # Require a genuine model signal on both comparisons.
-            if best_score_f < 0.45 or best_score_c < 0.45:
-                continue
+        candidates.append({
+            "brand": brand(selected["amazon"]),
+            "model": model,
+            "variant": {
+                "ram": variant[0],
+                "storage": variant[1],
+            },
+            "amazon": selected["amazon"],
+            "flipkart": selected["flipkart"],
+            "croma": selected["croma"],
+            "prices": prices,
+            "spread_pct": round(spread_pct, 2),
+            "saving": round(saving, 2),
+            "saving_pct": round(saving_pct, 2),
+            "score": score,
+        })
 
-            prices = {
-                "amazon": price(a),
-                "flipkart": price(best_f),
-                "croma": price(best_c),
-            }
-
-            if any(v <= 0 for v in prices.values()):
-                continue
-
-            low = min(prices.values())
-            high = max(prices.values())
-
-            spread_pct = ((high - low) / high) * 100
-
-            # Reject suspicious cross-product matches.
-            if spread_pct > MAX_COMPARISON_SPREAD_PCT:
-                continue
-
-            saving = high - low
-            saving_pct = (saving / high) * 100
-
-            if saving_pct < MIN_COMPARISON_SAVING_PCT:
-                continue
-
-            candidates.append({
-                "brand": brand(a),
-                "model": model_signature(a),
-                "amazon": a,
-                "flipkart": best_f,
-                "croma": best_c,
-                "prices": prices,
-                "spread_pct": round(spread_pct, 2),
-                "saving": round(saving, 2),
-                "saving_pct": round(saving_pct, 2),
-                "score": round(min(best_score_f, best_score_c), 3),
-            })
-
-    # Deduplicate by product IDs.
+    # Deduplicate by exact identity.
     unique = {}
+
     for item in candidates:
         key = (
             normalize_brand(item["amazon"]),
-            model_signature(item["amazon"]),
+            item["model"],
+            item["variant"]["ram"],
+            item["variant"]["storage"],
         )
 
         old = unique.get(key)
 
-        if old is None or item["score"] > old["score"]:
+        if old is None or item["saving_pct"] > old["saving_pct"]:
             unique[key] = item
 
     candidates = list(unique.values())
 
     candidates.sort(
         key=lambda x: (
-            x["score"],
             x["saving_pct"],
             x["saving"],
         ),
@@ -700,19 +818,25 @@ def build_comparison_ads(docs):
     ads = []
 
     for item in candidates[:MAX_COMPARISON_ADS]:
-
         selected = {
             "amazon": item["amazon"],
             "flipkart": item["flipkart"],
             "croma": item["croma"],
         }
 
+        display_model = pretty_model(item["model"])
+
         ads.append({
             "ad_type": "price_comparison",
             "category": CATEGORY,
             "brand": item["brand"],
             "model": item["model"],
-            "headline": f"Compare {item['brand']} {item['model']}",
+            "variant": item["variant"],
+            "headline": (
+                f"Compare {item['brand']} {display_model} "
+                f"{item['variant']['ram'].upper()} "
+                f"{item['variant']['storage'].upper()}"
+            ),
             "platforms": list(PLATFORMS),
             "prices": item["prices"],
             "best_platform": min(
@@ -753,13 +877,13 @@ def main():
         "source": "Trustfolio MongoDB",
         "generated_from_live_mongodb": True,
         "trustfolio_backend_unchanged": True,
-        "engine": "daily_ad_engine_test_v2",
+        "engine": "daily_ad_engine_test_v3",
         "category": CATEGORY,
         "platforms_required": list(PLATFORMS),
         "rules": {
             "budget_ads": "unique models; minimum 2 platforms",
             "brand_ads": "safe brand; unique models; minimum 2 platforms",
-            "comparison_ads": "same model; all 3 platforms; spec compatibility; <=35% price spread",
+            "comparison_ads": "exact brand + model + RAM + storage; all 3 platforms; <=35% price spread",
         },
         "stats": {
             "eligible_products": len(docs),
@@ -779,7 +903,7 @@ def main():
     )
 
     print("=" * 78)
-    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V2")
+    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V3")
     print("=" * 78)
     print("Eligible products:", len(docs))
     print("Platform counts  :", dict(counts))
