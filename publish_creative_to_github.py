@@ -1,26 +1,31 @@
 #!/usr/bin/env python3
 """
-Copy generated TrustFolio creatives from ~/new_scraper into the dedicated
-GitHub bridge repo ~/daily_ads_git and push them to origin/main.
+Publish TrustFolio metadata/manifests to GitHub.
 
-This script does NOT modify the TrustFolio Node backend.
-It is intentionally limited to generated creative files and metadata.
+Generated media files are intentionally NOT copied into GitHub.
+They are served from the public media host at https://media.trustfolio.in.
+This prevents the daily Git checkout from consuming unnecessary disk space.
 """
 
-import argparse
 import json
-import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
 NEW_SCRAPER = Path.home() / "new_scraper"
 GIT_REPO = Path.home() / "daily_ads_git"
-DEFAULT_SOURCE = NEW_SCRAPER / "ads" / "generated_creatives"
-DEFAULT_DEST = GIT_REPO / "generated_creatives"
+ADS = NEW_SCRAPER / "ads"
+
+FILES = [
+    "daily_ads_20_categories_v8.json",
+    "creative_ad_manifest_v1.json",
+    "creative_generation_manifest_v1.json",
+    "social_post_manifest_v1.json",
+    "public_media_manifest_v1.json",
+]
 
 
-def run(cmd, cwd=None):
+def run(cmd, cwd=None, check=True):
     print("$", " ".join(str(x) for x in cmd))
     p = subprocess.run(
         [str(x) for x in cmd],
@@ -33,92 +38,71 @@ def run(cmd, cwd=None):
     if p.returncode != 0:
         if p.stderr:
             print(p.stderr.rstrip())
-        raise SystemExit(p.returncode)
-    return p.stdout
-
-
-def copy_tree(source: Path, dest: Path):
-    if not source.exists():
-        raise SystemExit(f"Source does not exist: {source}")
-
-    copied = []
-    for path in source.rglob("*"):
-        if not path.is_file():
-            continue
-
-        rel = path.relative_to(source)
-        target = dest / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target)
-        copied.append(str(rel))
-
-    return copied
-
-
-def write_manifest(dest: Path, copied):
-    manifest = {
-        "version": "1.0",
-        "generated_at": datetime.now().astimezone().isoformat(),
-        "source": str(DEFAULT_SOURCE),
-        "files": copied,
-        "repository": "jayantjos/trustfolio-daily-ads",
-        "branch": "main",
-        "purpose": "TrustFolio creative media bridge",
-    }
-
-    path = dest / "creative_publish_manifest.json"
-    path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    return path
+        if check:
+            raise SystemExit(p.returncode)
+    return p
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--source",
-        default=str(DEFAULT_SOURCE),
-        help="Generated creatives directory on the server",
-    )
-    parser.add_argument(
-        "--dest",
-        default=str(DEFAULT_DEST),
-        help="Destination directory inside the GitHub working tree",
-    )
-    parser.add_argument(
-        "--no-push",
-        action="store_true",
-        help="Copy and commit locally, but do not push",
-    )
-    args = parser.parse_args()
-
-    source = Path(args.source).expanduser().resolve()
-    dest = Path(args.dest).expanduser().resolve()
-
     if not GIT_REPO.exists():
         raise SystemExit(f"Git repository not found: {GIT_REPO}")
 
     print("=" * 88)
-    print("TRUSTFOLIO CREATIVE GITHUB BRIDGE")
+    print("TRUSTFOLIO GITHUB METADATA BRIDGE V2")
     print("=" * 88)
-    print("Source:", source)
-    print("Dest  :", dest)
-    print()
 
     run(["git", "pull", "--ff-only", "origin", "main"], cwd=GIT_REPO)
 
-    copied = copy_tree(source, dest)
-    if not copied:
-        raise SystemExit("No creative files found to publish.")
+    # Remove historical binary creatives from the Git working tree.
+    tracked_media = run(
+        ["git", "ls-files", "generated_creatives"],
+        cwd=GIT_REPO,
+    ).stdout.strip()
 
-    manifest = write_manifest(GIT_REPO, copied)
+    if tracked_media:
+        run(["git", "rm", "-r", "generated_creatives"], cwd=GIT_REPO)
 
-    print()
-    print("Copied files:", len(copied))
-    print("Manifest    :", manifest)
+    dest = GIT_REPO / "manifests"
+    dest.mkdir(parents=True, exist_ok=True)
 
-    run(["git", "add", "generated_creatives", "creative_publish_manifest.json"], cwd=GIT_REPO)
+    published = []
+    missing = []
+
+    for name in FILES:
+        src = ADS / name
+        if not src.exists():
+            missing.append(name)
+            continue
+
+        target = dest / name
+        target.write_bytes(src.read_bytes())
+        published.append(name)
+
+    if missing:
+        raise SystemExit(
+            "Missing required manifests: " + ", ".join(missing)
+        )
+
+    manifest = {
+        "version": "2.0",
+        "generated_at": datetime.now().astimezone().isoformat(),
+        "repository": "jayantjos/trustfolio-daily-ads",
+        "branch": "main",
+        "purpose": "TrustFolio daily automation metadata bridge",
+        "media_host": "https://media.trustfolio.in",
+        "media_files_in_git": False,
+        "published_files": published,
+    }
+
+    (GIT_REPO / "creative_publish_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    run(
+        ["git", "add", "manifests", "creative_publish_manifest.json"],
+        cwd=GIT_REPO,
+    )
 
     status = subprocess.run(
         ["git", "status", "--porcelain"],
@@ -134,20 +118,18 @@ def main():
 
     stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z")
     run(
-        ["git", "commit", "-m", f"Publish TrustFolio creatives {stamp}"],
+        ["git", "commit", "-m", f"Publish TrustFolio manifests {stamp}"],
         cwd=GIT_REPO,
     )
-
-    if not args.no_push:
-        run(["git", "push", "origin", "main"], cwd=GIT_REPO)
+    run(["git", "push", "origin", "main"], cwd=GIT_REPO)
 
     print()
     print("=" * 88)
     print("PUBLISH COMPLETE")
     print("=" * 88)
-    print("Files pushed:", len(copied))
-    print("GitHub repo : github.com/jayantjos/trustfolio-daily-ads")
-    print("Branch      : main")
+    print("Manifests pushed:", len(published))
+    print("Media in GitHub :", "NO")
+    print("Media host      :", "https://media.trustfolio.in")
     print("=" * 88)
 
 
