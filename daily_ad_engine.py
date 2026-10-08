@@ -111,7 +111,10 @@ def extract_capacities(value):
     text = clean(value)
     return [
         amount + unit
-        for amount, unit in re.findall(r"\b(\d{1,4})\s*(gb|tb)\b", text)
+        for amount, unit in re.findall(
+            r"\b(\d{1,4})\s*(gb|tb)\b",
+            text
+        )
     ]
 
 
@@ -124,6 +127,7 @@ def spec_value(p, names):
       6+128GB
       6GB+128GB
       6/128GB
+      8GB RAM + 128GB
     """
     specs = p.get("specifications") or {}
     normalized = {
@@ -141,7 +145,7 @@ def spec_value(p, names):
                 caps = extract_capacities(value)
                 if caps:
                     return caps[0] if is_ram else caps[-1]
-                return clean(value)
+                return ""
 
     t = title(p).lower()
 
@@ -153,9 +157,21 @@ def spec_value(p, names):
 
     if is_ram:
         if combined:
-            return combined.group(1) + (combined.group(2) or combined.group(4))
+            return combined.group(1) + (
+                combined.group(2) or combined.group(4)
+            )
 
-        m = re.search(r"\b(\d{1,3})\s*(gb|tb)\s*ram\b", t)
+        m = re.search(
+            r"\b(\d{1,3})\s*(gb|tb)\s*ram\b",
+            t
+        )
+        if m:
+            return m.group(1) + m.group(2)
+
+        m = re.search(
+            r"\bram\s*(\d{1,3})\s*(gb|tb)\b",
+            t
+        )
         if m:
             return m.group(1) + m.group(2)
 
@@ -172,7 +188,10 @@ def spec_value(p, names):
         return combined.group(3) + combined.group(4)
 
     capacities = extract_capacities(t)
-    ram_match = re.search(r"\b(\d{1,3})\s*(gb|tb)\s*ram\b", t)
+    ram_match = re.search(
+        r"\b(\d{1,3})\s*(gb|tb)\s*ram\b",
+        t
+    )
 
     for capacity in capacities:
         if ram_match:
@@ -367,9 +386,8 @@ def normalize_capacity(value):
         return ""
 
     amount = float(m.group(1))
-    unit = m.group(2)
 
-    if unit == "tb":
+    if m.group(2) == "tb":
         amount *= 1024
 
     if amount.is_integer():
@@ -379,12 +397,6 @@ def normalize_capacity(value):
 
 
 def variant_parts(p):
-    """
-    Return individually detectable variant fields.
-
-    Empty means the source did not expose that field clearly.
-    Missing information is treated as UNKNOWN, not as a mismatch.
-    """
     return {
         "ram": normalize_capacity(spec_value(p, ("ram",))),
         "storage": normalize_capacity(
@@ -395,23 +407,29 @@ def variant_parts(p):
 
 def variants_compatible(products_for_model):
     """
-    Compare RAM/storage across a candidate cross-platform product set.
+    Conservative exact-variant validation.
 
-    Rules:
-      - If a value is known on multiple platforms, every known value
-        must agree.
-      - Missing values are allowed.
-      - Storage must be known on at least two platforms so we have
-        meaningful evidence that the exact storage variant matches.
-      - If RAM is known on multiple platforms, it must also agree.
+    Storage:
+      - must be known on at least 2 platforms
+      - all known storage values must match
+
+    RAM:
+      - if any RAM is exposed, it must be known on at least 2 platforms
+      - all known RAM values must match
+
+    This deliberately rejects uncertain variants rather than risking
+    a false comparison ad.
     """
     parts = [variant_parts(p) for p in products_for_model]
 
     known_storage = [
-        x["storage"] for x in parts if x["storage"]
+        x["storage"] for x in parts
+        if x["storage"]
     ]
+
     known_ram = [
-        x["ram"] for x in parts if x["ram"]
+        x["ram"] for x in parts
+        if x["ram"]
     ]
 
     if len(known_storage) < 2:
@@ -420,16 +438,17 @@ def variants_compatible(products_for_model):
     if len(set(known_storage)) != 1:
         return False
 
-    if known_ram and len(set(known_ram)) != 1:
-        return False
+    if known_ram:
+        if len(known_ram) < 2:
+            return False
+
+        if len(set(known_ram)) != 1:
+            return False
 
     return True
 
 
 def inferred_variant(products_for_model):
-    """
-    Build the best available variant identity from agreeing source data.
-    """
     parts = [variant_parts(p) for p in products_for_model]
 
     storage = next(
@@ -477,19 +496,292 @@ def pretty_model(model):
     )
 
 
+def product_payload(p):
+    return {
+        "product_id": str(
+            p.get("product_id")
+            or p.get("id")
+            or p.get("asin")
+            or p.get("_id")
+            or p.get("product_url")
+            or ""
+        ),
+        "title": title(p),
+        "brand": brand(p),
+        "price_inr": round(price(p), 2),
+        "rating": (
+            p.get("average_rating")
+            if p.get("average_rating") not in (None, "")
+            else p.get("rating")
+        ),
+        "image_url": p.get("main_image") or p.get("image") or "",
+        "product_url": p.get("product_url") or "",
+        "platform": platform(p),
+        "category": CATEGORY,
+        "specifications": p.get("specifications") or {},
+        "model_signature": model_signature(p),
+    }
+
+
+def choose_model_groups(candidates, limit=PRODUCTS_PER_AD):
+    """
+    Picks distinct model groups, while maximizing platform coverage.
+    """
+
+    groups = defaultdict(list)
+
+    for p in candidates:
+        key = (
+            model_signature(p),
+            spec_value(p, ("ram",)),
+            spec_value(p, ("storage", "rom")),
+        )
+        if key[0]:
+            groups[key].append(p)
+
+    group_items = list(groups.items())
+
+    # First prefer groups that exist on more platforms.
+    group_items.sort(
+        key=lambda kv: (
+            len({platform(x) for x in kv[1]}),
+            max(rating_num(x) for x in kv[1]),
+            -min(price(x) for x in kv[1]),
+        ),
+        reverse=True,
+    )
+
+    selected = []
+    used_platforms = set()
+
+    # Pass 1: get platform coverage.
+    for _, items in group_items:
+        if len(selected) >= limit:
+            break
+
+        available = sorted(
+            items,
+            key=lambda x: (
+                platform(x) in used_platforms,
+                -rating_num(x),
+                price(x),
+            )
+        )
+
+        pick = available[0]
+        selected.append(pick)
+        used_platforms.add(platform(pick))
+
+    # Pass 2: additional unique models.
+    return selected[:limit]
+
+
+def all_platforms(items):
+    return {platform(x) for x in items}
+
+
+def has_min_platforms(items, minimum=MIN_PLATFORMS_FOR_RECOMMENDATION):
+    return len(all_platforms(items)) >= minimum
+
+
+def load_docs():
+    query = {
+        "category": CATEGORY,
+        "price_ready": True,
+        "availability": "available",
+        "platform": {"$in": list(PLATFORMS)},
+    }
+
+    projection = {
+        "product_id": 1,
+        "id": 1,
+        "asin": 1,
+        "_id": 1,
+        "title": 1,
+        "brand": 1,
+        "price": 1,
+        "price_inr": 1,
+        "average_rating": 1,
+        "rating": 1,
+        "main_image": 1,
+        "image": 1,
+        "product_url": 1,
+        "platform": 1,
+        "category": 1,
+        "specifications": 1,
+        "price_ready": 1,
+        "availability": 1,
+    }
+
+    raw = list(products.find(query, projection).limit(MONGO_LIMIT))
+    return [x for x in raw if valid(x)]
+
+
+def budget_targets():
+    # Useful consumer-facing budget bands.
+    # We only keep bands for which at least 2 platforms have
+    # eligible products under the budget.
+    return [10000, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000]
+
+
+def build_budget_ads(docs):
+    ads = []
+
+    for budget in budget_targets():
+
+        candidates = [
+            x for x in docs
+            if price(x) <= budget
+        ]
+
+        candidates.sort(
+            key=lambda x: (
+                abs(price(x) - budget),
+                -rating_num(x),
+            )
+        )
+
+        selected = choose_model_groups(candidates)
+
+        if len(selected) < 3:
+            continue
+
+        if not has_min_platforms(selected):
+            continue
+
+        # Prefer 3 platforms; 2 is acceptable when data doesn't
+        # provide all three.
+        ads.append({
+            "ad_type": "budget_recommendation",
+            "category": CATEGORY,
+            "headline": f"Best Smartphones Under ₹{budget:,}",
+            "budget_inr": budget,
+            "platforms": sorted(all_platforms(selected)),
+            "products": [product_payload(x) for x in selected],
+        })
+
+        if len(ads) >= MAX_BUDGET_ADS:
+            break
+
+    return ads
+
+
+def safe_brand(b):
+    b = clean(b)
+    return bool(
+        b
+        and b not in GENERIC_BRANDS
+        and len(b) >= 2
+        and not re.fullmatch(r"[\d\s.+-]+", b)
+    )
+
+
+def leading_brand(p):
+    b = normalize_brand(p)
+    t = clean(title(p))
+    return bool(b and t and (t == b or t.startswith(b + " ")))
+
+
+def build_brand_ads(docs):
+    brand_docs = defaultdict(list)
+
+    for p in docs:
+        b = normalize_brand(p)
+        if safe_brand(b) and leading_brand(p):
+            brand_docs[b].append(p)
+
+    brand_candidates = []
+
+    for b, items in brand_docs.items():
+
+        groups = defaultdict(list)
+
+        for p in items:
+            key = (
+                model_signature(p),
+                spec_value(p, ("ram",)),
+                spec_value(p, ("storage", "rom")),
+            )
+
+            if key[0]:
+                groups[key].append(p)
+
+        if len(groups) < 3:
+            continue
+
+        pfs = {platform(x) for x in items}
+
+        if len(pfs) < 2:
+            continue
+
+        brand_candidates.append((b, items, groups))
+
+    brand_candidates.sort(
+        key=lambda x: (
+            len(x[2]),
+            len({platform(p) for p in x[1]}),
+        ),
+        reverse=True,
+    )
+
+    ads = []
+
+    for b, items, groups in brand_candidates:
+
+        # Target around the median brand price.
+        all_prices = sorted(price(x) for x in items)
+        target = all_prices[len(all_prices) // 2]
+
+        candidates = [
+            x for x in items
+            if price(x) <= target * 1.10
+        ]
+
+        candidates.sort(
+            key=lambda x: (
+                abs(price(x) - target),
+                -rating_num(x),
+            )
+        )
+
+        selected = choose_model_groups(candidates)
+
+        if len(selected) < 3:
+            continue
+
+        if not has_min_platforms(selected):
+            continue
+
+        display_brand = brand(selected[0]) or b.title()
+
+        ads.append({
+            "ad_type": "brand_recommendation",
+            "category": CATEGORY,
+            "brand": display_brand,
+            "headline": f"Best {display_brand} Smartphones Under ₹{round(target):,}",
+            "budget_inr": round(target),
+            "platforms": sorted(all_platforms(selected)),
+            "products": [product_payload(x) for x in selected],
+        })
+
+        if len(ads) >= MAX_BRAND_ADS:
+            break
+
+    return ads
+
+
 def build_comparison_ads(docs):
     """
-    Cross-platform same-product comparison with strict model matching
-    and conservative variant matching.
+    Cross-platform same-product comparison.
 
-    Important:
-      - Exact model identity is mandatory.
-      - Pro vs Pro+ remains different.
-      - If RAM/storage are known on multiple platforms, values must match.
-      - Missing RAM on one platform is allowed when the other platforms
-        establish the same RAM.
-      - Storage must be known and identical on at least two platforms.
-      - All three platforms are required.
+    Required:
+      - same normalized brand
+      - same conservative model identity
+      - same storage, verified on at least 2 platforms
+      - if RAM is exposed, same RAM verified on at least 2 platforms
+      - all 3 platforms
+      - price spread <= MAX_COMPARISON_SPREAD_PCT
+      - saving >= MIN_COMPARISON_SAVING_PCT
     """
     by_brand_model = defaultdict(lambda: defaultdict(list))
 
@@ -508,16 +800,14 @@ def build_comparison_ads(docs):
         if not all(pf in by_pf for pf in PLATFORMS):
             continue
 
-        # Try candidate combinations because a platform can contain
-        # multiple variants of the same model.
         best_combo = None
         best_key = None
 
         for a in by_pf["amazon"]:
             for f in by_pf["flipkart"]:
-                for c in by_pf["croma"]:
+                for croma_item in by_pf["croma"]:
 
-                    combo = [a, f, c]
+                    combo = [a, f, croma_item]
 
                     if not variants_compatible(combo):
                         continue
@@ -525,7 +815,7 @@ def build_comparison_ads(docs):
                     prices = {
                         "amazon": price(a),
                         "flipkart": price(f),
-                        "croma": price(c),
+                        "croma": price(croma_item),
                     }
 
                     if any(v <= 0 for v in prices.values()):
@@ -545,23 +835,12 @@ def build_comparison_ads(docs):
                     if saving_pct < MIN_COMPARISON_SAVING_PCT:
                         continue
 
-                    variant = inferred_variant(combo)
-
-                    # Prefer:
-                    # 1. More complete RAM/storage evidence
-                    # 2. Better price saving
-                    # 3. Better average rating
+                    parts = [variant_parts(x) for x in combo]
                     completeness = sum(
-                        bool(variant_parts(x)["ram"])
-                        for x in combo
-                    ) + sum(
-                        bool(variant_parts(x)["storage"])
-                        for x in combo
+                        bool(x["ram"]) + bool(x["storage"])
+                        for x in parts
                     )
-
-                    avg_rating = sum(
-                        rating_num(x) for x in combo
-                    )
+                    avg_rating = sum(rating_num(x) for x in combo)
 
                     key = (
                         completeness,
@@ -576,12 +855,12 @@ def build_comparison_ads(docs):
         if best_combo is None:
             continue
 
-        a, f, c = best_combo
+        a, f, croma_item = best_combo
 
         prices = {
             "amazon": price(a),
             "flipkart": price(f),
-            "croma": price(c),
+            "croma": price(croma_item),
         }
 
         low = min(prices.values())
@@ -597,7 +876,7 @@ def build_comparison_ads(docs):
             "variant": variant,
             "amazon": a,
             "flipkart": f,
-            "croma": c,
+            "croma": croma_item,
             "prices": prices,
             "spread_pct": round(spread_pct, 2),
             "saving": round(saving, 2),
@@ -624,21 +903,15 @@ def build_comparison_ads(docs):
 
         display_model = pretty_model(item["model"])
 
-        variant_parts_text = []
+        variant_text = []
         if item["variant"]["ram"]:
-            variant_parts_text.append(
-                item["variant"]["ram"].upper()
-            )
+            variant_text.append(item["variant"]["ram"].upper())
         if item["variant"]["storage"]:
-            variant_parts_text.append(
-                item["variant"]["storage"].upper()
-            )
-
-        variant_text = " ".join(variant_parts_text)
+            variant_text.append(item["variant"]["storage"].upper())
 
         headline = f"Compare {item['brand']} {display_model}"
         if variant_text:
-            headline += f" {variant_text}"
+            headline += " " + " ".join(variant_text)
 
         ads.append({
             "ad_type": "price_comparison",
@@ -649,10 +922,7 @@ def build_comparison_ads(docs):
             "headline": headline,
             "platforms": list(PLATFORMS),
             "prices": item["prices"],
-            "best_platform": min(
-                item["prices"],
-                key=item["prices"].get
-            ),
+            "best_platform": min(item["prices"], key=item["prices"].get),
             "best_price_inr": min(item["prices"].values()),
             "saving_inr": item["saving"],
             "saving_percent": item["saving_pct"],
@@ -687,13 +957,13 @@ def main():
         "source": "Trustfolio MongoDB",
         "generated_from_live_mongodb": True,
         "trustfolio_backend_unchanged": True,
-        "engine": "daily_ad_engine_test_v6",
+        "engine": "daily_ad_engine_test_v3",
         "category": CATEGORY,
         "platforms_required": list(PLATFORMS),
         "rules": {
             "budget_ads": "unique models; minimum 2 platforms",
             "brand_ads": "safe brand; unique models; minimum 2 platforms",
-            "comparison_ads": "exact brand + model; matching known RAM/storage; storage verified on 2+ platforms; all 3 platforms; <=35% price spread",
+            "comparison_ads": "exact brand + model + RAM + storage; all 3 platforms; <=35% price spread",
         },
         "stats": {
             "eligible_products": len(docs),
@@ -713,7 +983,7 @@ def main():
     )
 
     print("=" * 78)
-    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V6")
+    print("TRUSTFOLIO DAILY AD ENGINE - SMARTPHONES TEST V3")
     print("=" * 78)
     print("Eligible products:", len(docs))
     print("Platform counts  :", dict(counts))
