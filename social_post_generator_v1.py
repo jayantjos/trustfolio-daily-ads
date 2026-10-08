@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
 import json
-import sys
-import textwrap
+import os
 from pathlib import Path
-from urllib.parse import urlparse
 
 BASE = Path.home() / "new_scraper"
-DEFAULT_INPUT = BASE / "ads" / "creative_ad_manifest_v1.json"
-DEFAULT_OUTPUT = BASE / "ads" / "creative_generation_manifest_v1.json"
-TEMPLATE_PATH = BASE / "ads" / "creative_templates_v1.json"
+INPUT = BASE / "ads" / "creative_generation_manifest_v1.json"
+OUTPUT = BASE / "ads" / "social_post_manifest_v1.json"
+
+MEDIA_BASE = os.getenv(
+    "TRUSTFOLIO_PUBLIC_MEDIA_BASE_URL",
+    "https://media.trustfolio.in",
+).rstrip("/")
 
 
-def load_json(path: Path):
-    return json.loads(path.read_text(encoding="utf-8"))
+def money(v):
+    if v in (None, ""):
+        return ""
+    try:
+        return f"₹{float(v):,.0f}"
+    except (TypeError, ValueError):
+        return str(v)
 
 
-def display_category(category: str) -> str:
-    special = {
+def category_name(category):
+    return {
         "smart-phones": "Smartphones",
         "smart-tvs": "Smart TVs",
         "air-conditioners": "Air Conditioners",
@@ -30,276 +37,203 @@ def display_category(category: str) -> str:
         "washing-machines": "Washing Machines",
         "microwave-ovens": "Microwave Ovens",
         "induction-cooktops": "Induction Cooktops",
-        "smartwatches": "Smartwatches",
-    }
-    return special.get(category, category.replace("-", " ").title())
+    }.get(category, str(category).replace("-", " ").title())
 
 
-def clean_product_name(title: str, max_chars: int = 58) -> str:
-    title = " ".join(str(title or "").split())
-    if len(title) <= max_chars:
-        return title
-    return title[: max_chars - 1].rstrip() + "…"
+def build_media_url(ad_id):
+    return f"{MEDIA_BASE}/feed/{ad_id}_premium_1080x1350.png"
 
 
-def format_inr(value):
-    if value in (None, ""):
-        return ""
-    try:
-        number = float(value)
-        if number.is_integer():
-            return f"₹{int(number):,}"
-        return f"₹{number:,.0f}"
-    except (TypeError, ValueError):
-        return str(value)
-
-
-def ad_hook(ad):
-    ad_type = ad.get("ad_type", "")
-    headline = ad.get("headline", "")
-    if ad_type == "budget_recommendation":
-        return headline
-    if ad_type == "brand_recommendation":
-        return headline
-    if ad_type == "price_comparison":
-        return headline or "Compare prices before you buy"
-    return headline
-
-
-def build_caption(ad, brand):
-    category = display_category(ad.get("category", ""))
-    headline = ad.get("headline") or f"Best {category}"
-    products = ad.get("products") or []
-
-    prices = []
-    for p in products:
-        if isinstance(p, dict) and p.get("price_inr") not in (None, ""):
-            prices.append(float(p["price_inr"]))
-
-    price_line = ""
-    if prices:
-        low = min(prices)
-        price_line = f"\nStarting from {format_inr(low)}"
-
+def hashtags(ad):
+    cat = category_name(ad.get("category", ""))
+    compact = "".join(cat.split())
+    tags = ["#TrustFolio", "#SmartShopping", f"#{compact}", "#CompareAndSave"]
     if ad.get("ad_type") == "price_comparison":
+        tags.append("#PriceComparison")
+    return tags
+
+
+def lowest_price(products):
+    if isinstance(products, dict):
+        products = list(products.values())
+
+    values = []
+    for p in products or []:
+        if isinstance(p, dict) and p.get("price_inr") not in (None, ""):
+            try:
+                values.append(float(p["price_inr"]))
+            except (TypeError, ValueError):
+                pass
+    return min(values) if values else None
+
+
+def build_copy(ad):
+    ad_type = ad.get("ad_type", "")
+    headline = ad.get("headline") or f"Best {category_name(ad.get('category', ''))}"
+    category = category_name(ad.get("category", ""))
+    products = ad.get("products") or []
+    price = lowest_price(products)
+
+    if ad_type == "price_comparison":
+        saving = ad.get("saving_inr")
+        saving_pct = ad.get("saving_percent")
+        best_price = ad.get("best_price_inr")
+        platform = str(ad.get("best_platform") or "").title()
+
+        extra = ""
+        if saving not in (None, ""):
+            extra = f" Listed-price difference: {money(saving)}"
+            if saving_pct not in (None, ""):
+                extra += f" ({float(saving_pct):.0f}%)."
+
         body = (
-            f"Compare the same product across Amazon, Flipkart and Croma "
-            f"before you buy.{price_line}"
+            "Same product ko major shopping platforms par compare karein "
+            "aur buy karne se pehle best listed price check karein. "
+            f"Best listed price: {money(best_price)}"
+            f"{' on ' + platform if platform else ''}.{extra}"
+        )
+        ig = (
+            f"{headline}\n\n"
+            "Amazon, Flipkart aur Croma listings ko compare karke "
+            f"better buying decision lein. Best listed price: {money(best_price)}"
+            f"{' on ' + platform if platform else ''}.{extra}\n\n"
+            "Compare before you buy."
+        )
+        yt_desc = (
+            f"{headline}.\n\n"
+            "TrustFolio par Amazon, Flipkart aur Croma listings compare karein. "
+            f"Best listed price: {money(best_price)}"
+            f"{' on ' + platform if platform else ''}.{extra}\n\n"
+            "Compare • Save • Shop Smart\n"
+            "https://www.trustfolio.in/\n"
+            "https://play.google.com/store/apps/details?id=com.trustfolio.app"
         )
     else:
+        start = f" Starting from {money(price)}." if price is not None else ""
         body = (
-            f"Explore selected products, prices and trusted shopping options "
-            f"on {brand['brand_name']}.{price_line}"
+            f"{headline}. "
+            f"TrustFolio par selected {category.lower()} products, prices aur shopping options compare karein."
+            f"{start}"
+        )
+        if ad_type == "brand_recommendation" and ad.get("brand"):
+            body = (
+                f"Looking for {ad.get('brand')} {category.lower()}? "
+                f"{len(products)} selected picks ko compare karein.{start}"
+            )
+
+        ig = f"{headline}\n\n{body}\n\nCompare • Save • Shop Smart."
+        yt_desc = (
+            f"{headline}.\n\n"
+            f"{body}\n\n"
+            "Compare • Save • Shop Smart\n"
+            "https://www.trustfolio.in/\n"
+            "https://play.google.com/store/apps/details?id=com.trustfolio.app"
         )
 
-    hashtags = [
-        "#TrustFolio",
-        "#SmartShopping",
-        f"#{category.replace(' ', '')}",
-        "#CompareAndSave",
-    ]
+    fb = (
+        f"{body}\n\n"
+        f"Compare on TrustFolio: {ad.get('landing_url', 'https://www.trustfolio.in/')}"
+    )
 
     return {
-        "headline": headline,
-        "body": body,
-        "cta": "Compare on TrustFolio",
-        "hashtags": hashtags,
-    }
-
-
-def product_card(product, index, ad):
-    return {
-        "card_index": index,
-        "title": clean_product_name(product.get("title", ""), 52),
-        "full_title": product.get("title", ""),
-        "price": product.get("price_inr"),
-        "price_display": format_inr(product.get("price_inr")),
-        "platform": product.get("platform") or product.get("comparison_platform") or "",
-        "image_url": product.get("image_url") or "",
-        "click_url": product.get("click_url") or ad.get("landing_url") or "",
-        "product_deep_link": product.get("product_deep_link"),
-    }
-
-
-def build_image_spec(ad, template):
-    category = display_category(ad.get("category", ""))
-    products = ad.get("products") or []
-    cards = [product_card(p, i + 1, ad) for i, p in enumerate(products[:5])]
-
-    return {
-        "formats": {
-            "feed": template["image"]["feed"],
-            "square": template["image"]["square"],
+        "facebook": {
+            "format": "feed_post",
+            "text": fb,
+            "headline": headline,
+            "cta": "Learn More",
+            "destination_url": ad.get("landing_url", ""),
         },
-        "layout":"hero_headline_product_grid_price_cta",
-        "fixed_branding": template["locked_branding"],
-        "copy":{
-            "headline":ad.get("headline") or f"Best {category}",
-            "supporting":"Compare • Save • Shop Smart",
-            "cta":"Compare on TrustFolio",
-            "website":"trustfolio.in",
+        "instagram": {
+            "format": "feed_post",
+            "caption": ig,
+            "hashtags": hashtags(ad),
+            "destination_url": ad.get("landing_url", ""),
         },
-        "products":cards,
-        "generation_instructions":{
-            "use_exact_product_images":True,
-            "use_exact_prices":True,
-            "do_not_generate_fake_products":True,
-            "do_not_change_product_text_facts":True,
-            "logo_required":True,
-            "logo_asset":template["locked_branding"]["logo_asset"],
+        "instagram_reel": {
+            "format": "reel",
+            "caption": ig,
+            "hashtags": hashtags(ad),
+            "destination_url": ad.get("landing_url", ""),
+            "media_status": "video_renderer_pending",
+        },
+        "facebook_reel": {
+            "format": "reel",
+            "text": fb,
+            "headline": headline,
+            "destination_url": ad.get("landing_url", ""),
+            "media_status": "video_renderer_pending",
+        },
+        "youtube_shorts": {
+            "format": "short",
+            "title": headline[:100],
+            "description": yt_desc,
+            "hashtags": hashtags(ad),
+            "destination_url": ad.get("landing_url", ""),
+            "media_status": "video_renderer_pending",
         },
     }
 
 
-def build_carousel_spec(ad, template):
-    products = ad.get("products") or []
-    cards = []
-
-    for i, product in enumerate(products[: template["carousel"]["max_cards"]], start=1):
-        card = product_card(product, i, ad)
-        cards.append({
-            "card_index":i,
-            "headline":card["title"],
-            "price":card["price_display"],
-            "platform":card["platform"],
-            "image_url":card["image_url"],
-            "click_url":card["click_url"],
-            "deep_link":card["product_deep_link"],
-            "source_product_id":product.get("product_id",""),
-        })
-
-    return {
-        "formats":{
-            "width":template["carousel"]["card_width"],
-            "height":template["carousel"]["card_height"],
-        },
-        "fixed_branding":template["locked_branding"],
-        "intro_card":{
-            "headline":ad.get("headline",""),
-            "subheadline":"Compare • Save • Shop Smart",
-            "cta":"Swipe to compare",
-        },
-        "cards":cards,
-        "final_card":{
-            "headline":"Compare on TrustFolio",
-            "website":"trustfolio.in",
-            "play_store":template["locked_branding"]["play_store"],
-            "click_url":ad.get("landing_url",""),
-        },
-    }
-
-
-def build_video_spec(ad, template):
-    products = ad.get("products") or []
-    short_cards = [product_card(p, i + 1, ad) for i, p in enumerate(products[:5])]
-    headline = ad.get("headline","Compare on TrustFolio")
-
-    scenes = [
-        {
-            "scene":1,
-            "start":0,
-            "end":2,
-            "purpose":"hook",
-            "on_screen_text":headline,
-            "visual":"Fast product collage with TrustFolio logo lockup",
-        },
-        {
-            "scene":2,
-            "start":2,
-            "end":8,
-            "purpose":"product_reveal",
-            "on_screen_text":"Top picks selected from live TrustFolio product data",
-            "visual":"Show product cutouts one by one with exact product names and prices",
-            "products":short_cards,
-        },
-        {
-            "scene":3,
-            "start":8,
-            "end":11,
-            "purpose":"price_value",
-            "on_screen_text":"Compare prices before you buy",
-            "visual":"Show Amazon / Flipkart / Croma where present; use only supplied prices",
-            "landing_url":ad.get("landing_url",""),
-        },
-        {
-            "scene":4,
-            "start":11,
-            "end":15,
-            "purpose":"cta",
-            "on_screen_text":"Compare • Save • Shop Smart",
-            "visual":"TrustFolio logo, website and CTA",
-            "cta":"Compare on TrustFolio",
-            "website":"trustfolio.in",
-            "play_store":template["locked_branding"]["play_store"],
-        },
-    ]
-
-    return {
-        "format":{
-            "width":template["video"]["width"],
-            "height":template["video"]["height"],
-            "fps":template["video"]["fps"],
-            "duration_seconds":template["video"]["duration_seconds"],
-        },
-        "fixed_branding":template["locked_branding"],
-        "scenes":scenes,
-        "generation_guardrails":{
-            "exact_product_images":True,
-            "exact_prices":True,
-            "no_invented_specs":True,
-            "no_invented_savings":True,
-        },
-    }
-
-
-def build_platform_outputs(ad):
-    url = ad.get("landing_url","")
-    return {
-        "facebook":{
-            "feed":"image_feed",
-            "carousel":"carousel",
-            "reel":"story_reel",
-            "story":"story_reel",
-            "destination":url,
-        },
-        "instagram":{
-            "feed":"image_feed",
-            "carousel":"carousel",
-            "reel":"story_reel",
-            "story":"story_reel",
-            "destination":url,
-        },
-        "youtube":{
-            "shorts":"video_reel",
-            "destination":url,
-        },
-    }
-
-
-def build_manifest(data, template):
+def main():
+    data = json.loads(INPUT.read_text(encoding="utf-8"))
+    brand = data.get("brand", {})
     output_ads = []
 
     for ad in data.get("ads", []):
-        caption = build_caption(ad, template["locked_branding"])
+        ad_id = ad.get("ad_id")
+        image_url = build_media_url(ad_id)
+
+        posts = build_copy(ad)
+        for platform in posts.values():
+            if platform.get("media_status"):
+                continue
+            platform["media_url"] = image_url
+            platform["media_type"] = "image"
+
         output_ads.append({
-            "ad_id":ad.get("ad_id"),
-            "ad_type":ad.get("ad_type"),
-            "category":ad.get("category"),
-            "headline":ad.get("headline"),
-            "landing_url":ad.get("landing_url"),
-            "caption":caption,
-            "image_ad":build_image_spec(ad, template),
-            "carousel_ad":build_carousel_spec(ad, template),
-            "video_ad":build_video_spec(ad, template),
-            "platform_outputs":build_platform_outputs(ad),
+            "ad_id": ad_id,
+            "ad_type": ad.get("ad_type"),
+            "category": ad.get("category"),
+            "headline": ad.get("headline"),
+            "landing_url": ad.get("landing_url"),
+            "media": {
+                "feed_image": {
+                    "url": image_url,
+                    "type": "image/png",
+                    "public": True,
+                },
+                "video": {
+                    "status": "not_rendered",
+                },
+            },
+            "posts": posts,
         })
 
-    return {
-        "version":"1.0",
-        "source":"creative_ad_manifest_v1.json",
-        "brand":template["locked_branding"],
-        "ads":output_ads,
+    result = {
+        "version": "1.0",
+        "brand": {
+            "name": brand.get("brand_name") or brand.get("name") or "TrustFolio",
+            "website": brand.get("website") or brand.get("website_url") or "https://www.trustfolio.in/",
+            "play_store": brand.get("play_store") or brand.get("play_store_url") or "",
+        },
+        "generated_from": "creative_generation_manifest_v1.json",
+        "media_base_url": MEDIA_BASE,
+        "ads": output_ads,
     }
 
+    OUTPUT.write_text(
+        json.dumps(result, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    print("=" * 88)
+    print("TRUSTFOLIO SOCIAL POST MANIFEST V1")
+    print("=" * 88)
+    print("Ads:", len(output_ads))
+    print("Platforms:", "Facebook, Instagram, Instagram Reel, Facebook Reel, YouTube Shorts")
+    print("Output:", OUTPUT)
+    print("=" * 88)
 
 
+if __name__ == "__main__":
+    main()
