@@ -13,6 +13,7 @@ cp "$GIT_REPO/daily_ad_engine_20_v8.py" "$BASE/ads/daily_ad_engine_20_v8.py"
 cp "$GIT_REPO/ad_link_manifest_v1.py" "$BASE/ads/ad_link_manifest_v1.py"
 cp "$GIT_REPO/creative_generator_v1.py" "$BASE/ads/creative_generator_v1.py"
 cp "$GIT_REPO/creative_renderer_v2.py" "$BASE/ads/creative_renderer_v2.py"
+cp "$GIT_REPO/batch_render_creatives_v1.py" "$BASE/ads/batch_render_creatives_v1.py"
 cp "$GIT_REPO/public_media_bridge_v1.py" "$BASE/ads/public_media_bridge_v1.py"
 cp "$GIT_REPO/publish_creative_to_github.py" "$BASE/ads/publish_creative_to_github.py"
 
@@ -27,10 +28,8 @@ python ads/ad_link_manifest_v1.py
 echo "=== 3/7 CREATIVE MANIFEST ==="
 python ads/creative_generator_v1.py
 
-echo "=== 4/7 PREMIUM IMAGE PROTOTYPE ==="
-rm -rf ads/generated_creatives/prototype_v2
-mkdir -p ads/generated_creatives/prototype_v2
-python ads/creative_renderer_v2.py
+echo "=== 4/7 PREMIUM IMAGE ADS ==="
+python ads/batch_render_creatives_v1.py
 
 echo "=== 5/7 PUBLIC MEDIA ==="
 export TRUSTFOLIO_PUBLIC_MEDIA_ROOT="$HOME/public_media"
