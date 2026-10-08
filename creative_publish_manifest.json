@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-10-08T21:44:28.497479+00:00",
+  "source": "/home/scraperuser/new_scraper/ads/generated_creatives",
+  "files": [
+    "prototype/tf-aa5900f0c166_feed_1080x1350.png"
+  ],
+  "repository": "jayantjos/trustfolio-daily-ads",
+  "branch": "main",
+  "purpose": "TrustFolio creative media bridge"
+}
