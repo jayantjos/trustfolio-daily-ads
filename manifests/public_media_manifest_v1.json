@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-10-08T22:23:25.744829+00:00",
+  "generated_at": "2026-10-08T22:27:10.144486+00:00",
   "source": "/home/scraperuser/new_scraper/ads/generated_creatives",
   "public_root": "/home/scraperuser/public_media",
   "public_base_url": "https://media.trustfolio.in",
@@ -33,19 +33,19 @@
       "relative_path": "feed/tf-f6cd4ec4af76_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-f6cd4ec4af76_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-f6cd4ec4af76_premium_1080x1350.png",
-      "bytes": 165779
+      "bytes": 164637
     },
     {
       "relative_path": "feed/tf-0ee8edd126bc_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-0ee8edd126bc_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-0ee8edd126bc_premium_1080x1350.png",
-      "bytes": 182107
+      "bytes": 180019
     },
     {
       "relative_path": "feed/tf-5d479e0f6fef_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-5d479e0f6fef_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-5d479e0f6fef_premium_1080x1350.png",
-      "bytes": 238862
+      "bytes": 239655
     },
     {
       "relative_path": "feed/tf-f09d9b02d440_premium_1080x1350.png",
@@ -69,13 +69,13 @@
       "relative_path": "feed/tf-bdd3b6402ea0_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-bdd3b6402ea0_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-bdd3b6402ea0_premium_1080x1350.png",
-      "bytes": 206784
+      "bytes": 206037
     },
     {
       "relative_path": "feed/tf-01db24d5a750_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-01db24d5a750_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-01db24d5a750_premium_1080x1350.png",
-      "bytes": 188142
+      "bytes": 187564
     },
     {
       "relative_path": "feed/tf-29f9f6c6c3ad_premium_1080x1350.png",
@@ -87,19 +87,19 @@
       "relative_path": "feed/tf-3a26832b1679_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-3a26832b1679_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-3a26832b1679_premium_1080x1350.png",
-      "bytes": 213806
+      "bytes": 212873
     },
     {
       "relative_path": "feed/tf-2b3efb505c88_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-2b3efb505c88_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-2b3efb505c88_premium_1080x1350.png",
-      "bytes": 202871
+      "bytes": 200822
     },
     {
       "relative_path": "feed/tf-25b94a75f3c8_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-25b94a75f3c8_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-25b94a75f3c8_premium_1080x1350.png",
-      "bytes": 170087
+      "bytes": 169436
     },
     {
       "relative_path": "feed/tf-cda18f48d1d8_premium_1080x1350.png",
@@ -111,25 +111,25 @@
       "relative_path": "feed/tf-a464825602ad_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-a464825602ad_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-a464825602ad_premium_1080x1350.png",
-      "bytes": 226046
+      "bytes": 225263
     },
     {
       "relative_path": "feed/tf-8e848fb50605_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-8e848fb50605_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-8e848fb50605_premium_1080x1350.png",
-      "bytes": 158533
+      "bytes": 158072
     },
     {
       "relative_path": "feed/tf-996eed5699bf_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-996eed5699bf_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-996eed5699bf_premium_1080x1350.png",
-      "bytes": 259081
+      "bytes": 257251
     },
     {
       "relative_path": "feed/tf-9df87afc9a83_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-9df87afc9a83_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-9df87afc9a83_premium_1080x1350.png",
-      "bytes": 180276
+      "bytes": 179410
     },
     {
       "relative_path": "feed/tf-5edcfaa273b5_premium_1080x1350.png",
@@ -141,7 +141,7 @@
       "relative_path": "feed/tf-bfaf9db09371_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-bfaf9db09371_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-bfaf9db09371_premium_1080x1350.png",
-      "bytes": 247186
+      "bytes": 246108
     },
     {
       "relative_path": "feed/tf-f7dfea61e0b5_premium_1080x1350.png",
@@ -165,13 +165,13 @@
       "relative_path": "feed/tf-f83a45459085_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-f83a45459085_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-f83a45459085_premium_1080x1350.png",
-      "bytes": 309685
+      "bytes": 305799
     },
     {
       "relative_path": "feed/tf-0d8737eba849_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-0d8737eba849_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-0d8737eba849_premium_1080x1350.png",
-      "bytes": 303558
+      "bytes": 303172
     },
     {
       "relative_path": "feed/tf-b1ce948e800b_premium_1080x1350.png",
@@ -183,31 +183,31 @@
       "relative_path": "feed/tf-6600dfa3e508_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-6600dfa3e508_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-6600dfa3e508_premium_1080x1350.png",
-      "bytes": 185145
+      "bytes": 185043
     },
     {
       "relative_path": "feed/tf-4d753fd56c66_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-4d753fd56c66_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-4d753fd56c66_premium_1080x1350.png",
-      "bytes": 118165
+      "bytes": 117729
     },
     {
       "relative_path": "feed/tf-f3a4b2343057_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-f3a4b2343057_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-f3a4b2343057_premium_1080x1350.png",
-      "bytes": 177152
+      "bytes": 176003
     },
     {
       "relative_path": "feed/tf-7891619f469a_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-7891619f469a_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-7891619f469a_premium_1080x1350.png",
-      "bytes": 279868
+      "bytes": 277846
     },
     {
       "relative_path": "feed/tf-b5e7a5eeea0e_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-b5e7a5eeea0e_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-b5e7a5eeea0e_premium_1080x1350.png",
-      "bytes": 249708
+      "bytes": 246874
     },
     {
       "relative_path": "feed/tf-ae8f46c7b283_premium_1080x1350.png",
@@ -219,7 +219,7 @@
       "relative_path": "feed/tf-26b856b08873_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-26b856b08873_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-26b856b08873_premium_1080x1350.png",
-      "bytes": 248863
+      "bytes": 248017
     },
     {
       "relative_path": "feed/tf-e8962ba6b695_premium_1080x1350.png",
@@ -231,31 +231,31 @@
       "relative_path": "feed/tf-dbf3724bc92b_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-dbf3724bc92b_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-dbf3724bc92b_premium_1080x1350.png",
-      "bytes": 298657
+      "bytes": 298771
     },
     {
       "relative_path": "feed/tf-2b2ba06d957e_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-2b2ba06d957e_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-2b2ba06d957e_premium_1080x1350.png",
-      "bytes": 411585
+      "bytes": 407384
     },
     {
       "relative_path": "feed/tf-5d98290c4924_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-5d98290c4924_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-5d98290c4924_premium_1080x1350.png",
-      "bytes": 242511
+      "bytes": 241948
     },
     {
       "relative_path": "feed/tf-f43103db1184_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-f43103db1184_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-f43103db1184_premium_1080x1350.png",
-      "bytes": 216114
+      "bytes": 215614
     },
     {
       "relative_path": "feed/tf-0d4d694fb45c_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-0d4d694fb45c_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-0d4d694fb45c_premium_1080x1350.png",
-      "bytes": 307550
+      "bytes": 307710
     },
     {
       "relative_path": "feed/tf-789c86f41a20_premium_1080x1350.png",
@@ -267,7 +267,7 @@
       "relative_path": "feed/tf-b6d8aec92b3a_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-b6d8aec92b3a_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-b6d8aec92b3a_premium_1080x1350.png",
-      "bytes": 224868
+      "bytes": 223793
     },
     {
       "relative_path": "feed/tf-143d179a9bf3_premium_1080x1350.png",
@@ -285,7 +285,7 @@
       "relative_path": "feed/tf-c5b81b80ced5_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-c5b81b80ced5_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-c5b81b80ced5_premium_1080x1350.png",
-      "bytes": 270445
+      "bytes": 270864
     },
     {
       "relative_path": "feed/tf-d1856c21a629_premium_1080x1350.png",
@@ -297,37 +297,37 @@
       "relative_path": "feed/tf-ec6ef54b29e4_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-ec6ef54b29e4_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-ec6ef54b29e4_premium_1080x1350.png",
-      "bytes": 330891
+      "bytes": 327117
     },
     {
       "relative_path": "feed/tf-e4cdd06c9750_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-e4cdd06c9750_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-e4cdd06c9750_premium_1080x1350.png",
-      "bytes": 312213
+      "bytes": 310748
     },
     {
       "relative_path": "feed/tf-fb6dca742bc1_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-fb6dca742bc1_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-fb6dca742bc1_premium_1080x1350.png",
-      "bytes": 476771
+      "bytes": 473973
     },
     {
       "relative_path": "feed/tf-18a7642192bb_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-18a7642192bb_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-18a7642192bb_premium_1080x1350.png",
-      "bytes": 189608
+      "bytes": 189308
     },
     {
       "relative_path": "feed/tf-d3b3d9cc856e_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-d3b3d9cc856e_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-d3b3d9cc856e_premium_1080x1350.png",
-      "bytes": 234706
+      "bytes": 233136
     },
     {
       "relative_path": "feed/tf-1b3a104caf22_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-1b3a104caf22_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-1b3a104caf22_premium_1080x1350.png",
-      "bytes": 148663
+      "bytes": 148419
     },
     {
       "relative_path": "feed/tf-6375511d4252_premium_1080x1350.png",
@@ -339,49 +339,49 @@
       "relative_path": "feed/tf-00ae40350b67_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-00ae40350b67_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-00ae40350b67_premium_1080x1350.png",
-      "bytes": 447825
+      "bytes": 445272
     },
     {
       "relative_path": "feed/tf-dd1e24ac4fba_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-dd1e24ac4fba_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-dd1e24ac4fba_premium_1080x1350.png",
-      "bytes": 318773
+      "bytes": 318668
     },
     {
       "relative_path": "feed/tf-6ee32b209548_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-6ee32b209548_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-6ee32b209548_premium_1080x1350.png",
-      "bytes": 243589
+      "bytes": 243809
     },
     {
       "relative_path": "feed/tf-016d974f37ff_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-016d974f37ff_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-016d974f37ff_premium_1080x1350.png",
-      "bytes": 305611
+      "bytes": 301901
     },
     {
       "relative_path": "feed/tf-8ee44605f336_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-8ee44605f336_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-8ee44605f336_premium_1080x1350.png",
-      "bytes": 358693
+      "bytes": 353045
     },
     {
       "relative_path": "feed/tf-0fb7c72adbb0_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-0fb7c72adbb0_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-0fb7c72adbb0_premium_1080x1350.png",
-      "bytes": 339452
+      "bytes": 337299
     },
     {
       "relative_path": "feed/tf-aa025ea16b27_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-aa025ea16b27_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-aa025ea16b27_premium_1080x1350.png",
-      "bytes": 346471
+      "bytes": 345814
     },
     {
       "relative_path": "feed/tf-fd5090a3c1e4_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-fd5090a3c1e4_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-fd5090a3c1e4_premium_1080x1350.png",
-      "bytes": 345206
+      "bytes": 341882
     },
     {
       "relative_path": "feed/tf-c8da4b38d4c6_premium_1080x1350.png",
@@ -393,19 +393,19 @@
       "relative_path": "feed/tf-ae4cc29a1452_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-ae4cc29a1452_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-ae4cc29a1452_premium_1080x1350.png",
-      "bytes": 257399
+      "bytes": 254752
     },
     {
       "relative_path": "feed/tf-a19497a63d95_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-a19497a63d95_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-a19497a63d95_premium_1080x1350.png",
-      "bytes": 313270
+      "bytes": 311834
     },
     {
       "relative_path": "feed/tf-8f106e7fe8d6_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-8f106e7fe8d6_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-8f106e7fe8d6_premium_1080x1350.png",
-      "bytes": 262791
+      "bytes": 262618
     },
     {
       "relative_path": "feed/tf-56a3c8c232fb_premium_1080x1350.png",
@@ -417,25 +417,25 @@
       "relative_path": "feed/tf-1b6dc4f3ebc2_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-1b6dc4f3ebc2_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-1b6dc4f3ebc2_premium_1080x1350.png",
-      "bytes": 347115
+      "bytes": 345233
     },
     {
       "relative_path": "feed/tf-3d1230630710_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-3d1230630710_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-3d1230630710_premium_1080x1350.png",
-      "bytes": 268777
+      "bytes": 267473
     },
     {
       "relative_path": "feed/tf-ed4d149ef37b_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-ed4d149ef37b_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-ed4d149ef37b_premium_1080x1350.png",
-      "bytes": 320397
+      "bytes": 321055
     },
     {
       "relative_path": "feed/tf-133da2acf56b_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-133da2acf56b_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-133da2acf56b_premium_1080x1350.png",
-      "bytes": 396362
+      "bytes": 387328
     },
     {
       "relative_path": "feed/tf-ca0b73fcf6e3_premium_1080x1350.png",
@@ -447,19 +447,19 @@
       "relative_path": "feed/tf-35e00281a7f1_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-35e00281a7f1_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-35e00281a7f1_premium_1080x1350.png",
-      "bytes": 253294
+      "bytes": 252073
     },
     {
       "relative_path": "feed/tf-6480679e7481_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-6480679e7481_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-6480679e7481_premium_1080x1350.png",
-      "bytes": 265666
+      "bytes": 261895
     },
     {
       "relative_path": "feed/tf-fd5ebb85c2ae_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-fd5ebb85c2ae_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-fd5ebb85c2ae_premium_1080x1350.png",
-      "bytes": 221151
+      "bytes": 221162
     },
     {
       "relative_path": "feed/tf-6495305fcfbf_premium_1080x1350.png",
@@ -471,7 +471,7 @@
       "relative_path": "feed/tf-57e09bd0a5fe_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-57e09bd0a5fe_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-57e09bd0a5fe_premium_1080x1350.png",
-      "bytes": 343704
+      "bytes": 338924
     },
     {
       "relative_path": "feed/tf-eedc6745317d_premium_1080x1350.png",
@@ -489,7 +489,7 @@
       "relative_path": "feed/tf-fb8f36ff896a_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-fb8f36ff896a_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-fb8f36ff896a_premium_1080x1350.png",
-      "bytes": 203320
+      "bytes": 202477
     },
     {
       "relative_path": "feed/tf-b4bda96bcab8_premium_1080x1350.png",
@@ -513,19 +513,19 @@
       "relative_path": "feed/tf-d357a10bf0a0_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-d357a10bf0a0_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-d357a10bf0a0_premium_1080x1350.png",
-      "bytes": 221686
+      "bytes": 220551
     },
     {
       "relative_path": "feed/tf-04b65c10939f_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-04b65c10939f_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-04b65c10939f_premium_1080x1350.png",
-      "bytes": 248172
+      "bytes": 246203
     },
     {
       "relative_path": "feed/tf-93ead5ddfde8_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-93ead5ddfde8_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-93ead5ddfde8_premium_1080x1350.png",
-      "bytes": 274126
+      "bytes": 275916
     },
     {
       "relative_path": "feed/tf-d6e4e37406c1_premium_1080x1350.png",
@@ -537,13 +537,13 @@
       "relative_path": "feed/tf-bec54cd3dc19_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-bec54cd3dc19_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-bec54cd3dc19_premium_1080x1350.png",
-      "bytes": 215618
+      "bytes": 214114
     },
     {
       "relative_path": "feed/tf-e7805f956eec_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-e7805f956eec_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-e7805f956eec_premium_1080x1350.png",
-      "bytes": 378525
+      "bytes": 368678
     },
     {
       "relative_path": "feed/tf-2e0fa74554b0_premium_1080x1350.png",
@@ -555,13 +555,13 @@
       "relative_path": "feed/tf-b6c2c952bde1_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-b6c2c952bde1_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-b6c2c952bde1_premium_1080x1350.png",
-      "bytes": 289796
+      "bytes": 289820
     },
     {
       "relative_path": "feed/tf-a53dd588014d_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-a53dd588014d_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-a53dd588014d_premium_1080x1350.png",
-      "bytes": 418152
+      "bytes": 414265
     },
     {
       "relative_path": "feed/tf-ed84ec43b874_premium_1080x1350.png",
@@ -597,19 +597,19 @@
       "relative_path": "feed/tf-74b78d8b5038_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-74b78d8b5038_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-74b78d8b5038_premium_1080x1350.png",
-      "bytes": 226331
+      "bytes": 223025
     },
     {
       "relative_path": "feed/tf-05ce8aab3186_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-05ce8aab3186_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-05ce8aab3186_premium_1080x1350.png",
-      "bytes": 206426
+      "bytes": 206632
     },
     {
       "relative_path": "feed/tf-0f610b7fc910_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-0f610b7fc910_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-0f610b7fc910_premium_1080x1350.png",
-      "bytes": 328813
+      "bytes": 327427
     },
     {
       "relative_path": "feed/tf-f76f3190383b_premium_1080x1350.png",
@@ -621,13 +621,13 @@
       "relative_path": "feed/tf-bbcf8b618f77_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-bbcf8b618f77_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-bbcf8b618f77_premium_1080x1350.png",
-      "bytes": 339116
+      "bytes": 336814
     },
     {
       "relative_path": "feed/tf-0d2c7d757ff6_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-0d2c7d757ff6_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-0d2c7d757ff6_premium_1080x1350.png",
-      "bytes": 180759
+      "bytes": 179738
     },
     {
       "relative_path": "feed/tf-f61e456b440a_premium_1080x1350.png",
@@ -639,49 +639,49 @@
       "relative_path": "feed/tf-587867bf3ca4_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-587867bf3ca4_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-587867bf3ca4_premium_1080x1350.png",
-      "bytes": 182569
+      "bytes": 182889
     },
     {
       "relative_path": "feed/tf-9cfb4d320c90_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-9cfb4d320c90_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-9cfb4d320c90_premium_1080x1350.png",
-      "bytes": 326595
+      "bytes": 326622
     },
     {
       "relative_path": "feed/tf-1172227e7fc5_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-1172227e7fc5_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-1172227e7fc5_premium_1080x1350.png",
-      "bytes": 451573
+      "bytes": 451580
     },
     {
       "relative_path": "feed/tf-4d0929724ab5_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-4d0929724ab5_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-4d0929724ab5_premium_1080x1350.png",
-      "bytes": 238333
+      "bytes": 236512
     },
     {
       "relative_path": "feed/tf-8ba61c7fa19f_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-8ba61c7fa19f_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-8ba61c7fa19f_premium_1080x1350.png",
-      "bytes": 193925
+      "bytes": 193914
     },
     {
       "relative_path": "feed/tf-c55483aa52c8_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-c55483aa52c8_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-c55483aa52c8_premium_1080x1350.png",
-      "bytes": 195108
+      "bytes": 194262
     },
     {
       "relative_path": "feed/tf-23e9610c96ca_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-23e9610c96ca_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-23e9610c96ca_premium_1080x1350.png",
-      "bytes": 300608
+      "bytes": 299259
     },
     {
       "relative_path": "feed/tf-72c1e4c746e0_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-72c1e4c746e0_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-72c1e4c746e0_premium_1080x1350.png",
-      "bytes": 197800
+      "bytes": 196303
     },
     {
       "relative_path": "feed/tf-a9c79fc1eced_premium_1080x1350.png",
@@ -693,19 +693,19 @@
       "relative_path": "feed/tf-962ca58b1568_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-962ca58b1568_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-962ca58b1568_premium_1080x1350.png",
-      "bytes": 238323
+      "bytes": 237640
     },
     {
       "relative_path": "feed/tf-93319c417fe8_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-93319c417fe8_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-93319c417fe8_premium_1080x1350.png",
-      "bytes": 400235
+      "bytes": 390847
     },
     {
       "relative_path": "feed/tf-29948f3d2dd6_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-29948f3d2dd6_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-29948f3d2dd6_premium_1080x1350.png",
-      "bytes": 152997
+      "bytes": 153048
     },
     {
       "relative_path": "feed/tf-efc2baca5e12_premium_1080x1350.png",
@@ -717,7 +717,7 @@
       "relative_path": "feed/tf-a443423f317b_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-a443423f317b_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-a443423f317b_premium_1080x1350.png",
-      "bytes": 243688
+      "bytes": 243176
     },
     {
       "relative_path": "feed/tf-2c2d79bac19b_premium_1080x1350.png",
@@ -729,19 +729,19 @@
       "relative_path": "feed/tf-ae5f473e5431_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-ae5f473e5431_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-ae5f473e5431_premium_1080x1350.png",
-      "bytes": 225684
+      "bytes": 225254
     },
     {
       "relative_path": "feed/tf-23cb8b93248f_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-23cb8b93248f_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-23cb8b93248f_premium_1080x1350.png",
-      "bytes": 204103
+      "bytes": 203570
     },
     {
       "relative_path": "feed/tf-d41bddbef2e3_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-d41bddbef2e3_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-d41bddbef2e3_premium_1080x1350.png",
-      "bytes": 323613
+      "bytes": 316865
     },
     {
       "relative_path": "feed/tf-f81b79fda41a_premium_1080x1350.png",
@@ -765,19 +765,19 @@
       "relative_path": "feed/tf-1524e6281d76_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-1524e6281d76_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-1524e6281d76_premium_1080x1350.png",
-      "bytes": 278186
+      "bytes": 275571
     },
     {
       "relative_path": "feed/tf-baa3ec7a4d3a_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-baa3ec7a4d3a_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-baa3ec7a4d3a_premium_1080x1350.png",
-      "bytes": 219413
+      "bytes": 217833
     },
     {
       "relative_path": "feed/tf-1142ad2b0c72_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-1142ad2b0c72_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-1142ad2b0c72_premium_1080x1350.png",
-      "bytes": 306108
+      "bytes": 302658
     },
     {
       "relative_path": "feed/tf-ea8301c2cbee_premium_1080x1350.png",
@@ -789,31 +789,31 @@
       "relative_path": "feed/tf-6bde762798f7_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-6bde762798f7_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-6bde762798f7_premium_1080x1350.png",
-      "bytes": 352035
+      "bytes": 351189
     },
     {
       "relative_path": "feed/tf-b6f22cac43f1_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-b6f22cac43f1_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-b6f22cac43f1_premium_1080x1350.png",
-      "bytes": 223379
+      "bytes": 223040
     },
     {
       "relative_path": "feed/tf-d57444dece31_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-d57444dece31_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-d57444dece31_premium_1080x1350.png",
-      "bytes": 297648
+      "bytes": 293882
     },
     {
       "relative_path": "feed/tf-f707f1229b99_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-f707f1229b99_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-f707f1229b99_premium_1080x1350.png",
-      "bytes": 235167
+      "bytes": 234024
     },
     {
       "relative_path": "feed/tf-f988c9586575_premium_1080x1350.png",
       "local_path": "/home/scraperuser/public_media/feed/tf-f988c9586575_premium_1080x1350.png",
       "public_url": "https://media.trustfolio.in/feed/tf-f988c9586575_premium_1080x1350.png",
-      "bytes": 286984
+      "bytes": 284092
     },
     {
       "relative_path": "prototype/tf-aa5900f0c166_feed_1080x1350.png",
