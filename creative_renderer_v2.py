@@ -62,11 +62,11 @@ def fit_one(draw, text, max_width, size, minimum=18, bold=True):
     return font(minimum, bold)
 
 
-def wrap_title(draw, text, max_width, size=21, max_lines=2):
+def wrap_title(draw, text, max_width, size=21, min_size=14, max_lines=2):
     words = " ".join(str(text).split()).split()
     if not words:
         return "", font(size, True)
-    f = fit_one(draw, text, max_width, size, 14, True)
+    f = fit_one(draw, text, max_width, size, min_size, True)
     lines, cur = [], ""
     for word in words:
         test = (cur + " " + word).strip()
