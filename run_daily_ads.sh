@@ -12,7 +12,7 @@ git pull --ff-only origin main
 cp "$GIT_REPO/daily_ad_engine_20_v8.py" "$BASE/ads/daily_ad_engine_20_v8.py"
 cp "$GIT_REPO/ad_link_manifest_v1.py" "$BASE/ads/ad_link_manifest_v1.py"
 cp "$GIT_REPO/creative_generator_v1.py" "$BASE/ads/creative_generator_v1.py"
-cp "$GIT_REPO/creative_renderer_v5.py" "$BASE/ads/creative_renderer_v5.py"
+cp "$GIT_REPO/creative_renderer_v6.py" "$BASE/ads/creative_renderer_v6.py"
 cp "$GIT_REPO/batch_render_creatives_v1.py" "$BASE/ads/batch_render_creatives_v1.py"
 cp "$GIT_REPO/social_post_generator_v1.py" "$BASE/ads/social_post_generator_v1.py"
 cp "$GIT_REPO/public_media_bridge_v1.py" "$BASE/ads/public_media_bridge_v1.py"
