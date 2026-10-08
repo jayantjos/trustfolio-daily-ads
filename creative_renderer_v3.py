@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 BASE = Path.home() / "new_scraper"
 MANIFEST = BASE / "ads" / "creative_generation_manifest_v1.json"
-OUT_DIR = BASE / "ads" / "generated_creatives" / "feed_v3"
+OUT_DIR = BASE / "ads" / "generated_creatives" / "feed"
 LOGO_URL = "https://www.trustfolio.in/logo.png"
 
 W, H = 1080, 1350
