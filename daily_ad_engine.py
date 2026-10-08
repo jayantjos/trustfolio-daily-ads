@@ -808,15 +808,6 @@ def build_comparison_ads(docs):
                     # 1. More complete RAM/storage evidence
                     # 2. Better price saving
                     # 3. Better average rating
-                    known_fields = sum(
-                        1
-                        for pf in PLATFORMS
-                        for key, value in variant_parts(
-                            {"brand": "", "title": ""}
-                        ).items()
-                        if False
-                    )
-
                     completeness = sum(
                         bool(variant_parts(x)["ram"])
                         for x in combo
