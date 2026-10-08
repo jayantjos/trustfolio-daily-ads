@@ -376,7 +376,8 @@ def render(ad):
     draw.text((55, 290), sub, font=sf, fill=(236, 241, 249))
 
     # Trust / data pills
-    pills = ["LIVE PRODUCT DATA", "REAL PRICES", "TRUSTFOLIO PICKS"]
+    count_label = f"{len((ad.get("image_ad") or {}).get("products", [])[:5])} selected picks"
+    pills = [count_label.upper(), "REAL PRICES", "TRUSTFOLIO PICKS"]
     x = 55
     for label in pills:
         tw = draw.textbbox((0, 0), label, font=font(13, True))[2] + 28
@@ -401,47 +402,51 @@ def render(ad):
     if not products:
         raise RuntimeError(f"{ad_id}: no products in manifest")
 
-    # Center feature + side pillars + two bottom cards
-    draw_product_chip(
-        canvas,
-        draw,
-        products[0],
-        (342, 430, 738, 865),
-        number=1,
-        featured=True,
-    )
-    draw_product_chip(
-        canvas,
-        draw,
-        products[1],
-        (70, 475, 322, 820),
-        number=2,
-        featured=False,
-    )
-    draw_product_chip(
-        canvas,
-        draw,
-        products[2],
-        (758, 475, 1010, 820),
-        number=3,
-        featured=False,
-    )
-    draw_product_chip(
-        canvas,
-        draw,
-        products[3],
-        (135, 850, 505, 1135),
-        number=4,
-        featured=False,
-    )
-    draw_product_chip(
-        canvas,
-        draw,
-        products[4],
-        (575, 850, 945, 1135),
-        number=5,
-        featured=False,
-    )
+    # Comparison ads can legitimately contain 3 platform variants, while
+    # budget/brand ads normally contain 5 picks. Render only what exists.
+    count = len(products)
+
+    if count >= 5:
+        boxes = [
+            ((342, 430, 738, 865), True),
+            ((70, 475, 322, 820), False),
+            ((758, 475, 1010, 820), False),
+            ((135, 850, 505, 1135), False),
+            ((575, 850, 945, 1135), False),
+        ]
+    elif count == 4:
+        boxes = [
+            ((342, 430, 738, 865), True),
+            ((70, 475, 322, 820), False),
+            ((758, 475, 1010, 820), False),
+            ((350, 850, 730, 1135), False),
+        ]
+    elif count == 3:
+        boxes = [
+            ((342, 430, 738, 865), True),
+            ((70, 475, 322, 820), False),
+            ((758, 475, 1010, 820), False),
+        ]
+    elif count == 2:
+        boxes = [
+            ((105, 470, 505, 1045), True),
+            ((575, 470, 975, 1045), True),
+        ]
+    else:
+        boxes = [
+            ((260, 450, 820, 1055), True),
+        ]
+
+    for idx, product in enumerate(products[:len(boxes)]):
+        box, featured = boxes[idx]
+        draw_product_chip(
+            canvas,
+            draw,
+            product,
+            box,
+            number=idx + 1,
+            featured=featured,
+        )
 
     # Featured ribbon
     draw.rounded_rectangle(
