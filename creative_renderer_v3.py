@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 BASE = Path.home() / "new_scraper"
 MANIFEST = BASE / "ads" / "creative_generation_manifest_v1.json"
+VERSION = "V3"
 OUT_DIR = BASE / "ads" / "generated_creatives" / "feed"
 LOGO_URL = "https://www.trustfolio.in/logo.png"
 
@@ -501,7 +502,7 @@ def render(ad):
     final.save(out, quality=96, optimize=True)
 
     print("=" * 80)
-    print("TRUSTFOLIO CREATIVE RENDERER V3")
+    print(f"TRUSTFOLIO CREATIVE RENDERER {VERSION}")
     print("=" * 80)
     print("AD ID :", ad_id)
     print("TYPE  :", ad.get("ad_type"))
