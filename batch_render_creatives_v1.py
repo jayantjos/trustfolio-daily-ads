@@ -11,10 +11,10 @@ OUT = BASE / "ads" / "generated_creatives" / "feed"
 RENDERER = BASE / "ads" / "creative_renderer_v3.py"
 
 sys.path.insert(0, str(RENDERER.parent))
-import creative_renderer_v5 as renderer
+import creative_renderer_v6 as renderer
 
-if getattr(renderer, "VERSION", None) != "V5":
-    raise RuntimeError("Expected creative_renderer_v5 VERSION=V5")
+if getattr(renderer, "VERSION", None) != "V6":
+    raise RuntimeError("Expected creative_renderer_v6 VERSION=V6")
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
     renderer.OUT_DIR = out_dir
 
     print("=" * 88)
-    print("TRUSTFOLIO PREMIUM IMAGE BATCH RENDERER V5")
+    print("TRUSTFOLIO PREMIUM IMAGE BATCH RENDERER V6")
     print("=" * 88)
     print("Ads        :", len(ads))
     print("Output     :", out_dir)
