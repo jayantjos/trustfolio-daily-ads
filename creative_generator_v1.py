@@ -118,6 +118,9 @@ def product_card(product, index, ad):
         "image_url": product.get("image_url") or "",
         "click_url": product.get("click_url") or ad.get("landing_url") or "",
         "product_deep_link": product.get("product_deep_link"),
+        "rating": product.get("rating"),
+        "specifications": product.get("specifications") or {},
+        "category": product.get("category") or ad.get("category") or "",
     }
 
 
