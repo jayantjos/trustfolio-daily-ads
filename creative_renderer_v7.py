@@ -22,6 +22,7 @@ sys.path.insert(0, str(BASE / "ads"))
 import creative_renderer_v6 as renderer
 
 renderer.VERSION = "V7"
+OUT_DIR = BASE / "ads" / "generated_creatives" / "feed"
 
 
 def money(v):
@@ -70,6 +71,17 @@ def adapt_ad(payload_ad):
         "image_ad": {"products": products},
         "landing_url": payload_ad.get("landing_url") or "",
     }
+
+
+def render(payload_ad):
+    global OUT_DIR
+    adapted = adapt_ad(payload_ad)
+    renderer.OUT_DIR = OUT_DIR
+    renderer.VERSION = "V7"
+    renderer.render(adapted)
+    output = OUT_DIR / f"{adapted["ad_id"]}_premium_1080x1350.png"
+    add_cursor(output)
+    return adapted.get("ad_id", "")
 
 
 def add_cursor(path):
