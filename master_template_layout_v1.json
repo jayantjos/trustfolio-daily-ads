@@ -1,0 +1,65 @@
+{
+  "template_id": "trustfolio_master_template_v1",
+  "version": 1,
+  "canvas": {"width": 1024, "height": 1536, "format": "PNG", "background": "reference-style-premium-tech"},
+  "locked_brand": {
+    "name": "TrustFolio",
+    "tagline": "Compare • Save • Shop Smart",
+    "website": "https://www.trustfolio.in/",
+    "play_store": "https://play.google.com/store/apps/details?id=com.trustfolio.app",
+    "cta": "Compare Now on TrustFolio"
+  },
+  "locked_design": {
+    "palette": {"navy": "#071B43", "blue": "#0865D8", "electric_blue": "#19C7F5", "yellow": "#FFD91F", "purple": "#6B20F5", "white": "#FFFFFF"},
+    "background": "bright premium blue-white gradient with light beams and geometric accents",
+    "headline_style": "large white category headline on purple/navy display panel; budget amount highlighted in yellow",
+    "feature_badges": [
+      {"title": "Compare Prices", "detail": "Across Top Websites", "icon": "tag"},
+      {"title": "Latest Models", "detail": "& Real Prices", "icon": "check"},
+      {"title": "Top Rated Picks", "detail": "Based on available evidence", "icon": "star"},
+      {"title": "Best Deals", "detail": "in Your Budget", "icon": "bolt"}
+    ],
+    "product_layout": {
+      "count": 5,
+      "positions": {
+        "1": {"slot": "center_featured", "scale": 1.2, "badge": "FEATURED PICK"},
+        "2": {"slot": "left_top", "scale": 0.82},
+        "3": {"slot": "right_top", "scale": 0.82},
+        "4": {"slot": "left_bottom", "scale": 0.82},
+        "5": {"slot": "right_bottom", "scale": 0.82}
+      },
+      "fields_from_data_only": ["image_url", "name", "price_inr", "retailer", "key_specs"],
+      "max_specs_per_product": 3
+    },
+    "footer": {
+      "trust_highlights": [
+        ["Compare Prices", "Across Top Websites"],
+        ["Find the Best Deals", "in Your Budget"],
+        ["Latest Products", "Always Updated"],
+        ["No Login", "No Ads • No Data Collection"]
+      ],
+      "cta": "Compare Now on TrustFolio",
+      "website": "trustfolio.in",
+      "cursor_effect": {"enabled": true, "type": "pointer-with-click-rays", "position": "cta-right"}
+    }
+  },
+  "dynamic_fields": {
+    "category_title": "from ad headline/category",
+    "budget_inr": "parsed only from source headline; never default silently",
+    "products": "exactly five verified source products when available",
+    "product_images": "source image URLs only",
+    "prices": "source prices only",
+    "retailers": "source retailer names only",
+    "landing_url": "source ad landing URL"
+  },
+  "quality_gates": {
+    "reject_if_no_category": true,
+    "reject_if_budget_missing_for_budget_ad": true,
+    "reject_if_products_have_no_image": false,
+    "never_invent_price_or_spec": true,
+    "never_claim_top_rated_without_rating_evidence": true,
+    "truncate_long_titles": true,
+    "fit_text_inside_slot": true,
+    "do_not_publish_automatically": true
+  }
+}
