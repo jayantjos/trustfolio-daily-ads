@@ -147,29 +147,31 @@ def top_product(im,p,rank,box,featured=False):
     # podium gradient body and glossy oval top
     base_y=y2-4
     d.rounded_rectangle((x1,base_y-85,x2,base_y+3),radius=20,fill=(4,45,117,255),outline=(82,206,255,255),width=3)
-    d.ellipse((x1,base_y-104,x2,base_y-53),fill=(28,142,247,255),outline=(188,246,255,255),width=4)
-    d.ellipse((x1+12,base_y-98,x2-12,base_y-65),fill=(65,190,255,255),outline=(255,255,255,200),width=2)
+    podium_top = 164 if featured else 104
+    d.rounded_rectangle((x1,base_y-podium_top+20,x2,base_y+3),radius=20,fill=(4,45,117,255),outline=(82,206,255,255),width=3)
+    d.ellipse((x1,base_y-podium_top,x2,base_y-podium_top+52),fill=(28,142,247,255),outline=(188,246,255,255),width=4)
+    d.ellipse((x1+12,base_y-podium_top+7,x2-12,base_y-podium_top+36),fill=(65,190,255,255),outline=(255,255,255,200),width=2)
     if featured:
         draw_rank(d,(x1+x2)//2,y1+30,rank,True)
-        product_image(im,p.get("image_url",""),(x1+15,y1+58,x2-15,base_y-94))
+        product_image(im,p.get("image_url",""),(x1+15,y1+58,x2-15,y2-176))
         d=ImageDraw.Draw(im)
         name=product_name(p)
         lines,f=wrap(d,name,x2-x1-26,25,16,2,True)
-        yy=base_y-79
+        yy=y2-157
         for line in lines:
             d.text(((x1+x2)//2,yy),line,font=f,fill=WHITE,anchor="mt",stroke_width=1,stroke_fill=(0,30,75)); yy+=f.size+1
         specs=specs_for(p,2)
         if specs:
-            d.text(((x1+x2)//2,yy+2)," • ".join(specs)[:64],font=text_fit(d," • ".join(specs)[:64],x2-x1-24,13,10,False),fill=(231,244,255),anchor="mt")
+            d.text(((x1+x2)//2,y2-119)," • ".join(specs)[:64],font=text_fit(d," • ".join(specs)[:64],x2-x1-24,13,10,False),fill=(231,244,255),anchor="mt")
         price_pill(d,(x1+45,y2-74,x2-45,y2-24),p.get("price_display") or money(p.get("price_inr",p.get("price"))))
         retailer=str(p.get("retailer") or p.get("platform") or "").strip()
         if retailer: d.text(((x1+x2)//2,y2-15),retailer,font=font(21,True),fill=WHITE,anchor="mb")
     else:
         draw_rank(d,x1+27,y1+22,rank,False)
-        product_image(im,p.get("image_url",""),(x1+10,y1+48,x2-10,base_y-100))
+        product_image(im,p.get("image_url",""),(x1+10,y1+48,x2-10,y2-150))
         d=ImageDraw.Draw(im)
         lines,f=wrap(d,product_name(p),x2-x1-20,20,13,2,True)
-        yy=base_y-89
+        yy=y2-139
         for line in lines:
             d.text(((x1+x2)//2,yy),line,font=f,fill=WHITE,anchor="mt",stroke_width=1,stroke_fill=(0,25,70)); yy+=f.size
         price_pill(d,(x1+18,y2-70,x2-18,y2-29),p.get("price_display") or money(p.get("price_inr",p.get("price"))))
@@ -282,15 +284,14 @@ def render(ad):
     d.line((612,1443,624,1431),fill=YELLOW,width=5); d.line((619,1452,635,1450),fill=YELLOW,width=5)
     # Export large and high quality: 2x upscale from fixed composition
     rgb=Image.new("RGB",im.size,WHITE); rgb.paste(im,mask=im.getchannel("A"))
-    rgb=rgb.resize((2048,3072),Image.Resampling.LANCZOS)
     adid=ad.get("source_ad_id") or "trustfolio"
-    path=OUT/f"{adid}_reference_v8_2048x3072.png"
+    path=OUT/f"{adid}_reference_v8_1024x1536.png"
     rgb.save(path,format="PNG",optimize=True)
     print("TRUSTFOLIO REFERENCE RENDERER V8")
     print("AD ID   :",adid)
     print("CATEGORY:",(ad.get("metadata") or {}).get("campaign_category"))
     print("OUTPUT  :",path)
-    print("QUALITY : 2048x3072 PNG; inspect one ad before batch publishing")
+    print("QUALITY : native 1024x1536 PNG; inspect one ad before batch publishing")
     return path
 
 def main():
