@@ -4,10 +4,10 @@ source "$HOME/venv/bin/activate"
 REPO="$HOME/daily_ads_git"
 BASE="$HOME/new_scraper"
 cd "$REPO"
-git pull --ff-only origin reference-layout-v8
-cp "$REPO/creative_renderer_reference_v8.py" "$BASE/ads/"
-cp "$REPO/build_infographic_payload_v1.py" "$BASE/ads/"
-cp "$REPO/trustfolio_infographic_data_v1.py" "$BASE/ads/"
+git fetch origin reference-layout-v8
+git show FETCH_HEAD:creative_renderer_reference_v8.py > "$BASE/ads/creative_renderer_reference_v8.py"
+git show FETCH_HEAD:build_infographic_payload_v1.py > "$BASE/ads/build_infographic_payload_v1.py"
+git show FETCH_HEAD:trustfolio_infographic_data_v1.py > "$BASE/ads/trustfolio_infographic_data_v1.py"
 cd "$BASE"
 python -m py_compile ads/creative_renderer_reference_v8.py
 python ads/build_infographic_payload_v1.py
