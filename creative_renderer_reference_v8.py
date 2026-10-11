@@ -157,7 +157,7 @@ def top_product(im,p,rank,box,featured=False):
         d=ImageDraw.Draw(im)
         name=product_name(p)
         lines,f=wrap(d,name,x2-x1-26,25,16,2,True)
-        yy=y2-157
+        yy=y2-184
         for line in lines:
             d.text(((x1+x2)//2,yy),line,font=f,fill=WHITE,anchor="mt",stroke_width=1,stroke_fill=(0,30,75)); yy+=f.size+1
         specs=specs_for(p,2)
