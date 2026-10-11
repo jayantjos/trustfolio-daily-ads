@@ -244,8 +244,10 @@ def small_card(canvas, product, box, rank):
         anchor="mm",
     )
 
-    # Product image
-    img_h = 155
+    # Responsive product image: shorter cards get a shorter image slot so
+    # product titles never collide with the price badge.
+    card_h = y2 - y1
+    img_h = min(155, int(card_h * 0.42))
     draw.rounded_rectangle(
         (x1 + 15, y1 + 58, x2 - 15, y1 + 58 + img_h),
         radius=22,
@@ -263,12 +265,13 @@ def small_card(canvas, product, box, rank):
         product_title(product),
         x2 - x1 - 30,
         start=16,
-        minimum=11,
+        minimum=10,
         max_lines=2,
     )
 
+    title_y = y1 + 58 + img_h + 8
     draw.multiline_text(
-        (x1 + 15, y1 + 224),
+        (x1 + 15, title_y),
         title,
         font=tf,
         fill=INK,
@@ -288,11 +291,10 @@ def small_card(canvas, product, box, rank):
 def podium_featured(canvas, product, box):
     x1, y1, x2, y2 = box
     draw = ImageDraw.Draw(canvas)
+    box_h = y2 - y1
 
-    # Outer glow.
-    glow(canvas, (x1 + x2) // 2, y2 - 25, 130, (52, 177, 255, 75))
-
-    # Podium body.
+    # Outer glow and a compact podium that scales to the available stage.
+    glow(canvas, (x1 + x2) // 2, y2 - 20, 110, (52, 177, 255, 65))
     draw.rounded_rectangle(
         (x1, y1, x2, y2),
         radius=30,
@@ -304,19 +306,20 @@ def podium_featured(canvas, product, box):
         fill=(7, 57, 135),
     )
 
-    # Top cap.
+    # Low-profile 3D podium lip, kept behind all text and price elements.
+    cap_y = y1 + int(box_h * 0.70)
     draw.ellipse(
-        (x1 + 4, y1 + 335, x2 - 4, y1 + 430),
+        (x1 + 4, cap_y, x2 - 4, min(y2 - 8, cap_y + 46)),
         fill=(16, 79, 171),
         outline=(70, 201, 255),
         width=3,
     )
     draw.rectangle(
-        (x1 + 4, y1 + 382, x2 - 4, y2 - 48),
+        (x1 + 4, cap_y + 22, x2 - 4, y2 - 12),
         fill=(9, 57, 135),
     )
 
-    # #1 badge.
+    # #1 badge and featured ribbon.
     draw.ellipse(
         (x1 + 19, y1 - 31, x1 + 80, y1 + 30),
         fill=YELLOW,
@@ -330,8 +333,6 @@ def podium_featured(canvas, product, box):
         fill=INK,
         anchor="mm",
     )
-
-    # Featured ribbon.
     draw.rounded_rectangle(
         (x1 + 53, y1 + 18, x2 - 53, y1 + 56),
         radius=19,
@@ -345,10 +346,11 @@ def podium_featured(canvas, product, box):
         anchor="ma",
     )
 
-    # Image panel.
-    img_h = 230
+    # Responsive image panel.
+    img_h = min(230, max(150, int(box_h * 0.42)))
+    img_y = y1 + 67
     draw.rounded_rectangle(
-        (x1 + 38, y1 + 67, x2 - 38, y1 + 67 + img_h),
+        (x1 + 38, img_y, x2 - 38, img_y + img_h),
         radius=26,
         fill=(244, 248, 253),
     )
@@ -358,10 +360,7 @@ def podium_featured(canvas, product, box):
     )
     canvas.alpha_composite(
         img,
-        (
-            x1 + 38 + (x2 - x1 - 76 - img.width) // 2,
-            y1 + 67,
-        ),
+        (x1 + 38 + (x2 - x1 - 76 - img.width) // 2, img_y),
     )
     draw = ImageDraw.Draw(canvas)
 
@@ -369,48 +368,51 @@ def podium_featured(canvas, product, box):
         draw,
         product_title(product),
         x2 - x1 - 76,
-        start=19,
-        minimum=13,
+        start=17,
+        minimum=12,
         max_lines=2,
     )
+    title_y = img_y + img_h + 7
     draw.multiline_text(
-        ((x1 + x2) / 2, y1 + 308),
+        ((x1 + x2) / 2, title_y),
         title,
         font=tf,
         fill=WHITE,
         spacing=2,
         anchor="ma",
+        align="center",
     )
 
-    specs = product_specs(product, 3)
-    if specs:
-        widths = len(specs)
-        col = (x2 - x1 - 70) / widths
+    # Compact spec line; keep it clear of the price area.
+    specs = product_specs(product, 2)
+    spec_y = title_y + 43
+    if specs and spec_y < y2 - 105:
+        col = (x2 - x1 - 70) / len(specs)
         for i, (k, v) in enumerate(specs):
             text = f"{k.title()}: {v}"
-            if len(text) > 23:
-                text = text[:22] + "…"
+            if len(text) > 22:
+                text = text[:21] + "…"
             draw.text(
-                (x1 + 35 + i * col, y1 + 355),
+                (x1 + 35 + i * col, spec_y),
                 text,
-                font=font(10, True),
+                font=font(9, True),
                 fill=(215, 232, 255),
             )
 
+    # Lift the price above the podium base and keep retailer label below it.
     price_badge(
         draw,
         x1 + 45,
-        y2 - 76,
+        y2 - 91,
         x2 - x1 - 90,
         product.get("price_display") or money(product.get("price")),
     )
     platform_tag(
         draw,
         x1 + 45,
-        y2 - 33,
+        y2 - 31,
         product.get("platform"),
     )
-
 
 def draw_benefits(draw):
     items = [
@@ -557,7 +559,7 @@ def render(ad):
         fill=(53, 23, 119),
     )
 
-    hf = fit(draw, left, 540, 34, 22, True)
+    hf = fit(draw, left, 540, 31, 20, True)
     draw.text(
         (726, 158),
         left,
@@ -568,18 +570,18 @@ def render(ad):
 
     # Separate budget line prevents the overlap seen in V5.
     if budget:
-        bf = fit(draw, f"Under {budget}", 520, 55, 34, True)
+        bf = fit(draw, f"Under {budget}", 520, 43, 28, True)
         draw.text(
-            (724, 218),
+            (724, 220),
             f"Under {budget}",
             font=bf,
             fill=YELLOW,
             anchor="mm",
         )
     else:
-        bf = fit(draw, headline, 560, 44, 26, True)
+        bf = fit(draw, headline, 560, 38, 24, True)
         draw.text(
-            (724, 216),
+            (724, 220),
             headline,
             font=bf,
             fill=YELLOW,
@@ -593,12 +595,12 @@ def render(ad):
     )
 
     draw.rounded_rectangle(
-        (416, 250, 1037, 294),
+        (416, 258, 1037, 302),
         radius=22,
         fill=YELLOW,
     )
     draw.text(
-        (726, 272),
+        (726, 280),
         subtitle,
         font=font(15, True),
         fill=INK,
@@ -628,7 +630,7 @@ def render(ad):
 
         small_card(canvas, left, (62, 445, 323, 805), 2)
         small_card(canvas, right, (757, 445, 1018, 805), 3)
-        podium_featured(canvas, center, (344, 421, 736, 940))
+        podium_featured(canvas, center, (344, 421, 736, 840))
         small_card(canvas, bottom_left, (137, 848, 493, 1155), 4)
         small_card(canvas, bottom_right, (587, 848, 943, 1155), 5)
     else:
