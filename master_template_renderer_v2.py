@@ -66,6 +66,14 @@ def fetch_image(source, size):
             img=Image.open(io.BytesIO(data)).convert("RGBA")
         else:
             img=Image.open(str(source)).convert("RGBA")
+        # Product feeds often contain a plain white studio background. Remove only
+        # near-pure white pixels so straps and pale product details remain visible.
+        px=img.load()
+        for yy in range(img.height):
+            for xx in range(img.width):
+                rr,gg,bb,aa=px[xx,yy]
+                if rr >= 249 and gg >= 249 and bb >= 249 and max(rr,gg,bb)-min(rr,gg,bb) <= 7:
+                    px[xx,yy]=(rr,gg,bb,0)
         return ImageOps.contain(img,size,method=Image.Resampling.LANCZOS)
     except Exception as exc:
         print(f"WARNING: image unavailable ({str(source)[:70]}): {exc}")
@@ -126,10 +134,11 @@ def tagline(p):
 
 def image_slot(im, url, box):
     x1,y1,x2,y2=box
-    ImageDraw.Draw(im).rounded_rectangle(box,radius=18,fill=(255,255,255,255),outline=(101,206,255),width=2)
-    img=fetch_image(url,(x2-x1-14,y2-y1-14))
-    if img: im.alpha_composite(img,(x1+(x2-x1-img.width)//2,y1+(y2-y1-img.height)//2))
-    else: ImageDraw.Draw(im).text(((x1+x2)//2,(y1+y2)//2),"Image unavailable",font=font(12),fill=(80,92,115),anchor="mm")
+    img=fetch_image(url,(x2-x1,y2-y1))
+    if img:
+        im.alpha_composite(img,(x1+(x2-x1-img.width)//2,y1+(y2-y1-img.height)//2))
+    else:
+        ImageDraw.Draw(im).text(((x1+x2)//2,(y1+y2)//2),"Image unavailable",font=font(12),fill=(80,92,115),anchor="mm")
 
 def price_badge(d, box, value, size=31):
     d.rounded_rectangle(box,radius=12,fill=YELLOW,outline=(255,246,143),width=2)
@@ -219,18 +228,23 @@ def render(ad, asset_path=ASSET, output_dir=OUT):
         if p.get("price_inr") in (None,""): raise ValueError(f"Product #{i} has no source price; refusing to invent it.")
         if not (p.get("image_url") or "").strip(): print(f"WARNING: product #{i} has no image URL; blank slot will be shown.")
     # Replace only the text zone on top of the fixed artwork.
-    poly=[(87,190),(700,83),(759,105),(753,330),(111,390),(79,349)]
+    poly=[(87,190),(700,83),(759,105),(753,267),(111,337),(79,306)]
     gradient_polygon(im,poly); d=ImageDraw.Draw(im)
     d.line([(93,187),(703,83),(753,104)],fill=(203,150,255),width=4)
     d.text((116,159),headline,font=fit(d,headline,610,58,28,True),fill=WHITE,stroke_width=4,stroke_fill=(31,8,74))
-    if budget: d.text((127,222),budget,font=fit(d,budget,600,70,35,True),fill=YELLOW,stroke_width=4,stroke_fill=(91,42,0))
-    d.polygon([(170,361),(703,300),(746,326),(718,369),(187,421),(161,400)],fill=YELLOW)
-    d.polygon([(170,361),(703,300),(746,326)],fill=(255,236,73))
+    if budget: d.text((127,218),budget,font=fit(d,budget,600,68,34,True),fill=YELLOW,stroke_width=4,stroke_fill=(91,42,0))
+    d.polygon([(170,320),(703,282),(746,307),(718,351),(187,389),(161,368)],fill=YELLOW)
+    d.polygon([(170,320),(703,282),(746,307)],fill=(255,236,73))
     subtitle=str(meta.get("subtitle") or "Top 5 Picks for Style, Fitness & Value")
-    d.text((450,364),subtitle,font=fit(d,subtitle,530,27,15,True),fill=INK,anchor="mm")
+    d.text((450,340),subtitle,font=fit(d,subtitle,530,26,14,True),fill=INK,anchor="mm")
     # Builder's product order is #2, #3, #4, #5, #1.
     leftp,rightp,bottomleft,bottomright,featured=products[:5]
+    # Repaint the center #1 badge after the title ribbon so it is never covered.
     top_card(im,leftp,"left"); top_card(im,featured,"center"); top_card(im,rightp,"right")
+    d=ImageDraw.Draw(im)
+    d.ellipse((383,397,484,498),fill=(255,211,18),outline=(255,255,255),width=4)
+    d.text((433,432),"#1",font=font(35,True),fill=INK,anchor="mm")
+    d.text((433,458),"Best Value",font=font(12,True),fill=INK,anchor="mm")
     bottom_card(im,bottomleft,"left"); bottom_card(im,bottomright,"right")
     d=ImageDraw.Draw(im)
     d.ellipse((522,1055,585,1118),fill=(100,10,225),outline=(228,199,255),width=4)
