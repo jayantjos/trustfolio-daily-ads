@@ -9,13 +9,14 @@ Additive integration only. It does not modify the TrustFolio Node backend or exi
 - The connected Metricool brand showed Instagram in the connected account data. Facebook was not shown as connected on that brand.
 - The repository contains legacy creative IDs. Select an ad_id from the current server-generated social post manifest and verify that its media URL is current.
 
-## Step 1 — Copy the script to the server
+## Step 1 — Copy the script to the server without changing the daily Git checkout
 
-From the server, in ~/daily_ads_git:
+Keep ~/daily_ads_git on its existing main branch. The daily timer expects that checkout; do not checkout the feature branch in that directory.
 
+    cd ~/daily_ads_git
     git fetch origin feature/metricool-auto-publisher-v1
-    git checkout feature/metricool-auto-publisher-v1
-    cp metricool_publisher_v1.py ~/new_scraper/ads/
+    git show origin/feature/metricool-auto-publisher-v1:metricool_publisher_v1.py > ~/new_scraper/ads/metricool_publisher_v1.py
+    source ~/venv/bin/activate
     python -m py_compile ~/new_scraper/ads/metricool_publisher_v1.py
 
 Do not merge this branch into main until the one-post test is complete.
@@ -24,7 +25,6 @@ Do not merge this branch into main until the one-post test is complete.
 
 Choose an ad ID present in the current ~/new_scraper/ads/social_post_manifest_v1.json:
 
-    source ~/venv/bin/activate
     python ~/new_scraper/ads/metricool_publisher_v1.py --ad-id tf-aa5900f0c166 --verify-only
 
 The script downloads the public image and checks HTTPS, HTTP status, content type, image decoding, dimensions, file size and SHA-256. It writes metricool_media_qa_v1.json. A PASS proves technical fetchability, not visual correctness. Open the exact image URL in the report and inspect text, product images, prices and branding.
