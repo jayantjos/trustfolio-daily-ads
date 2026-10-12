@@ -15,7 +15,7 @@ fi
 
 source "$HOME/venv/bin/activate"
 cd "$REPO"
-git fetch origin master-template-integration-v2
+git fetch origin master-template-integration-v2-clean
 git show FETCH_HEAD:master_template_renderer_v2.py > "$BASE/ads/master_template_renderer_v2.py"
 git show FETCH_HEAD:build_infographic_payload_v1.py > "$BASE/ads/build_infographic_payload_v1.py"
 git show FETCH_HEAD:trustfolio_infographic_data_v1.py > "$BASE/ads/trustfolio_infographic_data_v1.py"
