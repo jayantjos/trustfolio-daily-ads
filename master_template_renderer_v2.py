@@ -251,7 +251,7 @@ def render(ad, asset_path=ASSET, output_dir=OUT):
     d.text((553,1086),"5",font=font(34,True),fill=WHITE,anchor="mm",stroke_width=1,stroke_fill=(54,0,120))
     output_dir.mkdir(parents=True,exist_ok=True)
     adid=str(ad.get("source_ad_id") or "trustfolio")
-    out=output_dir/f"{adid}_master_v2_1024x1536.png"
+    out=output_dir/f"{adid}_master_v2b_1024x1536.png"
     rgb=Image.new("RGB",(W,H),WHITE); rgb.paste(im,mask=im.getchannel("A")); rgb.save(out,"PNG",optimize=True)
     print("TRUSTFOLIO MASTER TEMPLATE RENDERER V2")
     print("AD ID   :",adid); print("CATEGORY:",meta.get("campaign_category"))
