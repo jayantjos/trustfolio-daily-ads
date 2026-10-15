@@ -28,7 +28,7 @@ def ell(x,n=42):
     return x if len(x)<=n else x[:n-1].rstrip()+'…'
 def tagline(p,rank):
     for k in ('tagline','short_tagline','short_description','subtitle'):
-        if p.get(k): return ell(p[k],36)
+        if p.get(k): return str(p[k]).strip()
     return ''
 def retail_class(name):
     n=(name or '').lower()
@@ -48,6 +48,38 @@ def prep_image(product, rank):
     import io
     buf=io.BytesIO(); raw.save(buf, format='PNG', optimize=True)
     return 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode('ascii')
+def clean_body_uri():
+    # Remove only obsolete medallions in the legacy clean layer. All other
+    # source pixels remain unchanged; canonical badges are separate fixed art.
+    import cv2, numpy as np, io
+    raw=np.array(Image.open(ADS/'assets/trustfolio_clean_master_v3.png').convert('RGB'))
+    mask=np.zeros(raw.shape[:2],dtype=np.uint8)
+    for x,y in [(57,986),(961,985)]: cv2.circle(mask,(x,y),38,255,-1)
+    clean=cv2.inpaint(raw,mask,5,cv2.INPAINT_TELEA)
+    buf=io.BytesIO();Image.fromarray(clean).save(buf,format='PNG')
+    return 'data:image/png;base64,'+base64.b64encode(buf.getvalue()).decode('ascii')
+
+def readable_specs(product, profile, count):
+    raw=product.get('raw_specifications') or {}
+    if not raw: return h.choose_specs(product,profile,count)
+    values=[]
+    for key,value in raw.items():
+        if not value or not isinstance(value,(str,int,float)): continue
+        key=str(key).lower();value=str(value).strip()
+        if 'noise' in key:
+            if 'environment' in value.lower() or 'enc' in value.lower(): value='ENC Calling'
+            elif 'active' in value.lower() or 'anc' in value.lower(): value='Active Noise Cancellation'
+        elif 'battery' in key and 'battery' not in value.lower(): value+=' Battery'
+        elif 'display' in key and 'display' not in value.lower(): value+=' Display'
+        elif 'driver' in key and 'driver' not in value.lower(): value+=' Driver'
+        elif 'water' in key and 'resist' not in value.lower(): value+=' Resistant'
+        elif 'form factor' in key: value=value.replace('In Ear','In-ear')
+        values.append(value)
+    priorities=profile.get('priority') or []
+    def score(v):
+        return next((i for i,k in enumerate(priorities) if k.lower() in v.lower()),999)
+    return sorted(dict.fromkeys(values),key=score)[:count]
+
 def display_label(product, rank):
     # Derive a compact model label from supplied data; retain full name in metadata.
     label=product.get('display_name') or product.get('short_name') or h.v5.display_name(product)
@@ -74,13 +106,13 @@ def build(ad):
     title=f'Best {profile["label"]}'
     budget_text=f'Under ₹{h.indian_commas(budget)}' if budget else 'Top 5 Best Picks'
     master_uri='data:image/png;base64,' + base64.b64encode(MASTER.read_bytes()).decode('ascii')
-    clean_uri='data:image/png;base64,' + base64.b64encode((ADS/'assets/trustfolio_clean_master_v3.png').read_bytes()).decode('ascii')
+    clean_uri=clean_body_uri()
     approved_uri='data:image/jpeg;base64,' + base64.b64encode((ADS/'assets/trustfolio_approved_reference.jpg').read_bytes()).decode('ascii')
     benefits=[('Compare Prices','Across Top Websites'),('Latest Models','& Real Prices'),('Top Rated Picks',''),('Best Deals','in Your Budget')]
     rank_art=''.join(f'<div class="rank-art rank-{r}" style="left:{x}px;top:{y}px;width:{w}px;height:{w}px;background-image:url({approved_uri});background-position:-{x}px -{y}px"></div>' for r,x,y,w in [(1,381,386,100),(2,119,417,59),(3,868,431,60),(4,28,941,66),(5,928,942,69)])
     prod_html=[]
     for r in (1,2,3,4,5):
-        p=ranked[r]; s=SLOTS[r]; uri=prep_image(p,r); specs=h.choose_specs(p, profile, 4 if r == 1 else 3)
+        p=ranked[r]; s=SLOTS[r]; uri=prep_image(p,r); specs=readable_specs(p, profile, 4 if r == 1 else 3)
         name=esc(display_label(p,r)); price=esc(h.v5.product_price(p)); retailer=str(h.v5.retailer(p) or '')
         specs_html=''.join(f'<div class="spec"><span class="ico">{esc(symbol(v))}</span><span class="stxt">{esc(v)}</span></div>' for v in specs[:4])
         prod_html.append(f'''<section class="prod p{r}" data-rank="{r}" data-name="{esc(p.get('name'))}">
@@ -131,7 +163,7 @@ def build(ad):
 .specs.top .ico{{width:42px;height:42px;flex-shrink:0}}
 .p1 .stxt{{font-size:13px}}.p2 .stxt,.p3 .stxt{{font-size:13px}}
 
-.clean-body{{clip-path:path(evenodd,"M0 0H1024V895H0Z M20 555H100V635H20Z M920 555H1004V635H920Z")}}
+
 .rank-art{{position:absolute;z-index:10;border-radius:50%;background-size:1024px 1536px;background-repeat:no-repeat}}
 </style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}{rank_art}</div></body></html>''',key,profile
 
