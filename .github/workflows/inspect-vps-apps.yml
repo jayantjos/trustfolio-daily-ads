@@ -1,0 +1,76 @@
+name: Inspect TrustFolio VPS apps sources (read-only)
+on:
+  push:
+    branches: [feature/import-trustfolio-apps-20261016]
+    paths: ['.github/workflows/inspect-vps-apps.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure verified VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Inspect apps directory names and source markers only
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'python3 -' <<'PY'
+          import json
+          from pathlib import Path
+          from collections import Counter
+          root = Path.home() / 'apps'
+          markers = ('package.json', 'pubspec.yaml', 'android', 'ios',
+                     'requirements.txt', 'pyproject.toml', 'manage.py',
+                     'next.config.js', 'next.config.mjs', 'vite.config.ts',
+                     'build.gradle', 'settings.gradle', 'app.json')
+          skip = {'.git', '.next', '.venv', 'venv', 'node_modules', 'build',
+                  'dist', '__pycache__', '.gradle', '.expo', '.dart_tool',
+                  '.idea', 'vendor', 'coverage', 'logs', 'tmp', 'cache'}
+          result = {'apps_directory_exists': root.is_dir(), 'projects': []}
+          if root.is_dir():
+              for child in sorted(root.iterdir()):
+                  if child.name.startswith('.') or child.name in skip: continue
+                  if not child.is_dir() or child.is_symlink(): continue
+                  present = [m for m in markers if (child/m).exists()]
+                  files, exts = 0, Counter()
+                  # Depth + file cap; no source contents, tokens or secrets read.
+                  todo = [(child, 0)]
+                  while todo and files < 3500:
+                      folder, depth = todo.pop()
+                      try: entries = list(folder.iterdir())
+                      except (OSError, PermissionError): continue
+                      for node in entries:
+                          if node.name.startswith('.') or node.is_symlink(): continue
+                          if node.is_dir() and node.name not in skip and depth < 3:
+                              todo.append((node,depth+1))
+                          elif node.is_file():
+                              files += 1
+                              exts[node.suffix.lower() or '[none]'] += 1
+                  result['projects'].append({'folder': child.name,
+                    'project_markers': present, 'files_sampled': files,
+                    'extension_counts': exts.most_common(12)})
+          print('TRUSTFOLIO_APPS_READ_ONLY_INVENTORY_BEGIN')
+          print(json.dumps(result, indent=2))
+          print('TRUSTFOLIO_APPS_READ_ONLY_INVENTORY_END')
+          PY
