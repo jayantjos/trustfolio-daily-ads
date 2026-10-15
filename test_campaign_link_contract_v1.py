@@ -3,6 +3,7 @@ import unittest
 from urllib.parse import urlsplit, parse_qs
 from campaign_link_contract_v1 import campaign_link, check_ranked_site_snapshot
 from ad_link_manifest_v1 import build_manifest
+from social_post_generator_v1 import build_copy
 
 
 def config():
@@ -91,6 +92,12 @@ class CampaignContractTests(unittest.TestCase):
         self.assertEqual(item["site_ranking_status"], "unverified")
         self.assertEqual(item["products"][0]["product_id"], "sku1")
         self.assertEqual(item["products"][0]["ad_rank"], 1)
+
+    def test_instagram_caption_carries_campaign_url(self):
+        item = build_manifest({"ads": [ad()]}, config())["ads"][0]
+        caption = build_copy(item)["instagram"]["caption"]
+        self.assertIn(item["landing_url"], caption)
+        self.assertIn("utm_content=", caption)
 
     def test_parity_requires_actual_snapshot(self):
         self.assertIn("missing", check_ranked_site_snapshot(ad(), None)[0])
