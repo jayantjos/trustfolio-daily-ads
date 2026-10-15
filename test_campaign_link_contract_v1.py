@@ -79,8 +79,8 @@ class CampaignContractTests(unittest.TestCase):
 
     def test_offsite_results_path_rejected(self):
         cfg = config()
-        cfg["results_url_template"] = "https://untrusted.example/category/{route_slug}/products"
-        cfg["budget_query_parameter"] = {"enabled": True, "frontend_verified": True}
+        cfg["links"]["results_url_template"] = "https://untrusted.example/category/{route_slug}/products"
+        cfg["links"]["budget_query_parameter"] = {"enabled": True, "frontend_verified": True}
         with self.assertRaises(ValueError):
             campaign_link(ad(), cfg, "tf-bad")
 
