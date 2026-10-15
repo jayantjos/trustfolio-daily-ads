@@ -42,11 +42,36 @@ jobs:
           HOST: ${{ secrets.TF_DEPLOY_HOST }}
           USER: ${{ secrets.TF_DEPLOY_USER }}
         run: |
-          test -n "$KEY" && test -n "$HOSTKEY" && test -n "$HOST" && test -n "$USER"
+          set -euo pipefail
+          # Validate without printing any secret values.
+          if [[ "$HOST" != "200.234.47.87" ]]; then
+            echo "::error::TF_DEPLOY_HOST must be the exact server IP (no ssh://, username, spaces or newline)"
+            exit 1
+          fi
+          if [[ "$USER" != "scraperuser" ]]; then
+            echo "::error::TF_DEPLOY_USER must be the exact SSH username"
+            exit 1
+          fi
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          if ! ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null 2>&1; then
+            echo "::error::TF_DEPLOY_SSH_KEY is not a valid unencrypted SSH private key"
+            exit 1
+          fi
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          if [[ "$HOSTKEY" != "$expected" ]]; then
+            echo "::error::TF_DEPLOY_KNOWN_HOSTS does not match the independently verified server ED25519 host key"
+            exit 1
+          fi
           printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Test SSH authentication (no production changes)
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o PasswordAuthentication=no -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "${USER}@${HOST}" 'test "$(id -un)" = scraperuser && echo "SSH_AUTH_SUCCESS"'
       - name: Deploy allowlisted files with backup and rollback
         env:
           HOST: ${{ secrets.TF_DEPLOY_HOST }}
