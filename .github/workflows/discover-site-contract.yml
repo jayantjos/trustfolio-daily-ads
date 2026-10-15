@@ -2,7 +2,7 @@ name: Discover TrustFolio app contracts (read-only)
 on:
   push:
     branches: [feature/ads-readonly-site-contract-20261016]
-    paths: ['.github/workflows/discover-site-contract.yml']
+    paths: ['.github/workflows/discover-site-contract.yml', 'ads_qa/inspect_site_contract_readonly.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,6 +28,16 @@ jobs:
           printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
           ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/ads-readonly-site-contract-20261016
+      - name: Inspect selected app filter and ranking code without modifying it
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'python3 -' < ads_qa/inspect_site_contract_readonly.py
       - name: List only source file names for category/search/ranking discovery
         env:
           HOST: ${{ secrets.TF_DEPLOY_HOST }}
