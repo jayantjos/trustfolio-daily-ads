@@ -2,7 +2,7 @@
 import json
 import sys
 from pathlib import Path
-from urllib.parse import urlencode
+from campaign_link_contract_v1 import campaign_link
 
 BASE = Path.home() / "new_scraper"
 CONFIG_PATH = BASE / "ads" / "creative_config_v1.json"
@@ -12,22 +12,6 @@ DEFAULT_OUTPUT = BASE / "ads" / "creative_ad_manifest_v1.json"
 
 def load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def category_route_slug(category: str, config: dict) -> str:
-    overrides = config["links"].get("route_slug_overrides", {})
-    return overrides.get(category, category)
-
-
-def category_url(category: str, config: dict, ad_id: str, ad_type: str) -> str:
-    slug = category_route_slug(category, config)
-    base = config["links"]["category_url_template"].format(route_slug=slug)
-
-    params = dict(config["links"]["tracking"]["parameters"])
-    params["utm_content"] = ad_id
-    params["ad_type"] = ad_type
-
-    return base + "?" + urlencode(params)
 
 
 def stable_ad_id(index: int, ad: dict) -> str:
@@ -49,7 +33,8 @@ def build_manifest(data: dict, config: dict) -> dict:
         category = ad.get("category") or ""
         ad_type = ad.get("ad_type") or ""
 
-        landing_url = category_url(category, config, ad_id, ad_type)
+        link = campaign_link(ad, config, ad_id)
+        landing_url = link["landing_url"]
 
         products = []
         raw_products = ad.get("products") or []
@@ -77,6 +62,7 @@ def build_manifest(data: dict, config: dict) -> dict:
             # TrustFolio category landing page. Product-specific deep links
             # stay disabled until a real TrustFolio product route exists.
             product_copy["click_url"] = landing_url
+            product_copy["ad_rank"] = len(products) + 1
             product_copy["product_deep_link"] = None
             products.append(product_copy)
 
@@ -90,6 +76,12 @@ def build_manifest(data: dict, config: dict) -> dict:
             "budget_inr": ad.get("budget_inr"),
             "platforms": ad.get("platforms") or [],
             "landing_url": landing_url,
+            "requested_filters": link["requested_filters"],
+            "prefill_ready": link["prefill_ready"],
+            "verified_prefill_fields": link["verified_prefill_fields"],
+            "unverified_prefill_fields": link["unverified_prefill_fields"],
+            "site_ranking_status": link["site_ranking_status"],
+            "click_destination": link["click_destination"],
             "website_url": config["brand"]["website_url"],
             "play_store_url": config["brand"]["play_store_url"],
             "fixed_branding": {
