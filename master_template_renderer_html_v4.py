@@ -15,11 +15,11 @@ spec=importlib.util.spec_from_file_location('tfh', HELPER_PATH)
 h=importlib.util.module_from_spec(spec); spec.loader.exec_module(h)
 
 SLOTS={
-1: dict(img=(378,430,650,700), name=(360,776,662,831), price=(389,840,635,895), merchant=(405,902,620,936), specs=(354,951,672,1040), top=True),
+1: dict(img=(396,416,675,769), name=(360,776,662,831), price=(389,840,635,895), merchant=(405,902,620,936), specs=(354,951,672,1040), top=True),
 2: dict(img=(77,448,323,694), name=(77,704,321,754), price=(97,762,299,807), merchant=(105,814,291,845), specs=(70,856,320,941), top=True),
 3: dict(img=(700,452,950,694), name=(708,704,947,754), price=(726,762,925,807), merchant=(733,814,917,845), specs=(705,856,955,941), top=True),
-4: dict(img=(42,986,226,1214), name=(233,1072,430,1112), price=(242,1115,409,1153), merchant=(248,1155,395,1182), specs=(229,1194,430,1271), top=False),
-5: dict(img=(798,986,978,1214), name=(592,1072,786,1112), price=(607,1115,773,1153), merchant=(623,1155,760,1182), specs=(593,1194,794,1271), top=False),
+4: dict(img=(46,969,250,1242), name=(260,1082,470,1130), price=(260,1134,401,1177), merchant=(260,1180,405,1210), specs=(260,1217,490,1302), top=False),
+5: dict(img=(666,990,878,1263), name=(876,1031,1015,1080), price=(881,1086,1006,1128), merchant=(877,1131,1014,1169), specs=(867,1189,1020,1285), top=False),
 }
 
 def esc(x): return html.escape(str(x or ''))
@@ -42,7 +42,7 @@ def symbol(v):
 def prep_image(product, rank):
     CACHE.mkdir(exist_ok=True)
     raw=h.v5.load_product_image(product.get('image_url') or '', (720,720))
-    if raw is None: return ''
+    if raw is None: raise ValueError(f'Missing product image for rank {rank}')
     raw=h.cutout_and_crop(raw)
     if not raw.width or not raw.height: return ''
     import io
@@ -59,10 +59,11 @@ def build(ad):
     title=f'Best {profile["label"]}'
     budget_text=f'Under ₹{h.indian_commas(budget)}' if budget else 'Top 5 Best Picks'
     master_uri='data:image/png;base64,' + base64.b64encode(MASTER.read_bytes()).decode('ascii')
-    benefits=[('Compare Prices','Across Top Websites'),('Latest Models','& Real Prices'),('Top Rated Picks','Based on reviews'),('Best Deals','in Your Budget')]
+    approved_uri='data:image/jpeg;base64,' + base64.b64encode((ADS/'assets/trustfolio_approved_reference.jpg').read_bytes()).decode('ascii')
+    benefits=[('Compare Prices','Across Top Websites'),('Latest Models','& Real Prices'),('Top Rated Picks',''),('Best Deals','in Your Budget')]
     prod_html=[]
     for r in (1,2,3,4,5):
-        p=ranked[r]; s=SLOTS[r]; uri=prep_image(p,r); specs=h.choose_specs(p, profile, 4)
+        p=ranked[r]; s=SLOTS[r]; uri=prep_image(p,r); specs=h.choose_specs(p, profile, 4 if r == 1 else 3)
         name=esc(h.v5.display_name(p)); price=esc(h.v5.product_price(p)); retailer=str(h.v5.retailer(p) or '')
         specs_html=''.join(f'<div class="spec"><span class="ico">{esc(symbol(v))}</span><span class="stxt">{esc(ell(v,23))}</span></div>' for v in specs[:4])
         prod_html.append(f'''<section class="prod p{r}">
@@ -81,7 +82,27 @@ def build(ad):
 .price{{display:flex;align-items:center;justify-content:center;font-family:"DejaVu Sans",Arial,sans-serif;font-weight:900;font-size:31px;line-height:1;color:#071939;text-shadow:0 1px 0 rgba(255,255,255,.55)}}.p1 .price{{font-size:37px}}.p4 .price,.p5 .price{{font-size:23px}}
 .merchant{{display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff;text-transform:none}}.p1 .merchant{{font-size:17px}}.p4 .merchant,.p5 .merchant{{color:#071939;font-size:12px;justify-content:flex-start;padding-left:8px}}.merchant.amazon::after{{content:"";position:absolute;width:42px;height:9px;border-bottom:3px solid #ff9900;border-radius:50%;left:50%;bottom:-1px;transform:translateX(-50%) rotate(-3deg)}}.p4 .merchant.amazon::after,.p5 .merchant.amazon::after{{left:36px}}
 .specs{{display:flex;align-items:flex-start;justify-content:space-around;padding-top:0}}.spec{{display:flex;flex-direction:column;align-items:center;text-align:center;color:#fff;width:24%}}.ico{{width:42px;height:42px;border:2px solid currentColor;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;line-height:1}}.stxt{{margin-top:4px;font-size:10px;line-height:11px;width:62px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}}.p1 .stxt{{font-size:10.5px;width:72px}}.specs.bottom{{color:#071939;padding-top:0}}.specs.bottom .spec{{color:#071939}}.specs.bottom .ico{{width:34px;height:34px;font-size:13px;border-width:2px}}.specs.bottom .stxt{{font-size:9px;line-height:10px;width:46px}}
-</style></head><body><img class="bg" src="{master_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}</div></body></html>''',key,profile
+
+/* Reference geometry: fixed artwork crops contain no product data. */
+.fixed-footer,.fixed-benefits{{position:absolute;inset:0;width:1024px;height:1536px;z-index:1;pointer-events:none}}
+.fixed-footer{{clip-path:inset(1315px 0 0 0)}}
+.fixed-benefits{{clip-path:inset(150px 0 1108px 770px)}}
+.benefit{{display:none}}
+.hero1{{left:105px;top:150px;width:640px;height:82px;font-size:65px;line-height:82px;transform:rotate(-9deg);font-stretch:condensed;letter-spacing:-2.5px}}
+.hero2{{left:103px;top:225px;width:647px;height:115px;font-size:94px;line-height:115px;transform:rotate(-9deg);letter-spacing:-4px}}
+.sub{{left:206px;top:324px;width:510px;height:46px;font-size:27px;line-height:46px;transform:rotate(-7deg);letter-spacing:-1px}}
+.pname{{font-family:'Liberation Sans Narrow','Arial Narrow',Arial,sans-serif;font-size:22px;line-height:24px;letter-spacing:-.5px}}
+.tag{{font-size:15px;line-height:19px}}.p1 .tag{{font-size:17px;line-height:21px}}
+.price{{background:linear-gradient(#fff95a,#ffe222);border-radius:9px;box-shadow:0 0 12px #ffee4477;font-size:38px;color:#080b11;letter-spacing:-1px}}
+.p1 .price{{font-size:48px}}.p4 .price,.p5 .price{{font-size:33px}}
+.merchant{{font-size:24px}}.p1 .merchant{{font-size:28px}}.p4 .merchant,.p5 .merchant{{font-size:23px;padding-left:0}}
+.spec{{flex:1}}.stxt{{font-size:14px;line-height:17px;width:78px;-webkit-line-clamp:3}}.p1 .stxt{{font-size:14px;width:76px}}
+.specs.bottom{{flex-direction:column;justify-content:flex-start;gap:6px}}
+.specs.bottom .spec{{width:100%;flex:none;flex-direction:row;text-align:left;gap:7px}}
+.specs.bottom .ico{{width:25px;height:25px;border:0;border-radius:4px;background:#081326;color:white;flex-shrink:0}}
+.specs.bottom .stxt{{font-size:14px;line-height:18px;width:auto;margin:0;display:block}}
+.p4 .pname,.p5 .pname{{font-size:18px;line-height:20px}}.p4 .tag,.p5 .tag{{font-size:14px;line-height:18px}}
+</style></head><body><img class="bg" src="{master_uri}"><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}</div></body></html>''',key,profile
 
 def render(ad):
     html_text,key,profile=build(ad); OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
@@ -109,3 +130,4 @@ if __name__=='__main__':
     data=json.loads(payload.read_text(encoding='utf-8')); ad=next((x for x in data.get('ads',[]) if x.get('source_ad_id')==adid),None)
     if ad is None: raise SystemExit(f'Ad not found: {adid}')
     render(ad)
+
