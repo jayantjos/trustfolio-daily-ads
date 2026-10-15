@@ -1,5 +1,8 @@
 name: TrustFolio automated Instagram campaigns
 on:
+  push:
+    branches: [main]
+    paths: ['automation/**', '.github/workflows/auto-instagram-campaigns.yml']
   schedule:
     # UTC; local Asia/Kolkata times are 08:30 / 13:30 / 19:00.
     - cron: '0 3 * * *'
@@ -77,7 +80,8 @@ jobs:
           from datetime import datetime
           from zoneinfo import ZoneInfo
           cron_modes={'0 3 * * *':'budget','0 8 * * *':'brand_budget','30 13 * * *':'comparison'}
-          mode=cron_modes.get(os.getenv('CRON_TRIGGER')) if os.getenv('EVENT_TYPE')=='schedule' else os.getenv('INPUT_MODE')
+          event=os.getenv('EVENT_TYPE')
+          mode=cron_modes.get(os.getenv('CRON_TRIGGER')) if event=='schedule' else ('budget' if event=='push' else os.getenv('INPUT_MODE'))
           if mode not in ('budget','brand_budget','comparison'): raise SystemExit('Unrecognized scheduling mode')
           cmd=[sys.executable,'automation/auto_campaign_v1.py','select','--mode',mode,
                '--day',datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat(),
