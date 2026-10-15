@@ -1,0 +1,75 @@
+name: Import TrustFolio VPS app sources into safe GitHub branch
+on:
+  push:
+    branches: [feature/import-trustfolio-apps-20261016]
+    paths: ['.github/workflows/import-trustfolio-apps.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: trustfolio-apps-source-import
+  cancel-in-progress: false
+jobs:
+  export-audit-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/import-trustfolio-apps-20261016
+      - name: Configure exact verified VPS SSH identity
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Syntax-check safe export and scanner
+        run: |
+          python3 -m py_compile deploy/export_trustfolio_apps_safe.py deploy/scan_imported_apps_safe.py
+      - name: Read-only export of three curated VPS projects
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'python3 -' \
+            < deploy/export_trustfolio_apps_safe.py > "$RUNNER_TEMP/trustfolio-source.tgz"
+          test -s "$RUNNER_TEMP/trustfolio-source.tgz"
+          while IFS= read -r entry; do
+            if [[ ! "$entry" =~ ^apps/(trustfolio-main|node-backend|trustfolio_admin)/[A-Za-z0-9_./-]+$ ]] || [[ "$entry" == *../* ]]; then
+              echo "::error::Unexpected archive entry path"
+              exit 1
+            fi
+          done < <(tar -tzf "$RUNNER_TEMP/trustfolio-source.tgz")
+          tar -xzf "$RUNNER_TEMP/trustfolio-source.tgz" -C "$GITHUB_WORKSPACE"
+      - name: Verify source completeness and reject credential leakage
+        run: |
+          python3 deploy/scan_imported_apps_safe.py
+      - name: Commit app source on import branch only (never deploy)
+        env:
+          TARGET_BRANCH: feature/import-trustfolio-apps-20261016
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- apps/trustfolio-main apps/node-backend apps/trustfolio_admin
+          if git diff --cached --quiet; then
+            echo "No app source changes to commit"
+            exit 0
+          fi
+          git diff --cached --check
+          git commit -m 'Import scrubbed TrustFolio frontend backend and admin source'
+          git push origin "HEAD:${TARGET_BRANCH}"
+          echo "APP_SOURCE_IMPORT_BRANCH_PUSH_SUCCESS"
