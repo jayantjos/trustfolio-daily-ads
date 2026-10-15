@@ -3,6 +3,7 @@ import json, re, sys, html, importlib.util, base64
 from pathlib import Path
 from urllib.parse import quote
 from PIL import Image
+from ads_qa.spec_sanity import is_sane_spec
 from playwright.sync_api import sync_playwright
 
 ADS = Path(__file__).resolve().parent
@@ -61,13 +62,17 @@ def clean_body_uri():
 
 def readable_specs(product, profile, count):
     explicit=product.get('key_specs') or []
-    if explicit: return [str(v) for v in explicit if v][:count]
+    category=profile.get('label') or profile.get('category') or ''
+    if explicit:
+        return [str(v) for v in explicit if is_sane_spec(category,'',v)][:count]
     raw=product.get('raw_specifications') or {}
-    if not raw: return h.choose_specs(product,profile,count)
+    if not raw:
+        return [v for v in h.choose_specs(product,profile,count) if is_sane_spec(category,'',v)][:count]
     values=[]
     for key,value in raw.items():
         if not value or not isinstance(value,(str,int,float)): continue
         key=str(key).lower();value=str(value).strip()
+        if not is_sane_spec(category,key,value): continue
         if 'noise' in key:
             if 'environment' in value.lower() or 'enc' in value.lower(): value='ENC Calling'
             elif 'active' in value.lower() or 'anc' in value.lower(): value='Active Noise Cancellation'

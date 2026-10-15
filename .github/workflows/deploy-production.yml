@@ -28,6 +28,8 @@ jobs:
           assert links['budget_query_parameter']['frontend_verified'] is True
           assert links['results_url_template']=='https://www.trustfolio.in/category/{route_slug}/products'
           PY
+      - name: Reject obviously false wearable specs in advertisement copy
+        run: python -m unittest -v test_ads_spec_sanity
       - name: Validate Python and deployment allowlist
         run: |
           python - <<'PY'

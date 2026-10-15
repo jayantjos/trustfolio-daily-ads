@@ -24,3 +24,5 @@ assets/trustfolio_clean_master_v3.png
 
 ads_qa/verify_template.py
 ads_qa/render_site_ranked_qa_v1.py
+
+ads_qa/spec_sanity.py
