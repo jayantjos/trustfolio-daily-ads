@@ -19,3 +19,4 @@ assets/trustfolio_master_universal_v12.png
 assets/trustfolio_approved_reference.jpg
 assets/trustfolio_clean_master_v3.png
 
+ads_qa/verify_template.py

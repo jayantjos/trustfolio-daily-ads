@@ -53,7 +53,10 @@ def pxbox(t):
 
 def build(ad):
     key,profile=h.detect_category(ad); budget=h.detect_budget(ad)
-    ranked={int(p.get('rank') or i):p for i,p in enumerate(ad.get('products') or [],1)}
+    products=ad.get('products') or []
+    ranks=[int(p.get('rank', 0)) for p in products]
+    if sorted(ranks) != [1,2,3,4,5]: raise ValueError('Payload must contain exactly five unique explicit ranks 1..5')
+    ranked={int(p['rank']):p for p in products}
     miss=[r for r in range(1,6) if r not in ranked]
     if miss: raise ValueError(f'missing ranks {miss}')
     title=f'Best {profile["label"]}'
@@ -66,8 +69,8 @@ def build(ad):
     for r in (1,2,3,4,5):
         p=ranked[r]; s=SLOTS[r]; uri=prep_image(p,r); specs=h.choose_specs(p, profile, 4 if r == 1 else 3)
         name=esc(h.v5.display_name(p)); price=esc(h.v5.product_price(p)); retailer=str(h.v5.retailer(p) or '')
-        specs_html=''.join(f'<div class="spec"><span class="ico">{esc(symbol(v))}</span><span class="stxt">{esc(ell(v,23))}</span></div>' for v in specs[:4])
-        prod_html.append(f'''<section class="prod p{r}">
+        specs_html=''.join(f'<div class="spec"><span class="ico">{esc(symbol(v))}</span><span class="stxt">{esc(v)}</span></div>' for v in specs[:4])
+        prod_html.append(f'''<section class="prod p{r}" data-rank="{r}" data-name="{esc(p.get('name'))}">
           <div class="pimg" style="{pxbox(s['img'])}">{f'<img src="{uri}">' if uri else ''}</div>
           <div class="namebox" style="{pxbox(s['name'])}"><div class="pname">{name}</div><div class="tag">{esc(tagline(p,r))}</div></div>
           <div class="price" style="{pxbox(s['price'])}">{price}</div>
@@ -105,6 +108,15 @@ def build(ad):
 .specs.bottom .ico{{width:25px;height:25px;border:0;border-radius:4px;background:#081326;color:white;flex-shrink:0}}
 .specs.bottom .stxt{{font-size:14px;line-height:18px;width:auto;margin:0;display:block}}
 .p4 .pname,.p5 .pname{{font-size:18px;line-height:20px}}.p4 .tag,.p5 .tag{{font-size:14px;line-height:18px}}
+
+.clean-body{{mask-image:linear-gradient(to bottom,transparent,black 45px,black)}}
+.pname{{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.05}}
+.tag{{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.1}}
+.stxt{{display:block;overflow:visible;line-height:1.12;overflow-wrap:anywhere}}
+.p4 .namebox,.p5 .namebox{{justify-content:flex-start}}
+.specs.top{{padding-top:0}}.p2 .specs,.p3 .specs{{top:839px!important;height:92px!important}}
+.specs.top .ico{{width:42px;height:42px;flex-shrink:0}}
+.p1 .stxt{{font-size:13px}}.p2 .stxt,.p3 .stxt{{font-size:13px}}
 </style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}</div></body></html>''',key,profile
 
 def render(ad):
@@ -123,6 +135,37 @@ def render(ad):
         page.evaluate('''() => document.fonts.ready''')
         # fit long hero/category text without tiny fonts
         page.evaluate('''() => { for (const el of document.querySelectorAll('.hero1,.hero2')) { let s=parseFloat(getComputedStyle(el).fontSize); while (el.scrollWidth>el.clientWidth && s>42){s-=1;el.style.fontSize=s+'px';} } }''')
+        page.evaluate("""() => {
+          for (const el of document.querySelectorAll('.pname,.tag')) {
+            const limit=el.classList.contains('pname')?14:11;
+            let size=parseFloat(getComputedStyle(el).fontSize);
+            while ((el.scrollWidth>el.clientWidth+1 || el.parentElement.scrollHeight>el.parentElement.clientHeight+1) && size>limit) {
+              size-=.5;el.style.fontSize=size+'px';
+            }
+          }
+          for (const el of document.querySelectorAll('.stxt')) {
+            let size=parseFloat(getComputedStyle(el).fontSize);
+            const parent=el.closest('.specs');
+            while (el.getBoundingClientRect().bottom>parent.getBoundingClientRect().bottom+1 && size>11) {
+              size-=.5;el.style.fontSize=size+'px';
+            }
+          }
+        }""")
+        geometry=page.evaluate("""() => {
+          const box=e=>{const r=e.getBoundingClientRect();return [r.x,r.y,r.right,r.bottom]};
+          const errors=[];
+          const dynamic=[...document.querySelectorAll('.hero,.pimg,.namebox,.price,.merchant,.specs')].map(box);
+          const slots=[...document.querySelectorAll('.prod')].map(p=>{
+            const fields={};for(const cls of ['pimg','namebox','price','merchant','specs']) fields[cls]=box(p.querySelector('.'+cls));
+            const im=p.querySelector('.pimg img');if(!im || !im.complete || !im.naturalWidth) errors.push('missing image '+p.dataset.rank);
+            for(const e of p.querySelectorAll('.pname,.tag')) if(e.scrollWidth>e.clientWidth+2 || e.parentElement.scrollHeight>e.parentElement.clientHeight+2) errors.push('overflow rank '+p.dataset.rank+' '+e.className);
+            for(const e of p.querySelectorAll('.stxt')) {const a=box(e),b=box(e.closest('.specs'));if(a[0]<b[0]-2||a[2]>b[2]+2||a[3]>b[3]+2)errors.push('spec overflow rank '+p.dataset.rank);}
+            return {rank:Number(p.dataset.rank),name:p.dataset.name,fields};
+          });return {dynamic,slots,errors};
+        }""")
+        geometry['category']=key
+        geometry['source_ad_id']=adid
+        dest.with_suffix('.json').write_text(json.dumps(geometry,indent=2))
         page.screenshot(path=str(dest),full_page=False)
         browser.close()
     print('HTML V3 QA IMAGE:',dest); print('CATEGORY:',key,'| LABEL:',profile['label'],'| BUDGET:',h.detect_budget(ad)); print('LAYOUT: CLEAN MASTER + CSS LOCKED | DATA: DYNAMIC | NOT PUBLISHED')

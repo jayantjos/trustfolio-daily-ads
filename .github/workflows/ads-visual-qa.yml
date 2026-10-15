@@ -34,61 +34,29 @@ jobs:
           printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
           ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
-      - name: Render with existing server code (read-only source)
+      - name: Render two payloads and verify design on VPS
         env:
           HOST: ${{ secrets.TF_DEPLOY_HOST }}
           USER: ${{ secrets.TF_DEPLOY_USER }}
+          REVISION: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           set -euo pipefail
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'bash -se' <<'REMOTE'
+          [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]]
+          mkdir -p qa
+          status=0
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" "bash -s -- '$REVISION'" <<'REMOTE' || status=$?
           set -euo pipefail
           cd "$HOME/new_scraper/ads"
-          test -f master_template_renderer_html_v4.py
-          test -f assets/trustfolio_reference_master_v1.jpg
-          test -f trustfolio_infographic_payload_v1.json
-          "$HOME/venv/bin/python" master_template_renderer_html_v4.py trustfolio_infographic_payload_v1.json tf-aa5900f0c166
-          test -s generated_creatives/feed/tf-aa5900f0c166_final_html_v3_1024x1536.png
+          test "$(cat .trustfolio_deployed_sha)" = "$1"
+          "$HOME/venv/bin/python" ads_qa/verify_template.py "generated_creatives/visual_qa/$1"
           REMOTE
-          mkdir -p qa
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}:new_scraper/ads/generated_creatives/feed/tf-aa5900f0c166_final_html_v3_1024x1536.png" qa/server-render.png
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}:new_scraper/ads/assets/trustfolio_reference_master_v1.jpg" qa/server-reference.jpg
-          if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'test -s "$HOME/new_scraper/ads/assets/trustfolio_approved_reference.jpg"'; then
-            scp -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}:new_scraper/ads/assets/trustfolio_approved_reference.jpg" qa/approved-reference.jpg
-          fi
-      - name: Compare reference and server render
-        run: |
-          python -m pip install --quiet pillow
-          python - <<'PY'
-          from PIL import Image, ImageChops, ImageStat, ImageEnhance
-          from pathlib import Path
-          approved=Path('qa/approved-reference.jpg')
-          a=Image.open(approved if approved.exists() else 'qa/server-reference.jpg').convert('RGB')
-          b=Image.open('qa/server-render.png').convert('RGB')
-          if a.size!=b.size: raise SystemExit(f'Wrong size: {b.size}, expected {a.size}')
-          stat=ImageStat.Stat(ImageChops.difference(a,b))
-          mae=sum(stat.mean)/3
-          print(f'SERVER_RENDER_SIZE={b.size[0]}x{b.size[1]}')
-          print(f'PIXEL_MAE_VS_{"APPROVED" if approved.exists() else "LEGACY"}_REFERENCE={mae:.2f} (0=identical, 255=opposite)')
-          diff=ImageChops.difference(a,b)
-          ImageEnhance.Contrast(diff).enhance(3).save('qa/visual-difference.png')
-          Path('qa/metrics.txt').write_text(f'render_size={b.size}\nmae={mae:.2f}\napproved_reference_present={approved.exists()}\n')
-          if not approved.exists():
-              raise SystemExit('FAIL: approved reference missing; legacy server reference cannot approve design')
-          regions = {'brand':(0,0,510,145),'headline':(65,110,775,390),'benefits':(765,145,1024,440),'products_top':(40,400,985,1065),'products_bottom':(20,940,1005,1320),'footer':(0,1310,1024,1536)}
-          report = [f'render_size={b.size}',f'mae={mae:.2f}',f'approved_reference_present={approved.exists()}']
-          for name,box in regions.items():
-              x=ImageStat.Stat(ImageChops.difference(a.crop(box),b.crop(box)))
-              score=sum(x.mean)/3
-              report.append(f'{name}_mae={score:.2f}')
-              print(f'REGION_{name.upper()}_MAE={score:.2f}')
-          Path('qa/metrics.txt').write_text('\n'.join(report)+'\n')
-          if mae > 15:
-              raise SystemExit(f'FAIL: visual MAE {mae:.2f} > 15.00')
-          PY
+          scp -r -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}:new_scraper/ads/generated_creatives/visual_qa/$REVISION/." qa/
+          exit "$status"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: trustfolio-server-render-qa
           path: qa/
           if-no-files-found: warn
+
 
