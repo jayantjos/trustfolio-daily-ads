@@ -9,6 +9,11 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sys
+
+# Direct execution as ads_qa/script.py must still resolve the sibling ads
+# modules; never import from or modify ~/apps/trustfolio.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from PIL import Image
 
