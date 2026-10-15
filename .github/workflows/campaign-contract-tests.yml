@@ -4,6 +4,7 @@ on:
     paths:
       - 'campaign_link_contract_v1.py'
       - 'ad_link_manifest_v1.py'
+      - 'social_post_generator_v1.py'
       - 'test_campaign_link_contract_v1.py'
       - '.github/workflows/campaign-contract-tests.yml'
   push:
@@ -11,6 +12,7 @@ on:
     paths:
       - 'campaign_link_contract_v1.py'
       - 'ad_link_manifest_v1.py'
+      - 'social_post_generator_v1.py'
       - 'test_campaign_link_contract_v1.py'
       - '.github/workflows/campaign-contract-tests.yml'
   workflow_dispatch:
@@ -25,6 +27,6 @@ jobs:
         with:
           python-version: '3.11'
       - name: Syntax check
-        run: python -m py_compile campaign_link_contract_v1.py ad_link_manifest_v1.py test_campaign_link_contract_v1.py
+        run: python -m py_compile campaign_link_contract_v1.py ad_link_manifest_v1.py social_post_generator_v1.py test_campaign_link_contract_v1.py
       - name: Unit tests (no production accounts or API keys)
         run: python -m unittest -v test_campaign_link_contract_v1
