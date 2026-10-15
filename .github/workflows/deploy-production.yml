@@ -2,7 +2,7 @@ name: TrustFolio production deploy
 on:
   push:
     branches: [main]
-    paths: ['*.py', 'deploy/**', '.github/workflows/deploy-production.yml']
+    paths: ['*.py', 'ads_qa/**', 'deploy/**', '.github/workflows/deploy-production.yml']
   workflow_dispatch:
 permissions:
   contents: read
