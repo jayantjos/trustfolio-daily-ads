@@ -73,6 +73,14 @@ jobs:
           Path('qa/metrics.txt').write_text(f'render_size={b.size}\nmae={mae:.2f}\napproved_reference_present={approved.exists()}\n')
           if not approved.exists():
               raise SystemExit('FAIL: approved reference missing; legacy server reference cannot approve design')
+          regions = {'brand':(0,0,510,145),'headline':(65,110,775,390),'benefits':(765,145,1024,440),'products_top':(40,400,985,1065),'products_bottom':(20,940,1005,1320),'footer':(0,1310,1024,1536)}
+          report = [f'render_size={b.size}',f'mae={mae:.2f}',f'approved_reference_present={approved.exists()}']
+          for name,box in regions.items():
+              x=ImageStat.Stat(ImageChops.difference(a.crop(box),b.crop(box)))
+              score=sum(x.mean)/3
+              report.append(f'{name}_mae={score:.2f}')
+              print(f'REGION_{name.upper()}_MAE={score:.2f}')
+          Path('qa/metrics.txt').write_text('\\n'.join(report)+'\\n')
           if mae > 15:
               raise SystemExit(f'FAIL: visual MAE {mae:.2f} > 15.00')
           PY
