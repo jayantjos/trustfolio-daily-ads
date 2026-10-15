@@ -13,6 +13,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from zoneinfo import ZoneInfo
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from site_top5_ads_v1 import build_site_ads_payload
 
 IST = ZoneInfo("Asia/Kolkata")
