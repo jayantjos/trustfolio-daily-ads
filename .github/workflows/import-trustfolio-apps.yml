@@ -47,12 +47,22 @@ jobs:
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'python3 -' \
             < deploy/export_trustfolio_apps_safe.py > "$RUNNER_TEMP/trustfolio-source.tgz"
           test -s "$RUNNER_TEMP/trustfolio-source.tgz"
-          while IFS= read -r entry; do
-            if [[ ! "$entry" =~ ^apps/(trustfolio-main|node-backend|trustfolio_admin)/[A-Za-z0-9_./-]+$ ]] || [[ "$entry" == *../* ]]; then
-              echo "::error::Unexpected archive entry path"
-              exit 1
-            fi
-          done < <(tar -tzf "$RUNNER_TEMP/trustfolio-source.tgz")
+          python3 - "$RUNNER_TEMP/trustfolio-source.tgz" <<'PY'
+          import sys, tarfile
+          from pathlib import PurePosixPath
+          allowed = {'trustfolio-main', 'node-backend', 'trustfolio_admin'}
+          with tarfile.open(sys.argv[1], 'r:gz') as archive:
+              entries = archive.getmembers()
+              assert entries, 'empty source archive'
+              for member in entries:
+                  path = PurePosixPath(member.name)
+                  assert (member.isfile() and len(path.parts) >= 3
+                          and path.parts[0] == 'apps'
+                          and path.parts[1] in allowed
+                          and '..' not in path.parts and not path.is_absolute()
+                          and '\\' not in member.name), 'unexpected import file'
+          print('SAFE_ARCHIVE_MEMBERS=' + str(len(entries)))
+          PY
           tar -xzf "$RUNNER_TEMP/trustfolio-source.tgz" -C "$GITHUB_WORKSPACE"
       - name: Verify source completeness and reject credential leakage
         run: |
