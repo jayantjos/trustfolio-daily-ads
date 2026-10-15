@@ -1,0 +1,80 @@
+name: TrustFolio website-ranked server image QA
+on:
+  workflow_run:
+    workflows: ['TrustFolio production deploy']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: trustfolio-site-ranked-render
+  cancel-in-progress: false
+jobs:
+  render:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      RUN_KEY: ${{ github.run_id }}
+    steps:
+      - name: Configure independently verified SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" && "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Verify server ads deploy SHA (apps remain read-only)
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" "python3 - '$DEPLOY_SHA'" <<'PY'
+          import sys
+          from pathlib import Path
+          actual=(Path.home()/'new_scraper/ads/.trustfolio_deployed_sha').read_text().strip()
+          if actual != sys.argv[1]: raise SystemExit('Ads server revision differs from verified deploy')
+          print('SITE_ADS_SERVER_DEPLOY_SHA_VERIFIED')
+          PY
+      - name: Generate live website Top-5 ranking infographic on server
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" "set -eu; cd \"\$HOME/new_scraper/ads\"; \"\$HOME/venv/bin/python\" ads_qa/render_site_ranked_qa_v1.py --category smartwatches --budget 2000 --output-dir \"\$HOME/new_scraper/ads/ads_qa/site-ranked-output/$RUN_KEY\""
+          mkdir -p artifacts
+          scp -o StrictHostKeyChecking=yes "${USER}@${HOST}:new_scraper/ads/ads_qa/site-ranked-output/$RUN_KEY/trustfolio-live-website-top5-1024x1536.png" artifacts/
+          scp -o StrictHostKeyChecking=yes "${USER}@${HOST}:new_scraper/ads/ads_qa/site-ranked-output/$RUN_KEY/website-top5-render-qa.json" artifacts/
+      - name: Verify uploaded original PNG dimensions and site/source ID parity
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('artifacts/website-top5-render-qa.json').read_text())
+          assert report['source_product_ids_by_rank']==report['visual_product_ids_by_rank']
+          assert len(report['source_product_ids_by_rank'])==5
+          assert report['dimensions']==[1024,1536]
+          assert report['landing_url'].startswith('https://www.trustfolio.in/category/smartwatches/products?')
+          assert report['automatic_publication'] is False
+          print('LIVE_SITE_RANK_IDS_MATCH_RENDER_PAYLOAD')
+          PY
+      - name: Upload original 1024x1536 ad and ranking proof (NOT published)
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-live-site-ranked-server-render
+          path: artifacts/
+          retention-days: 14
