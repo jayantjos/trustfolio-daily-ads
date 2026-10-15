@@ -1,5 +1,6 @@
 # Files deployed into ~/new_scraper/ads; never sync runtime data
 ad_link_manifest_v1.py
+campaign_link_contract_v1.py
 batch_render_creatives_v1.py
 build_infographic_payload_v1.py
 cleanup_creative_storage_v1.py
