@@ -2,7 +2,7 @@
 import json
 import sys
 from pathlib import Path
-from campaign_link_contract_v1 import campaign_link
+from campaign_link_contract_v1 import campaign_link, check_ranked_site_snapshot
 
 BASE = Path.home() / "new_scraper"
 CONFIG_PATH = BASE / "ads" / "creative_config_v1.json"
@@ -35,6 +35,16 @@ def build_manifest(data: dict, config: dict) -> dict:
 
         link = campaign_link(ad, config, ad_id)
         landing_url = link["landing_url"]
+        site_rank_status = "unverified"
+        if (
+            ad.get("ranking_source") == "live_trustfolio_website_api"
+            and isinstance(ad.get("website_snapshot"), dict)
+            and isinstance(ad.get("products"), list)
+            and not check_ranked_site_snapshot(ad, ad["website_snapshot"])
+        ):
+            # The companion site_top5_ads_v1.py pulls both lists from the
+            # public live website API, preserving order and source IDs.
+            site_rank_status = "verified"
 
         products = []
         raw_products = ad.get("products") or []
@@ -80,7 +90,9 @@ def build_manifest(data: dict, config: dict) -> dict:
             "prefill_ready": link["prefill_ready"],
             "verified_prefill_fields": link["verified_prefill_fields"],
             "unverified_prefill_fields": link["unverified_prefill_fields"],
-            "site_ranking_status": link["site_ranking_status"],
+            "site_ranking_status": site_rank_status,
+            "ranking_source": ad.get("ranking_source") or "independent_ads_engine",
+            "ranking_observed_at": ad.get("ranking_observed_at"),
             "click_destination": link["click_destination"],
             "website_url": config["brand"]["website_url"],
             "play_store_url": config["brand"]["play_store_url"],
