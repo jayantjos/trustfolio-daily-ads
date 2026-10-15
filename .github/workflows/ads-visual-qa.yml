@@ -50,7 +50,7 @@ jobs:
         run: |
           python -m pip install --quiet pillow
           python - <<'PY'
-          from PIL import Image, ImageChops, ImageStat
+          from PIL import Image, ImageChops, ImageStat, ImageEnhance
           from pathlib import Path
           a=Image.open('qa/server-reference.jpg').convert('RGB')
           b=Image.open('qa/server-render.png').convert('RGB')
@@ -59,6 +59,8 @@ jobs:
           mae=sum(stat.mean)/3
           print(f'SERVER_RENDER_SIZE={b.size[0]}x{b.size[1]}')
           print(f'PIXEL_MAE_VS_SERVER_REFERENCE={mae:.2f} (0=identical, 255=opposite)')
+          diff=ImageChops.difference(a,b)
+          ImageEnhance.Contrast(diff).enhance(3).save('qa/visual-difference.png')
           Path('qa/metrics.txt').write_text(f'render_size={b.size}\nmae={mae:.2f}\n')
           PY
       - uses: actions/upload-artifact@v4
