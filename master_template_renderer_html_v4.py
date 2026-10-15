@@ -16,8 +16,8 @@ h=importlib.util.module_from_spec(spec); spec.loader.exec_module(h)
 
 SLOTS={
 1: dict(img=(396,416,675,769), name=(360,776,662,831), price=(389,840,635,895), merchant=(405,902,620,936), specs=(354,951,672,1040), top=True),
-2: dict(img=(77,448,323,694), name=(77,704,321,754), price=(97,762,299,807), merchant=(105,808,291,835), specs=(70,856,320,941), top=True),
-3: dict(img=(700,452,950,694), name=(708,704,947,754), price=(726,762,925,807), merchant=(733,808,917,835), specs=(705,856,955,941), top=True),
+2: dict(img=(77,448,323,694), name=(77,719,321,754), price=(97,762,299,807), merchant=(105,808,291,835), specs=(70,856,320,941), top=True),
+3: dict(img=(700,452,950,694), name=(708,719,947,754), price=(726,762,925,807), merchant=(733,808,917,835), specs=(705,856,955,941), top=True),
 4: dict(img=(46,969,250,1242), name=(260,1082,470,1130), price=(260,1134,401,1177), merchant=(260,1180,405,1210), specs=(260,1217,490,1302), top=False),
 5: dict(img=(666,990,857,1263), name=(876,1031,1015,1080), price=(881,1086,1006,1128), merchant=(877,1131,1014,1169), specs=(867,1189,1020,1285), top=False),
 }
@@ -60,6 +60,8 @@ def clean_body_uri():
     return 'data:image/png;base64,'+base64.b64encode(buf.getvalue()).decode('ascii')
 
 def readable_specs(product, profile, count):
+    explicit=product.get('key_specs') or []
+    if explicit: return [str(v) for v in explicit if v][:count]
     raw=product.get('raw_specifications') or {}
     if not raw: return h.choose_specs(product,profile,count)
     values=[]
@@ -90,6 +92,7 @@ def display_label(product, rank):
     for word in words:
         if kept and len(' '.join(kept+[word]))>max_chars: break
         kept.append(word)
+    while len(kept)>1 and kept[-1].lower() in {'in','for','with','and','the','&'}: kept.pop()
     return ' '.join(kept)
 
 def pxbox(t):
@@ -132,8 +135,8 @@ def build(ad):
 .merchant{{display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff;text-transform:none}}.p1 .merchant{{font-size:17px}}.p4 .merchant,.p5 .merchant{{color:#071939;font-size:12px;justify-content:flex-start;padding-left:8px}}.merchant.amazon::after{{content:"";position:absolute;width:42px;height:9px;border-bottom:3px solid #ff9900;border-radius:50%;left:50%;bottom:-1px;transform:translateX(-50%) rotate(-3deg)}}.p4 .merchant.amazon::after,.p5 .merchant.amazon::after{{left:36px}}
 .specs{{display:flex;align-items:flex-start;justify-content:space-around;padding-top:0}}.spec{{display:flex;flex-direction:column;align-items:center;text-align:center;color:#fff;width:24%}}.ico{{width:42px;height:42px;border:2px solid currentColor;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;line-height:1}}.stxt{{margin-top:4px;font-size:10px;line-height:11px;width:62px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}}.p1 .stxt{{font-size:10.5px;width:72px}}.specs.bottom{{color:#071939;padding-top:0}}.specs.bottom .spec{{color:#071939}}.specs.bottom .ico{{width:34px;height:34px;font-size:13px;border-width:2px}}.specs.bottom .stxt{{font-size:9px;line-height:10px;width:46px}}
 
-.clean-body{{position:absolute;left:0;top:420px;width:1024px;height:895px;overflow:hidden;z-index:1}}
-.clean-body img{{position:absolute;left:0;top:-440.68px;width:1024px;height:1611.6px}}
+.clean-body{{position:absolute;left:0;top:375px;width:1024px;height:940px;overflow:hidden;z-index:1}}
+.clean-body img{{position:absolute;left:0;top:-395.68px;width:1024px;height:1611.6px}}
 /* Reference geometry: fixed artwork crops contain no product data. */
 .fixed-footer,.fixed-benefits{{position:absolute;inset:0;width:1024px;height:1536px;z-index:1;pointer-events:none}}
 .fixed-footer{{clip-path:inset(1315px 0 0 0)}}
@@ -154,7 +157,7 @@ def build(ad):
 .specs.bottom .stxt{{font-size:14px;line-height:18px;width:auto;margin:0;display:block}}
 .p4 .pname,.p5 .pname{{font-size:18px;line-height:20px}}.p4 .tag,.p5 .tag{{font-size:14px;line-height:18px}}
 
-.clean-body{{mask-image:linear-gradient(to bottom,transparent,black 45px,black)}}
+.clean-body{{mask-image:linear-gradient(to bottom,transparent,black 35px,black)}}
 .pname{{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.05}}
 .tag{{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.1}}
 .stxt{{display:block;overflow:visible;line-height:1.12;overflow-wrap:anywhere}}
@@ -165,7 +168,7 @@ def build(ad):
 
 
 .rank-art{{position:absolute;z-index:10;border-radius:50%;background-size:1024px 1536px;background-repeat:no-repeat}}
-</style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}{rank_art}</div></body></html>''',key,profile
+</style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc((ad.get('metadata') or {}).get('subtitle') or ad.get('tagline') or profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}{rank_art}</div></body></html>''',key,profile
 
 def render(ad):
     html_text,key,profile=build(ad); OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
