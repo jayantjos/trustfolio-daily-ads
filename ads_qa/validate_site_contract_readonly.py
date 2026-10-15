@@ -43,13 +43,22 @@ try:
     products=data.get("products")
     if not isinstance(products,list):raise ValueError("Top products missing list")
     entries=[]
+    schema = {}
+    if products:
+        first = products[0]
+        schema = {
+            "fields": sorted(k for k in first.keys() if isinstance(k,str) and not k.startswith("_"))[:65],
+            "images_type": type(first.get("images")).__name__,
+            "specifications_type": type(first.get("specifications")).__name__,
+            "price_type": type(first.get("price_inr")).__name__,
+        }
     for i,p in enumerate(products[:5],1):
         if not isinstance(p,dict):raise ValueError("Non-object product row")
         pid=str(p.get("id") or p.get("product_id") or "").strip()
         if not pid:raise ValueError("Missing product id")
         entries.append({"rank":p.get("rank",i),"id":pid,"price_inr":p.get("price_inr"),"brand":str(p.get("brand") or "")[:70]})
     result["checks"].append({"name":"top_products_smartwatches_2000","passed":True,"count":len(products),"items":entries,
-        "match_type":data.get("matchType"),"fallback_applied":data.get("fallbackApplied")})
+        "match_type":data.get("matchType"),"fallback_applied":data.get("fallbackApplied"),"schema":schema})
 except Exception as exc:
     # Only print class/type; URLs/responses can contain sensitive details.
     result["checks"].append({"name":"top_products_smartwatches_2000","passed":False,"error_type":type(exc).__name__})
