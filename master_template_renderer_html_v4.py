@@ -29,7 +29,7 @@ def ell(x,n=42):
 def tagline(p,rank):
     for k in ('tagline','short_tagline','short_description','subtitle'):
         if p.get(k): return ell(p[k],36)
-    return {1:'Best Overall Value',2:'Stylish & Lightweight',3:'Premium Look • Daily Tracking',4:'Feature Packed',5:'Elegant & Premium'}.get(rank,'Top Pick')
+    return ''
 def retail_class(name):
     n=(name or '').lower()
     if 'amazon' in n: return 'amazon'
@@ -59,6 +59,7 @@ def build(ad):
     title=f'Best {profile["label"]}'
     budget_text=f'Under ₹{h.indian_commas(budget)}' if budget else 'Top 5 Best Picks'
     master_uri='data:image/png;base64,' + base64.b64encode(MASTER.read_bytes()).decode('ascii')
+    clean_uri='data:image/png;base64,' + base64.b64encode((ADS/'assets/trustfolio_clean_master_v3.png').read_bytes()).decode('ascii')
     approved_uri='data:image/jpeg;base64,' + base64.b64encode((ADS/'assets/trustfolio_approved_reference.jpg').read_bytes()).decode('ascii')
     benefits=[('Compare Prices','Across Top Websites'),('Latest Models','& Real Prices'),('Top Rated Picks',''),('Best Deals','in Your Budget')]
     prod_html=[]
@@ -83,13 +84,15 @@ def build(ad):
 .merchant{{display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff;text-transform:none}}.p1 .merchant{{font-size:17px}}.p4 .merchant,.p5 .merchant{{color:#071939;font-size:12px;justify-content:flex-start;padding-left:8px}}.merchant.amazon::after{{content:"";position:absolute;width:42px;height:9px;border-bottom:3px solid #ff9900;border-radius:50%;left:50%;bottom:-1px;transform:translateX(-50%) rotate(-3deg)}}.p4 .merchant.amazon::after,.p5 .merchant.amazon::after{{left:36px}}
 .specs{{display:flex;align-items:flex-start;justify-content:space-around;padding-top:0}}.spec{{display:flex;flex-direction:column;align-items:center;text-align:center;color:#fff;width:24%}}.ico{{width:42px;height:42px;border:2px solid currentColor;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;line-height:1}}.stxt{{margin-top:4px;font-size:10px;line-height:11px;width:62px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}}.p1 .stxt{{font-size:10.5px;width:72px}}.specs.bottom{{color:#071939;padding-top:0}}.specs.bottom .spec{{color:#071939}}.specs.bottom .ico{{width:34px;height:34px;font-size:13px;border-width:2px}}.specs.bottom .stxt{{font-size:9px;line-height:10px;width:46px}}
 
+.clean-body{{position:absolute;left:0;top:420px;width:1024px;height:895px;overflow:hidden;z-index:1}}
+.clean-body img{{position:absolute;left:0;top:-440.68px;width:1024px;height:1611.6px}}
 /* Reference geometry: fixed artwork crops contain no product data. */
 .fixed-footer,.fixed-benefits{{position:absolute;inset:0;width:1024px;height:1536px;z-index:1;pointer-events:none}}
 .fixed-footer{{clip-path:inset(1315px 0 0 0)}}
 .fixed-benefits{{clip-path:inset(150px 0 1108px 770px)}}
 .benefit{{display:none}}
-.hero1{{left:105px;top:150px;width:640px;height:82px;font-size:65px;line-height:82px;transform:rotate(-9deg);font-stretch:condensed;letter-spacing:-2.5px}}
-.hero2{{left:103px;top:225px;width:647px;height:115px;font-size:94px;line-height:115px;transform:rotate(-9deg);letter-spacing:-4px}}
+.hero1{{left:105px;top:150px;width:640px;height:82px;font-size:72px;line-height:82px;transform:rotate(-9deg);font-stretch:condensed;letter-spacing:-3px}}
+.hero2{{left:103px;top:225px;width:647px;height:115px;font-size:101px;line-height:115px;transform:rotate(-9deg);letter-spacing:-4px}}
 .sub{{left:206px;top:324px;width:510px;height:46px;font-size:27px;line-height:46px;transform:rotate(-7deg);letter-spacing:-1px}}
 .pname{{font-family:'Liberation Sans Narrow','Arial Narrow',Arial,sans-serif;font-size:22px;line-height:24px;letter-spacing:-.5px}}
 .tag{{font-size:15px;line-height:19px}}.p1 .tag{{font-size:17px;line-height:21px}}
@@ -102,7 +105,7 @@ def build(ad):
 .specs.bottom .ico{{width:25px;height:25px;border:0;border-radius:4px;background:#081326;color:white;flex-shrink:0}}
 .specs.bottom .stxt{{font-size:14px;line-height:18px;width:auto;margin:0;display:block}}
 .p4 .pname,.p5 .pname{{font-size:18px;line-height:20px}}.p4 .tag,.p5 .tag{{font-size:14px;line-height:18px}}
-</style></head><body><img class="bg" src="{master_uri}"><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}</div></body></html>''',key,profile
+</style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}</div></body></html>''',key,profile
 
 def render(ad):
     html_text,key,profile=build(ad); OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
