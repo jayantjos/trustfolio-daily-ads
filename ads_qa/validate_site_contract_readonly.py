@@ -62,6 +62,17 @@ try:
 except Exception as exc:
     # Only print class/type; URLs/responses can contain sensitive details.
     result["checks"].append({"name":"top_products_smartwatches_2000","passed":False,"error_type":type(exc).__name__})
+try:
+    page_url="https://www.trustfolio.in/category/smartwatches/products?"+urlencode({"budget":2000})
+    with urlopen(Request(page_url,headers={"User-Agent":"TrustFolioAdsContractQA/1.0"}),timeout=16) as response:
+        status=response.status
+        media=response.headers.get("Content-Type","")
+        # The page must load on its real route; we do not assume filter semantics
+        # based on this test alone. Source code establishes reading searchParams.
+        ok=status==200 and "text/html" in media.lower()
+        result["checks"].append({"name":"verified_results_page_budget_url","passed":ok,"http_status":status})
+except Exception as exc:
+    result["checks"].append({"name":"verified_results_page_budget_url","passed":False,"error_type":type(exc).__name__})
 print("TRUSTFOLIO_SITE_LIVE_READONLY_BEGIN")
 print(json.dumps(result,indent=2))
 print("TRUSTFOLIO_SITE_LIVE_READONLY_END")
