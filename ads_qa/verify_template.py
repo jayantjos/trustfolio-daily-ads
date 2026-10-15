@@ -7,9 +7,15 @@ sys.path.insert(0,str(ROOT))
 import master_template_renderer_html_v4 as renderer
 out=Path(sys.argv[1]);out.mkdir(parents=True,exist_ok=True)
 data=json.loads((ROOT/'trustfolio_infographic_payload_v1.json').read_text())['ads']
-first=next(a for a in data if a.get('source_ad_id')=='tf-aa5900f0c166')
-category=renderer.h.detect_category(first)[0]
-second=next(a for a in data if len(a.get('products',[]))==5 and renderer.h.detect_category(a)[0]!=category)
+# Cover the reference category plus four distinct product geometries. These are
+# real five-product payloads already present in the production data; nothing is published.
+test_categories=('smartwatches','headphones-earbuds','laptop','smart-phones','ceiling-fans')
+selected=[]
+for key in test_categories:
+    match=next((a for a in data if len(a.get('products',[]))==5 and renderer.h.detect_category(a)[0]==key),None)
+    if match is None:
+        raise SystemExit(f'No five-product QA payload available for category: {key}')
+    selected.append(match)
 reference=Image.open(ROOT/'assets/trustfolio_approved_reference.jpg').convert('RGB')
 reference.save(out/'approved-reference.png')
 # Conservative reference-content extents, not product identities. These only mask data.
@@ -17,9 +23,9 @@ reference_dynamic=[(75,105,760,393),(75,451,322,695),(395,416,677,770),(719,453,
  (46,968,251,1245),(663,986,883,1268),(65,703,330,936),(357,780,673,1044),(704,703,959,938),
  (255,1080,497,1306),(865,1028,1024,1296)]
 fixed_regions={'brand':(0,0,510,120),'benefits':(775,160,1000,424),'footer':(0,1315,1024,1536)}
-report={'design_only':True,'reference_data_regression':'not requested: payloads differ from reference','datasets':[],'errors':[]}
+report={'tested_categories':list(test_categories),'design_only':True,'reference_data_regression':'not requested: payloads differ from reference','datasets':[],'errors':[]}
 images=[];masks=[];geometries=[]
-for i,ad in enumerate([first,second],1):
+for i,ad in enumerate(selected,1):
     try:
         png=renderer.render(ad)
         im=Image.open(png).convert('RGB');im.save(out/f'dataset-{i}.png')
@@ -56,13 +62,18 @@ for i,ad in enumerate([first,second],1):
         images.append(im);masks.append(mask);geometries.append(meta)
     except Exception as exc:
         report['errors'].append(f'dataset {i}: {type(exc).__name__}: {exc}')
-if len(images)==2:
-    union=ImageChops.darker(masks[0],masks[1])
-    unchanged=ImageStat.Stat(ImageChops.difference(*images),union).mean
-    report['fixed_template_change_mae']=sum(unchanged)/3
-    if max(unchanged)>0.01: report['errors'].append('fixed template changes with data')
-    for a,b in zip(geometries[0]['slots'],geometries[1]['slots']):
-        if a['fields']!=b['fields']:report['errors'].append('slot geometry changes with data')
+if len(images)==len(selected):
+    report['fixed_template_change_mae']=0.0
+    for j in range(1,len(images)):
+        union=ImageChops.darker(masks[0],masks[j])
+        unchanged=ImageStat.Stat(ImageChops.difference(images[0],images[j]),union).mean
+        change=sum(unchanged)/3
+        report['fixed_template_change_mae']=max(report['fixed_template_change_mae'],change)
+        if max(unchanged)>0.01:
+            report['errors'].append(f'fixed template changes with data: {test_categories[j]}')
+        for a,b in zip(geometries[0]['slots'],geometries[j]['slots']):
+            if a['fields']!=b['fields']:
+                report['errors'].append(f'slot geometry changes with data: {test_categories[j]}')
 report['passed']=not report['errors']
 (out/'report.json').write_text(json.dumps(report,indent=2))
 print(json.dumps(report,indent=2))
