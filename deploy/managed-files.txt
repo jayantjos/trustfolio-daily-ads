@@ -11,3 +11,9 @@ public_media_bridge_v1.py
 publish_creative_to_github.py
 social_post_generator_v1.py
 trustfolio_infographic_data_v1.py
+
+master_template_renderer_html_v4.py
+renderer_v12_helper.py
+master_template_renderer_final_v5.py
+assets/trustfolio_master_universal_v12.png
+assets/trustfolio_approved_reference.jpg

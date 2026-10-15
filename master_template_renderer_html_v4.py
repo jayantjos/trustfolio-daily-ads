@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+import json, re, sys, html, importlib.util, base64
+from pathlib import Path
+from urllib.parse import quote
+from PIL import Image
+from playwright.sync_api import sync_playwright
+
+ADS = Path(__file__).resolve().parent
+OUT = ADS/'generated_creatives/feed'
+MASTER = ADS/'assets/trustfolio_master_universal_v12.png'
+HELPER_PATH = ADS/'renderer_v12_helper.py'
+CACHE = ADS/'.html_v3_cache'
+
+spec=importlib.util.spec_from_file_location('tfh', HELPER_PATH)
+h=importlib.util.module_from_spec(spec); spec.loader.exec_module(h)
+
+SLOTS={
+1: dict(img=(378,430,650,700), name=(360,776,662,831), price=(389,840,635,895), merchant=(405,902,620,936), specs=(354,951,672,1040), top=True),
+2: dict(img=(77,448,323,694), name=(77,704,321,754), price=(97,762,299,807), merchant=(105,814,291,845), specs=(70,856,320,941), top=True),
+3: dict(img=(700,452,950,694), name=(708,704,947,754), price=(726,762,925,807), merchant=(733,814,917,845), specs=(705,856,955,941), top=True),
+4: dict(img=(42,986,226,1214), name=(233,1072,430,1112), price=(242,1115,409,1153), merchant=(248,1155,395,1182), specs=(229,1194,430,1271), top=False),
+5: dict(img=(798,986,978,1214), name=(592,1072,786,1112), price=(607,1115,773,1153), merchant=(623,1155,760,1182), specs=(593,1194,794,1271), top=False),
+}
+
+def esc(x): return html.escape(str(x or ''))
+def ell(x,n=42):
+    x=re.sub(r'\s+',' ',str(x or '')).strip()
+    return x if len(x)<=n else x[:n-1].rstrip()+'…'
+def tagline(p,rank):
+    for k in ('tagline','short_tagline','short_description','subtitle'):
+        if p.get(k): return ell(p[k],36)
+    return {1:'Best Overall Value',2:'Stylish & Lightweight',3:'Premium Look • Daily Tracking',4:'Feature Packed',5:'Elegant & Premium'}.get(rank,'Top Pick')
+def retail_class(name):
+    n=(name or '').lower()
+    if 'amazon' in n: return 'amazon'
+    if 'flipkart' in n: return 'flipkart'
+    if 'croma' in n: return 'croma'
+    return 'generic'
+def symbol(v):
+    c=h.spec_code(v)
+    return {'DISP':'▣','BAT':'▰','BT':'☎','IP':'◆','HLT':'♥','CPU':'C','RAM':'R','SSD':'S','CAM':'◉','STAR':'★','W':'⚡','CAP':'C','RPM':'↻','RO':'R','AUD':'♪','4K':'4K'}.get(c,'✓')
+def prep_image(product, rank):
+    CACHE.mkdir(exist_ok=True)
+    raw=h.v5.load_product_image(product.get('image_url') or '', (720,720))
+    if raw is None: return ''
+    raw=h.cutout_and_crop(raw)
+    if not raw.width or not raw.height: return ''
+    import io
+    buf=io.BytesIO(); raw.save(buf, format='PNG', optimize=True)
+    return 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode('ascii')
+def pxbox(t):
+    x1,y1,x2,y2=t; return f'left:{x1}px;top:{y1}px;width:{x2-x1}px;height:{y2-y1}px;'
+
+def build(ad):
+    key,profile=h.detect_category(ad); budget=h.detect_budget(ad)
+    ranked={int(p.get('rank') or i):p for i,p in enumerate(ad.get('products') or [],1)}
+    miss=[r for r in range(1,6) if r not in ranked]
+    if miss: raise ValueError(f'missing ranks {miss}')
+    title=f'Best {profile["label"]}'
+    budget_text=f'Under ₹{h.indian_commas(budget)}' if budget else 'Top 5 Best Picks'
+    master_uri='data:image/png;base64,' + base64.b64encode(MASTER.read_bytes()).decode('ascii')
+    benefits=[('Compare Prices','Across Top Websites'),('Latest Models','& Real Prices'),('Top Rated Picks','Based on reviews'),('Best Deals','in Your Budget')]
+    prod_html=[]
+    for r in (1,2,3,4,5):
+        p=ranked[r]; s=SLOTS[r]; uri=prep_image(p,r); specs=h.choose_specs(p, profile, 4)
+        name=esc(h.v5.display_name(p)); price=esc(h.v5.product_price(p)); retailer=str(h.v5.retailer(p) or '')
+        specs_html=''.join(f'<div class="spec"><span class="ico">{esc(symbol(v))}</span><span class="stxt">{esc(ell(v,23))}</span></div>' for v in specs[:4])
+        prod_html.append(f'''<section class="prod p{r}">
+          <div class="pimg" style="{pxbox(s['img'])}">{f'<img src="{uri}">' if uri else ''}</div>
+          <div class="namebox" style="{pxbox(s['name'])}"><div class="pname">{name}</div><div class="tag">{esc(tagline(p,r))}</div></div>
+          <div class="price" style="{pxbox(s['price'])}">{price}</div>
+          <div class="merchant {retail_class(retailer)}" style="{pxbox(s['merchant'])}">{esc(retailer)}</div>
+          <div class="specs {'top' if s['top'] else 'bottom'}" style="{pxbox(s['specs'])}">{specs_html}</div>
+        </section>''')
+    benefits_html=''.join(f'<div class="benefit b{i+1}"><b>{a}</b><span>{b}</span></div>' for i,(a,b) in enumerate(benefits))
+    return f'''<!doctype html><html><head><meta charset="utf-8"><style>
+*{{box-sizing:border-box}}html,body{{margin:0;width:1024px;height:1536px;overflow:hidden;background:#fff}}body{{position:relative;font-family:"DejaVu Sans",Arial,sans-serif;color:#071939}}.bg{{position:absolute;inset:0;width:1024px;height:1536px;z-index:0}}.overlay{{position:absolute;inset:0;z-index:2}}
+.hero{{position:absolute;text-align:center;font-family:"DejaVu Sans Condensed",Arial,sans-serif;font-weight:900;white-space:nowrap;text-rendering:geometricPrecision}}.hero1{{left:88px;top:122px;width:665px;height:76px;font-size:58px;line-height:76px;color:#fff;text-shadow:0 5px 0 #19005f,0 8px 12px #340071}}.hero2{{left:86px;top:198px;width:675px;height:110px;font-size:73px;line-height:106px;color:#ffd51b;text-shadow:0 5px 0 #7b4200,0 8px 10px #4d1d00}}.sub{{left:168px;top:322px;width:580px;height:54px;font-size:25px;line-height:54px;color:#071939;text-shadow:none}}
+.benefit{{position:absolute;left:842px;width:143px;height:58px;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding-left:0}}.benefit b{{font-size:15px;line-height:18px}}.benefit span{{font-size:10.5px;line-height:14px}}.b1{{top:160px}}.b2{{top:228px}}.b3{{top:296px}}.b4{{top:364px}}
+.prod{{position:absolute;inset:0}}.pimg{{position:absolute;display:flex;align-items:center;justify-content:center;z-index:6}}.pimg img{{width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 7px 8px rgba(0,20,80,.25))}}.namebox,.price,.merchant,.specs{{position:absolute;z-index:8}}.namebox{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2px 6px;color:#fff}}.pname{{font-family:"DejaVu Sans",Arial,sans-serif;font-weight:800;font-size:20px;line-height:21px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.tag{{font-size:11.5px;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;opacity:.98}}.p1 .pname{{font-size:22px}}.p1 .tag{{font-size:12.5px}}.p4 .namebox,.p5 .namebox{{color:#071939;align-items:flex-start;text-align:left;padding-left:0}}.p4 .pname,.p5 .pname{{font-size:15px}}.p4 .tag,.p5 .tag{{font-size:11px}}
+.price{{display:flex;align-items:center;justify-content:center;font-family:"DejaVu Sans",Arial,sans-serif;font-weight:900;font-size:31px;line-height:1;color:#071939;text-shadow:0 1px 0 rgba(255,255,255,.55)}}.p1 .price{{font-size:37px}}.p4 .price,.p5 .price{{font-size:23px}}
+.merchant{{display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff;text-transform:none}}.p1 .merchant{{font-size:17px}}.p4 .merchant,.p5 .merchant{{color:#071939;font-size:12px;justify-content:flex-start;padding-left:8px}}.merchant.amazon::after{{content:"";position:absolute;width:42px;height:9px;border-bottom:3px solid #ff9900;border-radius:50%;left:50%;bottom:-1px;transform:translateX(-50%) rotate(-3deg)}}.p4 .merchant.amazon::after,.p5 .merchant.amazon::after{{left:36px}}
+.specs{{display:flex;align-items:flex-start;justify-content:space-around;padding-top:0}}.spec{{display:flex;flex-direction:column;align-items:center;text-align:center;color:#fff;width:24%}}.ico{{width:42px;height:42px;border:2px solid currentColor;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;line-height:1}}.stxt{{margin-top:4px;font-size:10px;line-height:11px;width:62px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}}.p1 .stxt{{font-size:10.5px;width:72px}}.specs.bottom{{color:#071939;padding-top:0}}.specs.bottom .spec{{color:#071939}}.specs.bottom .ico{{width:34px;height:34px;font-size:13px;border-width:2px}}.specs.bottom .stxt{{font-size:9px;line-height:10px;width:46px}}
+</style></head><body><img class="bg" src="{master_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}</div></body></html>''',key,profile
+
+def render(ad):
+    html_text,key,profile=build(ad); OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
+    pagefile=CACHE/'render.html'; pagefile.write_text(html_text,encoding='utf-8')
+    adid=ad.get('source_ad_id') or 'trustfolio'; dest=OUT/f'{adid}_final_html_v3_1024x1536.png'
+    with sync_playwright() as p:
+        kwargs=dict(headless=True,args=['--no-sandbox','--disable-dev-shm-usage'])
+        for candidate in ('/usr/bin/chromium','/usr/bin/google-chrome'):
+            if Path(candidate).exists():
+                kwargs['executable_path']=candidate
+                break
+        browser=p.chromium.launch(**kwargs)
+        page=browser.new_page(viewport={'width':1024,'height':1536}, device_scale_factor=1)
+        page.set_content(html_text, wait_until='load')
+        page.evaluate('''() => document.fonts.ready''')
+        # fit long hero/category text without tiny fonts
+        page.evaluate('''() => { for (const el of document.querySelectorAll('.hero1,.hero2')) { let s=parseFloat(getComputedStyle(el).fontSize); while (el.scrollWidth>el.clientWidth && s>42){s-=1;el.style.fontSize=s+'px';} } }''')
+        page.screenshot(path=str(dest),full_page=False)
+        browser.close()
+    print('HTML V3 QA IMAGE:',dest); print('CATEGORY:',key,'| LABEL:',profile['label'],'| BUDGET:',h.detect_budget(ad)); print('LAYOUT: CLEAN MASTER + CSS LOCKED | DATA: DYNAMIC | NOT PUBLISHED')
+    return dest
+
+if __name__=='__main__':
+    payload=Path(sys.argv[1]) if len(sys.argv)>1 else ADS/'trustfolio_infographic_payload_v1.json'; adid=sys.argv[2] if len(sys.argv)>2 else 'tf-aa5900f0c166'
+    data=json.loads(payload.read_text(encoding='utf-8')); ad=next((x for x in data.get('ads',[]) if x.get('source_ad_id')==adid),None)
+    if ad is None: raise SystemExit(f'Ad not found: {adid}')
+    render(ad)
