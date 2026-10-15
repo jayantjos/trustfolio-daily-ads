@@ -38,8 +38,11 @@ for i,ad in enumerate([first,second],1):
                     a,b=fields[k],fields[other]
                     if min(a[2],b[2])-max(a[0],b[0])>2 and min(a[3],b[3])-max(a[1],b[1])>2: errors.append(f'overlap rank {slot["rank"]}: {k}/{other}')
         mask=Image.new('L',im.size,255);draw=ImageDraw.Draw(mask)
-        for box in reference_dynamic+meta['dynamic']:
+        for box in reference_dynamic:
             draw.rectangle((int(box[0])-3,int(box[1])-3,int(box[2])+3,int(box[3])+3),fill=0)
+        # CSS product drop-shadows extend beyond the image boxes; mask their support too.
+        for box in meta['dynamic']:
+            draw.rectangle((int(box[0])-20,int(box[1])-20,int(box[2])+20,int(box[3])+20),fill=0)
         mask.save(out/f'dataset-{i}-fixed-mask.png')
         diff=ImageChops.difference(reference,im)
         masked=sum(ImageStat.Stat(diff,mask).mean)/3

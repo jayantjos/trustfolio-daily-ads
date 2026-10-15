@@ -16,10 +16,10 @@ h=importlib.util.module_from_spec(spec); spec.loader.exec_module(h)
 
 SLOTS={
 1: dict(img=(396,416,675,769), name=(360,776,662,831), price=(389,840,635,895), merchant=(405,902,620,936), specs=(354,951,672,1040), top=True),
-2: dict(img=(77,448,323,694), name=(77,704,321,754), price=(97,762,299,807), merchant=(105,814,291,845), specs=(70,856,320,941), top=True),
-3: dict(img=(700,452,950,694), name=(708,704,947,754), price=(726,762,925,807), merchant=(733,814,917,845), specs=(705,856,955,941), top=True),
+2: dict(img=(77,448,323,694), name=(77,704,321,754), price=(97,762,299,807), merchant=(105,808,291,835), specs=(70,856,320,941), top=True),
+3: dict(img=(700,452,950,694), name=(708,704,947,754), price=(726,762,925,807), merchant=(733,808,917,835), specs=(705,856,955,941), top=True),
 4: dict(img=(46,969,250,1242), name=(260,1082,470,1130), price=(260,1134,401,1177), merchant=(260,1180,405,1210), specs=(260,1217,490,1302), top=False),
-5: dict(img=(666,990,878,1263), name=(876,1031,1015,1080), price=(881,1086,1006,1128), merchant=(877,1131,1014,1169), specs=(867,1189,1020,1285), top=False),
+5: dict(img=(666,990,857,1263), name=(876,1031,1015,1080), price=(881,1086,1006,1128), merchant=(877,1131,1014,1169), specs=(867,1189,1020,1285), top=False),
 }
 
 def esc(x): return html.escape(str(x or ''))
@@ -48,6 +48,18 @@ def prep_image(product, rank):
     import io
     buf=io.BytesIO(); raw.save(buf, format='PNG', optimize=True)
     return 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode('ascii')
+def display_label(product, rank):
+    # Derive a compact model label from supplied data; retain full name in metadata.
+    label=product.get('display_name') or product.get('short_name') or h.v5.display_name(product)
+    label=re.split(r',|\s+with\s+|\s+\|\s+',str(label),maxsplit=1,flags=re.I)[0]
+    words=label.split()
+    max_chars=38 if rank==4 else 29 if rank==5 else 48
+    kept=[]
+    for word in words:
+        if kept and len(' '.join(kept+[word]))>max_chars: break
+        kept.append(word)
+    return ' '.join(kept)
+
 def pxbox(t):
     x1,y1,x2,y2=t; return f'left:{x1}px;top:{y1}px;width:{x2-x1}px;height:{y2-y1}px;'
 
@@ -69,7 +81,7 @@ def build(ad):
     prod_html=[]
     for r in (1,2,3,4,5):
         p=ranked[r]; s=SLOTS[r]; uri=prep_image(p,r); specs=h.choose_specs(p, profile, 4 if r == 1 else 3)
-        name=esc(h.v5.display_name(p)); price=esc(h.v5.product_price(p)); retailer=str(h.v5.retailer(p) or '')
+        name=esc(display_label(p,r)); price=esc(h.v5.product_price(p)); retailer=str(h.v5.retailer(p) or '')
         specs_html=''.join(f'<div class="spec"><span class="ico">{esc(symbol(v))}</span><span class="stxt">{esc(v)}</span></div>' for v in specs[:4])
         prod_html.append(f'''<section class="prod p{r}" data-rank="{r}" data-name="{esc(p.get('name'))}">
           <div class="pimg" style="{pxbox(s['img'])}">{f'<img src="{uri}">' if uri else ''}</div>
@@ -115,7 +127,7 @@ def build(ad):
 .tag{{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.1}}
 .stxt{{display:block;overflow:visible;line-height:1.12;overflow-wrap:anywhere}}
 .p4 .namebox,.p5 .namebox{{justify-content:flex-start}}
-.specs.top{{padding-top:0}}.p2 .specs,.p3 .specs{{top:839px!important;height:92px!important}}
+.specs.top{{padding-top:0}}.p2 .specs,.p3 .specs{{top:844px!important;height:92px!important}}
 .specs.top .ico{{width:42px;height:42px;flex-shrink:0}}
 .p1 .stxt{{font-size:13px}}.p2 .stxt,.p3 .stxt{{font-size:13px}}
 
