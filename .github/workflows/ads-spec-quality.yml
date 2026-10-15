@@ -1,0 +1,30 @@
+name: TrustFolio ads product fact QA
+on:
+  push:
+    branches: [fix/ad-spec-fact-sanity-20261016]
+    paths:
+      - 'ads_qa/spec_sanity.py'
+      - 'master_template_renderer_html_v4.py'
+      - 'test_ads_spec_sanity.py'
+      - '.github/workflows/ads-spec-quality.yml'
+  pull_request:
+    paths:
+      - 'ads_qa/spec_sanity.py'
+      - 'master_template_renderer_html_v4.py'
+      - 'test_ads_spec_sanity.py'
+      - '.github/workflows/ads-spec-quality.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check safe ad spec filtering (no site access)
+        run: |
+          python -m py_compile ads_qa/spec_sanity.py test_ads_spec_sanity.py
+          python -m unittest -v test_ads_spec_sanity
