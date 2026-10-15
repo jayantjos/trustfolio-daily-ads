@@ -130,6 +130,11 @@ def build_copy(ad):
             "https://play.google.com/store/apps/details?id=com.trustfolio.app"
         )
 
+    # Pass the campaign URL through to organic captions without claiming it is
+    # a clickable Instagram feed link; use a correctly configured bio/Story CTA.
+    campaign_url = str(ad.get("landing_url") or "https://www.trustfolio.in/")
+    ig = ig + "\n\nTrustFolio search: " + campaign_url
+
     fb = (
         f"{body}\n\n"
         f"Compare on TrustFolio: {ad.get('landing_url', 'https://www.trustfolio.in/')}"

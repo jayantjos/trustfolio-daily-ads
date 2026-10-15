@@ -1,0 +1,32 @@
+name: TrustFolio campaign link and ranking contracts
+on:
+  pull_request:
+    paths:
+      - 'campaign_link_contract_v1.py'
+      - 'ad_link_manifest_v1.py'
+      - 'social_post_generator_v1.py'
+      - 'test_campaign_link_contract_v1.py'
+      - '.github/workflows/campaign-contract-tests.yml'
+  push:
+    branches: [main, 'feature/campaign-deeplinks-parity-20261016']
+    paths:
+      - 'campaign_link_contract_v1.py'
+      - 'ad_link_manifest_v1.py'
+      - 'social_post_generator_v1.py'
+      - 'test_campaign_link_contract_v1.py'
+      - '.github/workflows/campaign-contract-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  campaign-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax check
+        run: python -m py_compile campaign_link_contract_v1.py ad_link_manifest_v1.py social_post_generator_v1.py test_campaign_link_contract_v1.py
+      - name: Unit tests (no production accounts or API keys)
+        run: python -m unittest -v test_campaign_link_contract_v1
