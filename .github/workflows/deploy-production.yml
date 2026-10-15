@@ -22,12 +22,12 @@ jobs:
           python - <<'PY'
           import ast
           from pathlib import Path
-          for p in Path('.').glob('*.py'):
-              ast.parse(p.read_text(encoding='utf-8'), filename=str(p))
           for line in Path('deploy/managed-files.txt').read_text().splitlines():
               f=line.strip()
               if f and not f.startswith('#'):
                   assert '..' not in f and not f.startswith('/') and Path(f).is_file(), f
+                  if f.endswith('.py'):
+                      ast.parse(Path(f).read_text(encoding='utf-8'), filename=f)
           PY
   deploy:
     needs: verify
