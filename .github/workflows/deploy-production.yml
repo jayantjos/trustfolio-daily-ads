@@ -17,6 +17,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Check campaign URL and ranking contracts
+        run: python -m unittest -v test_campaign_link_contract_v1
       - name: Validate Python and deployment allowlist
         run: |
           python - <<'PY'
