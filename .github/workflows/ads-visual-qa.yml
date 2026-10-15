@@ -2,7 +2,7 @@ name: TrustFolio server ads visual QA
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/ads-visual-qa.yml', 'ads_qa/**']
+    paths: ['.github/workflows/ads-visual-qa.yml', 'ads_qa/**', 'master_template_renderer_html_v4.py', 'renderer_v12_helper.py']
   schedule:
     - cron: '15 3 * * *'
   workflow_dispatch:
@@ -64,10 +64,14 @@ jobs:
           stat=ImageStat.Stat(ImageChops.difference(a,b))
           mae=sum(stat.mean)/3
           print(f'SERVER_RENDER_SIZE={b.size[0]}x{b.size[1]}')
-          print(f'PIXEL_MAE_VS_SERVER_REFERENCE={mae:.2f} (0=identical, 255=opposite)')
+          print(f'PIXEL_MAE_VS_{"APPROVED" if approved.exists() else "LEGACY"}_REFERENCE={mae:.2f} (0=identical, 255=opposite)')
           diff=ImageChops.difference(a,b)
           ImageEnhance.Contrast(diff).enhance(3).save('qa/visual-difference.png')
-          Path('qa/metrics.txt').write_text(f'render_size={b.size}\nmae={mae:.2f}\n')
+          Path('qa/metrics.txt').write_text(f'render_size={b.size}\nmae={mae:.2f}\napproved_reference_present={approved.exists()}\n')
+          if not approved.exists():
+              raise SystemExit('FAIL: approved reference missing; legacy server reference cannot approve design')
+          if mae > 15:
+              raise SystemExit(f'FAIL: visual MAE {mae:.2f} > 15.00')
           PY
       - uses: actions/upload-artifact@v4
         if: always()
