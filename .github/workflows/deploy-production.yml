@@ -1,0 +1,68 @@
+name: TrustFolio production deploy
+on:
+  push:
+    branches: [main]
+    paths: ['*.py', 'deploy/**', '.github/workflows/deploy-production.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: trustfolio-production
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate Python and deployment allowlist
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          for p in Path('.').glob('*.py'):
+              ast.parse(p.read_text(encoding='utf-8'), filename=str(p))
+          for line in Path('deploy/managed-files.txt').read_text().splitlines():
+              f=line.strip()
+              if f and not f.startswith('#'):
+                  assert '..' not in f and not f.startswith('/') and Path(f).is_file(), f
+          PY
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          test -n "$KEY" && test -n "$HOSTKEY" && test -n "$HOST" && test -n "$USER"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Deploy allowlisted files with backup and rollback
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          REMOTE="${USER}@${HOST}"
+          SHA="$GITHUB_SHA"
+          mkdir -p /tmp/tf-release
+          while IFS= read -r f; do
+            [[ -z "$f" || "$f" == \#* ]] && continue
+            mkdir -p "/tmp/tf-release/$(dirname "$f")"
+            cp "$f" "/tmp/tf-release/$f"
+          done < deploy/managed-files.txt
+          mkdir -p /tmp/tf-release/deploy
+          cp deploy/{deploy.sh,managed-files.txt} /tmp/tf-release/deploy/
+          tar -czf /tmp/tf-release.tgz -C /tmp/tf-release .
+          ssh -o StrictHostKeyChecking=yes "$REMOTE" 'mkdir -p "$HOME/trustfolio_releases"'
+          scp -o StrictHostKeyChecking=yes /tmp/tf-release.tgz "$REMOTE:trustfolio_releases/$SHA.tgz"
+          ssh -o StrictHostKeyChecking=yes "$REMOTE" "set -e; mkdir -p \"\$HOME/trustfolio_releases/$SHA\"; tar -xzf \"\$HOME/trustfolio_releases/$SHA.tgz\" -C \"\$HOME/trustfolio_releases/$SHA\"; bash \"\$HOME/trustfolio_releases/$SHA/deploy/deploy.sh\" \"\$HOME/trustfolio_releases/$SHA\" '$SHA'"
