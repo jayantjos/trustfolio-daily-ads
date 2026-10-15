@@ -110,7 +110,7 @@ class AutoCampaignTests(unittest.TestCase):
             pic, manifest=package_assets(sample_plan(),sample_report(),original,root/"out")
             with Image.open(pic) as im:
                 self.assertEqual(im.size,(1080,1350))
-                self.assertEqual(im.getpixel((540,650))[2],221 if False else im.getpixel((540,650))[2])
+                self.assertGreater(im.getpixel((540,650))[2],160)
             self.assertEqual(manifest["status"],"ready_for_publishing_gate")
             self.assertIn("budget=2000",manifest["caption"])
             self.assertTrue((root/"out"/"post.json").exists())
