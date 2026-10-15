@@ -171,8 +171,8 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      - name: Stage approved JPG only on ads public-media host
-        if: steps.plan.outputs.eligible == 'true' && steps.plan.outputs.publish == 'true'
+      - name: Stage QA-approved JPG on ads media host (does not publish)
+        if: steps.plan.outputs.eligible == 'true'
         env:
           HOST: ${{ secrets.TF_DEPLOY_HOST }}
           USER: ${{ secrets.TF_DEPLOY_USER }}
@@ -184,6 +184,22 @@ jobs:
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" 'mkdir -p "$HOME/public_media/trustfolio-auto"'
           scp -o StrictHostKeyChecking=yes "campaign/post/$ID.jpg" "$REMOTE:public_media/trustfolio-auto/$ID.jpg"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" "chmod 644 \"\$HOME/public_media/trustfolio-auto/$ID.jpg\""
+
+      - name: Verify media URL publicly serves the exact approved JPEG
+        if: steps.plan.outputs.eligible == 'true'
+        env:
+          ID: ${{ steps.plan.outputs.campaign_id }}
+        run: |
+          set -euo pipefail
+          python - "$ID" <<'PY'
+          import sys
+          from automation.metricool_publish_v1 import _check_media
+          key=sys.argv[1]
+          assert key.startswith('tfauto-')
+          url='https://media.trustfolio.in/trustfolio-auto/'+key+'.jpg'
+          _check_media(url,'campaign/post/'+key+'.jpg')
+          print('PUBLIC_MEDIA_SHA256_VERIFIED='+key)
+          PY
 
       - name: Post via Metricool ONLY after media/identity/duplicate preflight
         if: steps.plan.outputs.eligible == 'true' && steps.plan.outputs.publish == 'true'
