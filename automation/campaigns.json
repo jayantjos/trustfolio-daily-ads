@@ -1,0 +1,82 @@
+{
+  "version": "1.0",
+  "expected_metricool_instagram": "trustfolio3",
+  "expected_metricool_blog_id": "7271681",
+  "expected_metricool_user_id": "5635852",
+  "timezone": "Asia/Kolkata",
+  "posting_policy": "Artifact and QA first; only publish when TF_AUTO_POST_ENABLED=true and Metricool Advanced/Custom API token is available.",
+  "modes_description": {
+    "budget": "Five website-ranked product picks for a price budget.",
+    "brand_budget": "Five website-ranked products all of the same brand and under budget; skip if not available.",
+    "comparison": "Compare five different website-ranked category picks. Never imply that different products are cross-retailer listings of one model."
+  },
+  "campaigns": {
+    "budget": [
+      {
+        "category": "smartwatches",
+        "budget": 2000
+      },
+      {
+        "category": "headphones-earbuds",
+        "budget": 3000
+      },
+      {
+        "category": "smart-phones",
+        "budget": 15000
+      },
+      {
+        "category": "ceiling-fans",
+        "budget": 4000
+      },
+      {
+        "category": "laptops",
+        "budget": 55000
+      }
+    ],
+    "brand_budget": [
+      {
+        "category": "headphones-earbuds",
+        "budget": 3000,
+        "brand": "boAt"
+      },
+      {
+        "category": "smart-phones",
+        "budget": 20000,
+        "brand": "Samsung"
+      },
+      {
+        "category": "headphones-earbuds",
+        "budget": 4000,
+        "brand": "Noise"
+      },
+      {
+        "category": "laptops",
+        "budget": 60000,
+        "brand": "HP"
+      },
+      {
+        "category": "smartwatches",
+        "budget": 3000,
+        "brand": "Noise"
+      }
+    ],
+    "comparison": [
+      {
+        "category": "smartwatches",
+        "budget": 2000
+      },
+      {
+        "category": "headphones-earbuds",
+        "budget": 3000
+      },
+      {
+        "category": "smart-phones",
+        "budget": 15000
+      },
+      {
+        "category": "laptops",
+        "budget": 50000
+      }
+    ]
+  }
+}
