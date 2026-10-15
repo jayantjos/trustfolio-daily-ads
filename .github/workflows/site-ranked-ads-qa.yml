@@ -5,6 +5,7 @@ on:
     paths:
       - 'site_top5_ads_v1.py'
       - 'test_site_top5_ads_v1.py'
+      - 'test_campaign_link_contract_v1.py'
       - 'campaign_link_contract_v1.py'
       - 'ad_link_manifest_v1.py'
       - 'creative_config_v1.json'
@@ -13,6 +14,7 @@ on:
     paths:
       - 'site_top5_ads_v1.py'
       - 'test_site_top5_ads_v1.py'
+      - 'test_campaign_link_contract_v1.py'
       - 'campaign_link_contract_v1.py'
       - 'ad_link_manifest_v1.py'
       - 'creative_config_v1.json'
