@@ -21,7 +21,7 @@ from site_top5_ads_v1 import build_site_ads_payload
 from ad_link_manifest_v1 import build_manifest as link_manifest
 from creative_generator_v1 import build_manifest as visual_manifest
 from build_infographic_payload_v1 import build_payload
-from master_template_renderer_final_v5 import render as render_final
+from master_template_renderer_html_v4 import render as render_final
 
 ADS = Path.home() / "new_scraper" / "ads"
 
@@ -58,6 +58,7 @@ def run(category, budget, brand, output_dir):
     # This renderer uses the existing approved backdrop and assigns product
     # position by rank 1=centre, 2=left, 3=right, 4/5=bottom.
     rendered = render_final(info)
+    geometry = json.loads(Path(rendered).with_suffix(".json").read_text("utf8"))
     with Image.open(rendered) as image:
         if image.size != (1024,1536):
             raise ValueError("Unexpected server ad dimensions")
@@ -83,6 +84,8 @@ def run(category, budget, brand, output_dir):
         "png": target.name,
         "dimensions": [1024,1536],
         "design_reference_status": "separate_visual_review_required",
+        "visual_geometry_errors": geometry.get("errors") or [],
+        "renderer": "master_template_renderer_html_v4",
         "automatic_publication": False
     }
     (output_dir/"website-top5-render-qa.json").write_text(
@@ -92,6 +95,7 @@ def run(category, budget, brand, output_dir):
     print("PRODUCT_ID_ORDER="+",".join(ranked_ids))
     print("RENDERED_IMAGE="+str(target))
     print("LANDING_URL="+ad["landing_url"])
+    print("DESIGN_GEOMETRY_ERRORS=" + str(len(report["visual_geometry_errors"])))
     print("PUBLISH_STATUS=NOT_PUBLISHED_VISUAL_QA_REQUIRED")
     return target
 
