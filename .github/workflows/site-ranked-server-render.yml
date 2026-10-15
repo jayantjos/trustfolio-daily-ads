@@ -70,9 +70,14 @@ jobs:
           assert report['dimensions']==[1024,1536]
           assert report['landing_url'].startswith('https://www.trustfolio.in/category/smartwatches/products?')
           assert report['automatic_publication'] is False
-          print('LIVE_SITE_RANK_IDS_MATCH_RENDER_PAYLOAD')
+          assert report.get('renderer')=='master_template_renderer_html_v4'
+          assert not report.get('visual_geometry_errors'), (
+              'HTML geometry QA reported errors: '+str(report.get('visual_geometry_errors'))
+          )
+          print('LIVE_SITE_RANK_IDS_MATCH_RENDER_PAYLOAD_AND_GEOMETRY')
           PY
       - name: Upload original 1024x1536 ad and ranking proof (NOT published)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: trustfolio-live-site-ranked-server-render
