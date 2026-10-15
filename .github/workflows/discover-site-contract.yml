@@ -1,0 +1,61 @@
+name: Discover TrustFolio app contracts (read-only)
+on:
+  push:
+    branches: [feature/ads-readonly-site-contract-20261016]
+    paths: ['.github/workflows/discover-site-contract.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Configure verified VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: List only source file names for category/search/ranking discovery
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'python3 -' <<'PY'
+          import json
+          from pathlib import Path
+          root = Path.home() / "apps" / "trustfolio"
+          allow = {
+            "trustfolio-main": ("src",),
+            "node-backend": ("routes", "controllers", "services", "utils", "models"),
+            "trustfolio_admin": ("src",),
+          }
+          files = {}
+          for app, roots in allow.items():
+              paths = []
+              for sub in roots:
+                  base = root / app / sub
+                  if not base.is_dir(): continue
+                  for p in base.rglob("*"):
+                      if not p.is_file() or p.is_symlink(): continue
+                      rel = p.relative_to(root / app).as_posix()
+                      if any(x in rel for x in ("node_modules", ".next", ".env", "credentials", "secrets", "backup")): continue
+                      if p.suffix.lower() in (".js", ".jsx", ".ts", ".tsx", ".mjs"):
+                          paths.append(rel)
+              files[app] = sorted(paths)
+          print("READ_ONLY_SOURCE_PATHS_BEGIN")
+          print(json.dumps(files, indent=2))
+          print("READ_ONLY_SOURCE_PATHS_END")
+          PY
