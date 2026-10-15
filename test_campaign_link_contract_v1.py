@@ -15,6 +15,7 @@ def config():
         },
         "brand": {
             "name": "TrustFolio",
+            "tagline": "Compare Save Shop Smart",
             "website_url": "https://www.trustfolio.in/",
             "play_store_url": "https://play.google.com/store/apps/details?id=com.trustfolio.app",
         },
