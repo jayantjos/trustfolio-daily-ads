@@ -70,6 +70,21 @@ jobs:
                   result['projects'].append({'folder': child.name,
                     'project_markers': present, 'files_sampled': files,
                     'extension_counts': exts.most_common(12)})
+          project = root / 'trustfolio'
+          if project.is_dir():
+              folders = []
+              files = []
+              for base in [project] + [p for p in project.iterdir() if p.is_dir() and not p.name.startswith('.')]:
+                  if base.name in skip or base.is_symlink(): continue
+                  if base != project: folders.append(base.name + '/')
+                  for f in sorted(base.iterdir()):
+                      if f.name.startswith('.') or f.is_symlink(): continue
+                      if f.is_dir() and f.name not in skip:
+                          folders.append(str(f.relative_to(project)) + '/')
+                      elif f.is_file() and not any(k in f.name.lower() for k in ('secret', 'token', 'credential', 'password', '.env')):
+                          files.append({'path': str(f.relative_to(project)), 'bytes': f.stat().st_size})
+              result['trustfolio_tree_depth_2'] = {'directories': folders[:120],
+                  'files': files[:120]}
           print('TRUSTFOLIO_APPS_READ_ONLY_INVENTORY_BEGIN')
           print(json.dumps(result, indent=2))
           print('TRUSTFOLIO_APPS_READ_ONLY_INVENTORY_END')
