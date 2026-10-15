@@ -8,6 +8,12 @@ on:
       - 'test_campaign_link_contract_v1.py'
       - 'campaign_link_contract_v1.py'
       - 'ad_link_manifest_v1.py'
+      - 'creative_generator_v1.py'
+      - 'build_infographic_payload_v1.py'
+      - 'ads_qa/render_site_ranked_qa_v1.py'
+      - 'deploy/managed-files.txt'
+      - '.github/workflows/deploy-production.yml'
+      - '.github/workflows/site-ranked-server-render.yml'
       - 'creative_config_v1.json'
       - '.github/workflows/site-ranked-ads-qa.yml'
   pull_request:
@@ -17,6 +23,12 @@ on:
       - 'test_campaign_link_contract_v1.py'
       - 'campaign_link_contract_v1.py'
       - 'ad_link_manifest_v1.py'
+      - 'creative_generator_v1.py'
+      - 'build_infographic_payload_v1.py'
+      - 'ads_qa/render_site_ranked_qa_v1.py'
+      - 'deploy/managed-files.txt'
+      - '.github/workflows/deploy-production.yml'
+      - '.github/workflows/site-ranked-server-render.yml'
       - 'creative_config_v1.json'
       - '.github/workflows/site-ranked-ads-qa.yml'
   workflow_dispatch:
@@ -55,6 +67,18 @@ jobs:
           assert [p['ad_rank'] for p in ad['products']]==[1,2,3,4,5]
           assert 'budget=2000' in ad['landing_url']
           Path('artifacts/site-matched-campaign-manifest.json').write_text(json.dumps(manifest,indent=2,ensure_ascii=False))
+          from creative_generator_v1 import build_manifest as visual_manifest
+          from build_infographic_payload_v1 import build_payload
+          template=json.loads(Path('creative_templates_v1.json').read_text())
+          generated=visual_manifest(manifest,template)
+          image_payload=build_payload(generated['ads'][0])
+          expected=[p['product_id'] for p in ad['products']]
+          observed=[p['source_product_id'] for p in image_payload['products']]
+          assert observed==expected, 'creative pipeline changed live website ranking'
+          assert image_payload['landing_url']==ad['landing_url']
+          assert image_payload['site_ranking_status']=='verified'
+          Path('artifacts/site-ranked-infographic-payload.json').write_text(json.dumps(image_payload,indent=2,ensure_ascii=False))
+          print('REAL_WEBSITE_TOP5_CREATIVE_PAYLOAD_PARITY_PASSED')
           print('REAL_WEBSITE_TOP5_CAMPAIGN_TEST_PASSED')
           print('RANKED_PRODUCT_IDS=' + ','.join(p['product_id'] for p in ad['products']))
           print('LIVE_CATEGORY_URL=' + ad['landing_url'])
