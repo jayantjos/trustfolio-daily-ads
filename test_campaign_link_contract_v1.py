@@ -10,6 +10,7 @@ def config():
     return {
         "links": {
             "category_url_template": "https://www.trustfolio.in/category/{route_slug}/",
+            "results_url_template": "https://www.trustfolio.in/category/{route_slug}/products",
             "route_slug_overrides": {"speakers": "bluetooth-speakers"},
             "tracking": {"parameters": {"utm_source": "social", "utm_campaign": "daily"}},
             "budget_query_parameter": {"enabled": False, "parameter": "budget"},
@@ -61,6 +62,8 @@ class CampaignContractTests(unittest.TestCase):
         self.assertEqual(q["budget"], ["2000"])
         self.assertEqual(q["brand"], ["boAt Audio"])
         self.assertTrue(link["prefill_ready"])
+        self.assertEqual(urlsplit(link["landing_url"]).path, "/category/smartwatches/products")
+        self.assertEqual(link["click_destination"], "filtered_products")
 
     def test_enabled_without_frontend_confirmation_stays_off(self):
         cfg = config()
@@ -68,6 +71,18 @@ class CampaignContractTests(unittest.TestCase):
         link = campaign_link(ad(), cfg, "tf-three")
         self.assertFalse(link["prefill_ready"])
         self.assertNotIn("budget", parse_qs(urlsplit(link["landing_url"]).query))
+
+    def test_category_input_page_for_unverified_budget(self):
+        link = campaign_link(ad(), config(), "tf-input")
+        self.assertEqual(urlsplit(link["landing_url"]).path, "/category/smartwatches/")
+        self.assertEqual(link["click_destination"], "category_landing")
+
+    def test_offsite_results_path_rejected(self):
+        cfg = config()
+        cfg["results_url_template"] = "https://untrusted.example/category/{route_slug}/products"
+        cfg["budget_query_parameter"] = {"enabled": True, "frontend_verified": True}
+        with self.assertRaises(ValueError):
+            campaign_link(ad(), cfg, "tf-bad")
 
     def test_route_override(self):
         candidate = ad()
