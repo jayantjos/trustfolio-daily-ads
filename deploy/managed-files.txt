@@ -1,6 +1,8 @@
 # Files deployed into ~/new_scraper/ads; never sync runtime data
 ad_link_manifest_v1.py
 campaign_link_contract_v1.py
+site_top5_ads_v1.py
+creative_config_v1.json
 batch_render_creatives_v1.py
 build_infographic_payload_v1.py
 cleanup_creative_storage_v1.py
@@ -21,3 +23,4 @@ assets/trustfolio_approved_reference.jpg
 assets/trustfolio_clean_master_v3.png
 
 ads_qa/verify_template.py
+ads_qa/render_site_ranked_qa_v1.py

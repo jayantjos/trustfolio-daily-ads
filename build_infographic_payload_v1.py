@@ -52,6 +52,8 @@ def category_label(value):
 def product_payload(product, rank):
     return {
         "rank": rank,
+        "source_product_id": product.get("source_product_id") or "",
+        "click_url": product.get("click_url") or "",
         "badge": "Best Value" if rank == 1 else None,
         "name": product.get("full_title") or product.get("title") or "",
         "tagline": "",
@@ -115,6 +117,9 @@ def build_payload(ad):
         "source_ad_id": ad.get("ad_id"),
         "source_ad_type": ad.get("ad_type"),
         "landing_url": ad.get("landing_url"),
+        "site_ranking_status": ad.get("site_ranking_status") or "unverified",
+        "prefill_ready": bool(ad.get("prefill_ready")),
+        "ranking_source": ad.get("ranking_source"),
     }
 
 

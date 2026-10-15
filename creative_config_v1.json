@@ -69,9 +69,10 @@
     },
     "default_route_slug_strategy": "use_engine_category_slug_until_frontend_route_map_is_verified",
     "budget_query_parameter": {
-      "enabled": false,
+      "enabled": true,
+      "frontend_verified": true,
       "parameter": "budget",
-      "reason": "Frontend support for automatic budget selection is not yet verified"
+      "evidence": "VPS source read-only inspection and production HTTP 200 on /category/smartwatches/products?budget=2000, GitHub run 38812255164"
     },
     "product_deep_link": {
       "enabled": false,
@@ -90,7 +91,15 @@
         "utm_medium": "paid_social",
         "utm_campaign": "trustfolio_daily_ads"
       }
-    }
+    },
+    "results_url_template": "https://www.trustfolio.in/category/{route_slug}/products",
+    "brand_query_parameter": {
+      "enabled": true,
+      "frontend_verified": true,
+      "parameter": "brand",
+      "evidence": "Web product results src/app/category/[slug]/products/page.tsx reads brand query; API getTopProducts passes brand; actual branded live HTTP test still pending"
+    },
+    "results_behavior": "Use direct /products results when budget is specified and frontend-verified; preserve category input page otherwise"
   },
   "platforms": {
     "facebook": {

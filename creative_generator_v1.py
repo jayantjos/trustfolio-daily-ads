@@ -110,6 +110,8 @@ def build_caption(ad, brand):
 def product_card(product, index, ad):
     return {
         "card_index": index,
+        "rank": int(product.get("rank") or index),
+        "source_product_id": product.get("product_id") or product.get("source_product_id") or "",
         "title": clean_product_name(product.get("title", ""), 52),
         "full_title": product.get("title", ""),
         "price": product.get("price_inr"),
@@ -290,6 +292,10 @@ def build_manifest(data, template):
             "category":ad.get("category"),
             "headline":ad.get("headline"),
             "landing_url":ad.get("landing_url"),
+            "site_ranking_status":ad.get("site_ranking_status") or "unverified",
+            "prefill_ready":bool(ad.get("prefill_ready")),
+            "ranking_source":ad.get("ranking_source") or "independent_ads_engine",
+            "ranking_observed_at":ad.get("ranking_observed_at"),
             "caption":caption,
             "image_ad":build_image_spec(ad, template),
             "carousel_ad":build_carousel_spec(ad, template),

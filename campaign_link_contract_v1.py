@@ -33,10 +33,24 @@ def campaign_link(ad, config, ad_id):
     )
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", str(slug)):
         raise ValueError("Unrecognized category route slug: " + str(slug))
-    base = config["links"]["category_url_template"].format(route_slug=slug)
+    links = config["links"]
+    budget_cfg = links.get("budget_query_parameter", {})
+    brand_cfg = links.get("brand_query_parameter", {})
+    budget_verified = (
+        filters["budget_inr"] is not None and _verified_option(budget_cfg)
+    )
+    # The live website reads budget/brand on /category/[slug]/products,
+    # not on /category/[slug]/. Preserve the entry page when the results
+    # route has not been verified.
+    route = (
+        links["results_url_template"]
+        if budget_verified else links["category_url_template"]
+    )
+    base = route.format(route_slug=slug)
     parsed = urlsplit(base)
-    if parsed.scheme != "https" or parsed.hostname not in ("trustfolio.in", "www.trustfolio.in"):
-        raise ValueError("Category landing URL must be on HTTPS TrustFolio")
+    if (parsed.scheme != "https" or
+        parsed.hostname not in ("trustfolio.in", "www.trustfolio.in")):
+        raise ValueError("Category/results URL must be on HTTPS TrustFolio")
     params = dict(parse_qsl(parsed.query, keep_blank_values=True))
     tracking = config["links"].get("tracking", {}).get("parameters", {})
     params.update(tracking)
@@ -60,13 +74,13 @@ def campaign_link(ad, config, ad_id):
     return {
         "landing_url": url,
         "requested_filters": filters,
-        "prefill_ready": bool(all(ready.values())),
+        "prefill_ready": bool(budget_verified and all(ready.values())),
         "verified_prefill_fields": [key for key, valid in ready.items() if valid],
         "unverified_prefill_fields": [key for key, valid in ready.items() if not valid],
         # Ranking comes from the ad engine until an actual site snapshot confirms
         # that the same product IDs are displayed in the same order.
         "site_ranking_status": "unverified",
-        "click_destination": "category_landing",
+        "click_destination": "filtered_products" if budget_verified else "category_landing",
     }
 
 
