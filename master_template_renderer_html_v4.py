@@ -42,8 +42,17 @@ def symbol(v):
     return {'DISP':'▣','BAT':'▰','BT':'☎','IP':'◆','HLT':'♥','CPU':'C','RAM':'R','SSD':'S','CAM':'◉','STAR':'★','W':'⚡','CAP':'C','RPM':'↻','RO':'R','AUD':'♪','4K':'4K'}.get(c,'✓')
 def prep_image(product, rank):
     CACHE.mkdir(exist_ok=True)
-    raw=h.v5.load_product_image(product.get('image_url') or '', (720,720))
-    if raw is None: raise ValueError(f'Missing product image for rank {rank}')
+    # Retail image CDNs occasionally reset live connections. Retry the exact
+    # source image before failing; never substitute another product or fake art.
+    import time
+    raw=None
+    for attempt in range(3):
+        raw=h.v5.load_product_image(product.get('image_url') or '', (720,720))
+        if raw is not None:
+            break
+        if attempt < 2:
+            time.sleep(0.6 * (attempt + 1))
+    if raw is None: raise ValueError(f'Missing product image for rank {rank} after three attempts')
     raw=h.cutout_and_crop(raw)
     if not raw.width or not raw.height: return ''
     import io
