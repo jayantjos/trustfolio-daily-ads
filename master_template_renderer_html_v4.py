@@ -65,6 +65,7 @@ def build(ad):
     clean_uri='data:image/png;base64,' + base64.b64encode((ADS/'assets/trustfolio_clean_master_v3.png').read_bytes()).decode('ascii')
     approved_uri='data:image/jpeg;base64,' + base64.b64encode((ADS/'assets/trustfolio_approved_reference.jpg').read_bytes()).decode('ascii')
     benefits=[('Compare Prices','Across Top Websites'),('Latest Models','& Real Prices'),('Top Rated Picks',''),('Best Deals','in Your Budget')]
+    rank_art=''.join(f'<div class="rank-art rank-{r}" style="left:{x}px;top:{y}px;width:{w}px;height:{w}px;background-image:url({approved_uri});background-position:-{x}px -{y}px"></div>' for r,x,y,w in [(1,381,386,100),(2,119,417,59),(3,868,431,60),(4,28,941,66),(5,928,942,69)])
     prod_html=[]
     for r in (1,2,3,4,5):
         p=ranked[r]; s=SLOTS[r]; uri=prep_image(p,r); specs=h.choose_specs(p, profile, 4 if r == 1 else 3)
@@ -117,7 +118,10 @@ def build(ad):
 .specs.top{{padding-top:0}}.p2 .specs,.p3 .specs{{top:839px!important;height:92px!important}}
 .specs.top .ico{{width:42px;height:42px;flex-shrink:0}}
 .p1 .stxt{{font-size:13px}}.p2 .stxt,.p3 .stxt{{font-size:13px}}
-</style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}</div></body></html>''',key,profile
+
+.clean-body{{clip-path:path(evenodd,"M0 0H1024V895H0Z M20 555H100V635H20Z M920 555H1004V635H920Z")}}
+.rank-art{{position:absolute;z-index:10;border-radius:50%;background-size:1024px 1536px;background-repeat:no-repeat}}
+</style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}{rank_art}</div></body></html>''',key,profile
 
 def render(ad):
     html_text,key,profile=build(ad); OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
