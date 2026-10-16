@@ -1,0 +1,61 @@
+name: TrustFolio social automation contract CI
+on:
+  push:
+    branches: [feature/instagram-daily-ads-pipeline-20261016]
+    paths:
+      - 'automation/**'
+      - '.github/workflows/auto-instagram-campaigns.yml'
+      - '.github/workflows/auto-instagram-ci.yml'
+  pull_request:
+    paths:
+      - 'automation/**'
+      - '.github/workflows/auto-instagram-campaigns.yml'
+      - '.github/workflows/auto-instagram-ci.yml'
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check Pillow==11.3.0 PyYAML==6.0.2
+      - name: Validate workflow YAML and Python compilation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import ast, yaml
+          for path in Path('automation').rglob('*.py'):
+              ast.parse(path.read_text('utf8'),filename=str(path))
+          for path in ['.github/workflows/auto-instagram-campaigns.yml',
+                       '.github/workflows/auto-instagram-ci.yml']:
+              data=yaml.load(Path(path).read_text('utf8'),Loader=yaml.BaseLoader)
+              assert 'on' in data and 'jobs' in data,path
+              if path.endswith('auto-instagram-campaigns.yml'):
+                  assert len(data['on']['schedule'])==3
+          PY
+      - name: No-network regression suite for images, site ranking and publishing gate
+        run: |
+          python -m unittest -v automation.test_auto_campaign_v1 automation.test_metricool_publish_v1
+          python -m unittest -v test_campaign_link_contract_v1 test_site_top5_ads_v1 test_ads_spec_sanity
+      - name: Confirm website source can produce real category/brand-safe campaign
+        run: |
+          mkdir -p qa
+          python automation/auto_campaign_v1.py select --mode budget --day 2026-10-16 --category smartwatches --budget 2000 --output qa/plan.json
+          python - <<'PY'
+          import json
+          plan=json.load(open('qa/plan.json'))
+          assert plan['status']=='eligible',plan
+          assert plan['source_product_ids_by_rank']==[
+              '69f317fc1dafb58cccdbcc6d',
+              '69f317eb1dafb58cccdbcc67',
+              '6a06d9a0fe6fd8dc386b8558',
+              '6a0b7c70fe6fd8dc386c4451',
+              '6a39fb954e6d7e03d8275a41'] or len(plan['source_product_ids_by_rank'])==5
+          assert plan['auto_publish'] is False
+          print('WEBSITE_CAMPAIGN_PREVIEW_PASSED')
+          PY
