@@ -13,10 +13,6 @@
   "campaigns": {
     "budget": [
       {
-        "category": "smartwatches",
-        "budget": 2000
-      },
-      {
         "category": "headphones-earbuds",
         "budget": 3000
       },
@@ -31,6 +27,10 @@
       {
         "category": "laptops",
         "budget": 55000
+      },
+      {
+        "category": "smartwatches",
+        "budget": 2000
       }
     ],
     "brand_budget": [
