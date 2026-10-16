@@ -86,6 +86,19 @@ class AutoCampaignTests(unittest.TestCase):
         self.assertNotIn("Save ₹",c)
         self.assertIn("budget=2000",c)
 
+    def test_every_caption_contains_live_link_hub_and_play_store(self):
+        p=sample_plan()
+        caption=caption_for(p,sample_report()["landing_url"])
+        self.assertIn("https://media.trustfolio.in/trustfolio-links/index.html?",caption)
+        self.assertIn("category=smartwatches",caption)
+        self.assertIn("budget=2000",caption)
+        self.assertIn("https://play.google.com/store/apps/details?id=com.trustfolio.app",caption)
+        self.assertIn("links tappable nahi",caption)
+        p["mode"]="brand_budget"
+        p["brand"]="boAt Audio"
+        caption=caption_for(p,sample_report()["landing_url"]+"&brand=boAt+Audio")
+        self.assertIn("brand=boAt+Audio",caption)
+
     def test_brand_ad_requires_exact_brand_link(self):
         p=sample_plan()
         p["mode"]="brand_budget"
