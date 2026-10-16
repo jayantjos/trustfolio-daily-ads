@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import quote
 from PIL import Image
 from ads_qa.spec_sanity import is_sane_spec
+from ads_qa.category_copy_v1 import category_tagline
 from playwright.sync_api import sync_playwright
 
 ADS = Path(__file__).resolve().parent
@@ -182,7 +183,7 @@ def build(ad):
 
 
 .rank-art{{position:absolute;z-index:10;border-radius:50%;background-size:1024px 1536px;background-repeat:no-repeat}}
-</style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc((ad.get('metadata') or {}).get('subtitle') or ad.get('tagline') or profile['tagline'])}</div>{benefits_html}{''.join(prod_html)}{rank_art}</div></body></html>''',key,profile
+</style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(category_tagline(key, ad_type=ad.get('source_ad_type') or ''))}</div>{benefits_html}{''.join(prod_html)}{rank_art}</div></body></html>''',key,profile
 
 def render(ad):
     html_text,key,profile=build(ad); OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
