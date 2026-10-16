@@ -93,3 +93,45 @@ a separate verified cross-retailer identity test and is not auto-posted.
 4. Only after social/video works, address scraper price/spec extraction.
    **Never edit `~/apps/trustfolio` or the original scraper as part of
    this workflow.**
+
+
+### Clickable Instagram bio page (website + Google Play)
+
+The verified public landing page is:
+
+- `https://media.trustfolio.in/trustfolio-links/index.html`
+- Example campaign: `https://media.trustfolio.in/trustfolio-links/index.html?category=headphones-earbuds&budget=3000`
+- Brand example: `https://media.trustfolio.in/trustfolio-links/index.html?category=headphones-earbuds&budget=3000&brand=boAt`
+
+It displays a comparison CTA to the verified TrustFolio budget/brand URL
+and a clickable Android install CTA to the official Google Play app,
+plus shortcut links for popular category budgets. The static HTML is
+maintained in `automation/linkhub/index.html` and deployed read-only into
+`~/public_media/trustfolio-links/index.html`, NEVER into `~/apps/trustfolio`.
+
+**Instagram profile links cannot be changed via the connected Metricool
+plugin or GitHub Actions.** Account owner must perform this one-time
+`@trustfolio3 → Edit profile → Links → Add external link` action with the
+stable base URL above, then test that both CTA buttons open correctly. A
+copyable hub URL is automatically included in future campaign captions.
+
+### AI-content disclosure: do not guess
+
+Past posts were created with the Metricool `instagramData.isAiGenerated=true`
+setting, which can cause the visible "AI content" label. That publishing
+flag was chosen manually and **not inferred from Python/HTML rendering**.
+The approved reference/master artwork used by the renderer may have its own
+AI-generation history, which is currently unverified. Server-side
+composition alone cannot establish a creative is entirely non-AI.
+
+`automation/ai_provenance.json` is the source of truth. Until the original
+artwork's source is independently verified, `master_artwork_origin=unknown`
+and automated Metricool posts must disclose the AI flag. Only after the
+creator reviews and confirms that reference/background/artwork was manually
+designed without generative AI should `master_artwork_origin` be set to
+`human_designed_no_generative_ai` and
+`human_origin_verified=true`. PR QA guards that decision.
+
+Published Instagram posts are not editable through Metricool's
+`updateScheduledPost` connector (which supports only future scheduled
+posts). Do not claim that an existing platform-managed label has been removed.
