@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a1456">
+<meta name="description" content="Find TrustFolio Top 5 product recommendations by budget, or download the official TrustFolio Android app.">
+<title>TrustFolio · Compare Smart · Shop Smart</title>
+<style>
+:root{color-scheme:light;--navy:#0c1451;--dark:#101642;--blue:#2563eb;--purple:#7928e9;--yellow:#ffe432;--muted:#57627a}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;color:var(--dark);background:radial-gradient(ellipse at 50% -10%,#9bd3ff 0%,#dbeafe 33%,#f7faff 65%,#f9fafb 100%);padding:26px 16px}
+main{width:min(100%,480px);margin:0 auto}
+.brand{display:flex;align-items:center;gap:12px;margin:12px 0 25px}
+.mark{width:56px;height:56px;display:grid;place-items:center;background:linear-gradient(130deg,#06cde8,#5740e8 70%,#9d36ec);color:white;border-radius:17px;font-weight:900;font-size:31px;box-shadow:0 9px 25px #5649bf42}
+.brand h1{margin:0;font-size:29px;letter-spacing:-1px;color:var(--navy)}.brand h1 span{color:#2778ef}.brand p{margin:0;color:#687588;font-size:13px}
+.panel{position:relative;background:linear-gradient(145deg,#261482,#0a2270);color:white;padding:25px 20px 22px;border-radius:26px;box-shadow:0 17px 45px #18245b32;overflow:hidden}
+.panel:before{position:absolute;content:"";right:-80px;top:-95px;width:245px;height:245px;border-radius:50%;background:#702dff3d}
+.eyebrow{font-size:12px;font-weight:800;letter-spacing:1.7px;text-transform:uppercase;color:#bde1ff;margin:0 0 10px}
+.panel h2{font-size:clamp(29px,8vw,38px);line-height:1.1;letter-spacing:-1px;margin:0 0 9px;position:relative}
+.panel p{position:relative;margin:0;color:#d6e6ff;line-height:1.55;font-size:14px}
+.actions{margin-top:24px;display:grid;gap:12px}
+.btn{display:flex;align-items:center;justify-content:space-between;text-decoration:none;gap:14px;border-radius:17px;padding:17px 18px;min-height:62px;font-weight:850;font-size:17px;box-shadow:0 4px 10px #0b14421c}
+.btn strong{font-size:20px}.btn.primary{background:var(--yellow);color:#131534}.btn.secondary{color:white;background:#243eaa;border:1px solid #ffffff3b}
+.btn:focus-visible,.chip:focus-visible{outline:3px solid #16caf8;outline-offset:3px}
+.note{color:#687588;font-size:12px;line-height:1.5;margin:15px 3px 0}
+section.picks{margin:24px 0 0}.picks h3{font-size:16px;margin:0 0 12px;letter-spacing:-.2px}
+.chips{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.chip{border-radius:15px;border:1px solid #d5e1ff;background:#fff;color:#162a69;min-height:68px;display:flex;flex-direction:column;justify-content:center;align-items:start;padding:11px 13px;font-weight:750;text-decoration:none;box-shadow:0 3px 8px #17275a0b}
+.chip small{font-size:12px;color:#5b6987;font-weight:600;padding-top:4px}
+footer{text-align:center;color:#586681;margin:25px 0 10px;font-size:12px}
+footer a{color:#294dad}
+@media (prefers-reduced-motion:no-preference){.btn,.chip{transition:transform .15s ease}.btn:hover,.chip:hover{transform:translateY(-2px)}}
+</style>
+</head>
+<body>
+<main>
+  <header class="brand">
+    <div class="mark" aria-hidden="true">T✓</div>
+    <div><h1>Trust<span>Folio</span></h1><p>Compare · Save · Shop Smart</p></div>
+  </header>
+  <section class="panel" aria-label="TrustFolio quick links">
+    <p class="eyebrow">Your shopping shortcut</p>
+    <h2>Smart picks.<br>Right budget.</h2>
+    <p>Compare five ranked products on TrustFolio, or open our Android app. Latest prices may vary.</p>
+    <nav class="actions" aria-label="Top destinations">
+      <a id="comparison" class="btn primary" href="https://www.trustfolio.in/category/headphones-earbuds/products?budget=3000">
+        <span>🔎 <span id="comparison-label">Headphones & Earbuds · ₹3,000</span></span><strong aria-hidden="true">↗</strong>
+      </a>
+      <a class="btn secondary" href="https://play.google.com/store/apps/details?id=com.trustfolio.app">
+        <span>📲 Get TrustFolio on Google Play</span><strong aria-hidden="true">↗</strong>
+      </a>
+    </nav>
+  </section>
+  <p class="note">Tip: This link page works in Instagram's bio. Product rankings and prices reflect the live website and can change.</p>
+  <section class="picks" aria-labelledby="popular">
+    <h3 id="popular">Popular comparisons</h3>
+    <div class="chips">
+      <a class="chip" href="https://www.trustfolio.in/category/headphones-earbuds/products?budget=3000">🎧 Headphones & Earbuds<small>Under ₹3,000</small></a>
+      <a class="chip" href="https://www.trustfolio.in/category/smartwatches/products?budget=2000">⌚ Smartwatches<small>Under ₹2,000</small></a>
+      <a class="chip" href="https://www.trustfolio.in/category/smart-phones/products?budget=15000">📱 Smartphones<small>Under ₹15,000</small></a>
+      <a class="chip" href="https://www.trustfolio.in/">🌐 All categories<small>Explore TrustFolio</small></a>
+    </div>
+  </section>
+  <footer>© TrustFolio · <a href="https://www.trustfolio.in/">trustfolio.in</a></footer>
+</main>
+<script>
+(function () {
+  "use strict";
+  // Optional filtered campaign deep link: one bio page supports future ads.
+  // URL source is fixed to https://www.trustfolio.in and never user supplied.
+  const args = new URLSearchParams(location.search);
+  const category = args.get("category") || "";
+  const budget = args.get("budget") || "";
+  const brand = args.get("brand") || "";
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(category) ||
+      !/^[1-9][0-9]{0,6}$/.test(budget) || Number(budget)>1000000 ||
+      brand.length > 75 || (brand && !/^[a-zA-Z0-9 .&()'-]+$/.test(brand))) return;
+  const safePath = "/category/" + encodeURIComponent(category) + "/products";
+  const params = new URLSearchParams({budget});
+  if (brand) params.set("brand", brand);
+  const dest = "https://www.trustfolio.in" + safePath + "?" + params.toString();
+  const btn = document.getElementById("comparison");
+  const title = document.getElementById("comparison-label");
+  btn.href = dest;
+  const readable = category.split("-").map(s=>s.charAt(0).toUpperCase()+s.slice(1)).join(" ");
+  title.textContent = (brand?brand+" ":"")+readable+" · ₹"+Number(budget).toLocaleString("en-IN");
+})();
+</script>
+</body>
+</html>
