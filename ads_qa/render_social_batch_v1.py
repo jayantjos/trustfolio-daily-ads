@@ -52,12 +52,12 @@ def verified_brand(slug,budgets,base_ad,preferred,*,reader=build_site_ads_payloa
     count=Counter(x.strip() for x in site_brands if str(x).strip())
     candidates=[x for x,_ in count.most_common()]+list(preferred)
     seen=set()
-    for brand in candidates:
+    for brand in candidates[:8]:
         brand=str(brand).strip()
         if not brand or brand.casefold() in seen:
             continue
         seen.add(brand.casefold())
-        for budget in budgets:
+        for budget in budgets[:2]:
             try:
                 ad=reader(slug,budget,brand)["ads"][0]
                 products=ad["products"]
