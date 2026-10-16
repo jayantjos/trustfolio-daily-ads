@@ -171,6 +171,23 @@ def _reserve_campaign(token, key, media_url):
     return result["content"]["sha"]
 
 
+def ai_disclosure_for_manifest(manifest, attestation_path="automation/ai_provenance.json"):
+    """Return Meta's true/false AI declaration from verified asset provenance.
+
+    A Python/HTML render does not prove the underlying master artwork was
+    not generated or significantly changed using generative AI.
+    """
+    settings=json.loads(Path(attestation_path).read_text("utf8"))
+    value=settings.get("master_artwork_origin")
+    if value=="generative_ai" or value=="unknown":
+        return True
+    if value=="human_designed_no_generative_ai":
+        if settings.get("human_origin_verified") is not True:
+            raise ValueError("Human-made artwork claim has no provenance verification")
+        return False
+    raise ValueError("Unknown creative provenance setting; refuse AI mislabeling")
+
+
 def schedule_validated_post(manifest, media_url, local_path):
     if manifest.get("status")!="ready_for_publishing_gate" or manifest.get("publication_status")!="not_published":
         raise ValueError("Campaign not approved for scheduling")
@@ -193,7 +210,7 @@ def schedule_validated_post(manifest, media_url, local_path):
         "publicationDate":{"dateTime":when.strftime("%Y-%m-%dT%H:%M:%S"),"timezone":"Asia/Calcutta"},
         "text":str(manifest["caption"]),
         "providers":[{"network":"instagram"}],
-        "instagramData":{"type":"POST","isAiGenerated":False},
+        "instagramData":{"type":"POST","isAiGenerated":ai_disclosure_for_manifest(manifest)},
         "media":{"mediaId":media_id},
         "autoPublish":True,
         "draft":False,

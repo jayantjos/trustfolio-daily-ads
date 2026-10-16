@@ -10,7 +10,7 @@ import json
 import re
 from datetime import date, datetime
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlsplit, urlencode
 from zoneinfo import ZoneInfo
 
 import sys
@@ -122,12 +122,18 @@ def caption_for(plan, landing_url):
         title = f"Best {category} Under ₹{budget}!"
         body = "Top 5 ranked picks, latest listed prices aur shopping options dekho."
     tags = "#TrustFolio #SmartShopping #ProductComparison #BestDealsIndia"
-    # Instagram feed URLs are not clickable. Include a copyable verified URL,
-    # never promise that the bio link was changed automatically.
+    hub_filters = {"category":plan["category"],"budget":str(plan["budget"])}
+    if brand: hub_filters["brand"] = brand
+    hub = ("https://media.trustfolio.in/trustfolio-links/index.html?"
+           + urlencode(hub_filters))
+    # Instagram captions are not clickable. The brand's bio needs a one-time
+    # profile Links update; do not claim it is active until verified.
     return (f"✨ {title}\n\n{body}\n\n"
             f"🔎 Filtered results: {landing_url}\n"
-            "Instagram feed captions mein links clickable nahi hote. "
-            "URL copy karo ya TrustFolio profile se website kholo.\n\n"
+            f"🔗 Website + app quick links: {hub}\n"
+            "📲 Android app: https://play.google.com/store/apps/details?id=com.trustfolio.app\n"
+            "Instagram feed links tappable nahi hote. Link copy karo; "
+            "bio link activate hone ke baad profile se direct open karo.\n\n"
             "Prices, availability aur ranking badal sakte hain; buy karne se pehle verify karo.\n\n"
             + tags)
 
