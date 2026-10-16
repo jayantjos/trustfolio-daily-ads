@@ -1,0 +1,103 @@
+name: TrustFolio genuine-photo manual Instagram ad (no generative art)
+on:
+  push:
+    branches: [feature/non-generative-manual-ig-post-20261016]
+    paths:
+      - 'automation/manual_non_ai_catalog_ad.py'
+      - '.github/workflows/manual-non-ai-ig-post.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  generate-verify-stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deterministic drawing libraries
+        run: |
+          python -m pip install --disable-pip-version-check Pillow==11.3.0 numpy==2.2.6
+          python -m py_compile automation/manual_non_ai_catalog_ad.py
+      - name: Pull genuine website Top-5 data and render real product-photo graphic
+        run: |
+          set -euo pipefail
+          python automation/manual_non_ai_catalog_ad.py --output-dir campaign
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          p=Path('campaign/post.json')
+          m=json.loads(p.read_text('utf8'))
+          assert m['status']=='qa_passed_not_published'
+          assert m['rank_source']=='live_trustfolio_website_api'
+          assert m['generated_style']=='algorithmic_graphics_no_ai_art'
+          assert m['instagram_ai_flag'] is False
+          assert len(m['product_ids_by_rank'])==5 and len(set(m['product_ids_by_rank']))==5
+          assert all(0<float(x)<=m['budget_inr'] for x in m['product_prices_by_rank'])
+          assert m['instagram_target']=='trustfolio3'
+          assert m['image_dimensions']==[1080,1350]
+          assert m['landing_url'].endswith('budget='+str(m['budget_inr']))
+          assert m['app_url']=='https://play.google.com/store/apps/details?id=com.trustfolio.app'
+          with Image.open('campaign/'+m['image_file']) as im:
+              assert im.size==(1080,1350)
+          print('WEBSITE_RANKING_AND_GENUINE_PHOTO_AD_QA=PASS')
+          print('CAMPAIGN_CATEGORY='+m['category'])
+          print('CAMPAIGN_BUDGET='+str(m['budget_inr']))
+          PY
+      - name: Configure verified ads media host SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Stage verified image on existing TrustFolio media host only
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          REMOTE="${USER}@${HOST}"
+          FILE="manual-catalog-$RUN_ID.jpg"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" 'mkdir -p "$HOME/public_media/trustfolio-auto"'
+          scp -o StrictHostKeyChecking=yes campaign/trustfolio-non-generative-catalog-ad.jpg "$REMOTE:public_media/trustfolio-auto/$FILE"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" "chmod 644 \"\$HOME/public_media/trustfolio-auto/$FILE\""
+          python - "$RUN_ID" <<'PY'
+          import hashlib,sys
+          from pathlib import Path
+          from urllib.request import Request,urlopen
+          run=sys.argv[1]
+          expected=Path('campaign/trustfolio-non-generative-catalog-ad.jpg').read_bytes()
+          url='https://media.trustfolio.in/trustfolio-auto/manual-catalog-'+run+'.jpg'
+          with urlopen(Request(url,headers={'User-Agent':'TrustFolioSocialPreview/1.0'}),timeout=30) as reply:
+              assert reply.status==200
+              actual=reply.read(5_000_000)
+          assert actual==expected,'Public JPEG differs from verified original'
+          with Path('campaign/media_url.txt').open('w') as file:file.write(url+'\n')
+          print('PUBLIC_MEDIA_BYTES_VERIFIED='+hashlib.sha256(actual).hexdigest())
+          print('PUBLIC_IMAGE_URL='+url)
+          PY
+      - name: Upload source manifest, original image and public image URL
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-manual-non-generative-catalog-${{ github.run_id }}
+          path: campaign/
+          retention-days: 30
+          if-no-files-found: warn
