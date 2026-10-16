@@ -17,7 +17,6 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 
 from site_top5_ads_v1 import build_site_ads_payload
-from ads_qa.render_site_ranked_qa_v1 import run as render
 from automation.auto_campaign_v1 import campaign_id, package_assets
 
 IST=ZoneInfo("Asia/Kolkata")
@@ -70,7 +69,9 @@ def verified_brand(slug,budgets,base_ad,preferred,*,reader=build_site_ads_payloa
     raise ValueError("No brand has five verified live website products in configured budgets")
 
 
-def run_batch(output_root,*,day,reader=build_site_ads_payload,renderer=render,packager=package_assets):
+def run_batch(output_root,*,day,reader=build_site_ads_payload,renderer=None,packager=package_assets,public_dir=None):
+    if renderer is None:
+        from ads_qa.render_site_ranked_qa_v1 import run as renderer
     root=Path(output_root)
     root.mkdir(parents=True,exist_ok=True)
     result={"batch_date_ist":day,"account":"trustfolio3","source":"live_trustfolio_website_api",
@@ -118,7 +119,7 @@ def run_batch(output_root,*,day,reader=build_site_ads_payload,renderer=render,pa
                     raise ValueError("Visual ad and post identity differ")
                 # Stage the already verified JPEG; GitHub runner still must
                 # GET and SHA256 verify it before any Metricool scheduling.
-                public=Path.home()/"public_media"/"trustfolio-auto"
+                public=Path(public_dir) if public_dir is not None else Path.home()/"public_media"/"trustfolio-auto"
                 public.mkdir(parents=True,exist_ok=True)
                 dest=public/image.name
                 shutil.copy2(image,dest)
