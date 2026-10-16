@@ -1,0 +1,45 @@
+name: TrustFolio six-category ad batch contract QA
+on:
+  push:
+    branches: [feature/six-categories-three-modes-social-batch-20261016]
+    paths:
+      - 'ads_qa/render_social_batch_v1.py'
+      - 'ads_qa/test_social_batch_v1.py'
+      - 'ads_qa/render_site_ranked_qa_v1.py'
+      - '.github/workflows/instagram-six-category-batch*.yml'
+  pull_request:
+    paths:
+      - 'ads_qa/render_social_batch_v1.py'
+      - 'ads_qa/test_social_batch_v1.py'
+      - 'ads_qa/render_site_ranked_qa_v1.py'
+      - '.github/workflows/instagram-six-category-batch*.yml'
+permissions:
+  contents: read
+jobs:
+  batch-safe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax check and mock-based 18 creative test
+        run: |
+          python -m py_compile ads_qa/render_social_batch_v1.py ads_qa/render_site_ranked_qa_v1.py
+          python -m unittest -v ads_qa.test_social_batch_v1
+          python -m unittest -v ads_qa.test_category_copy_v1
+          python -m unittest -v test_site_top5_ads_v1 test_campaign_link_contract_v1
+      - name: Validate production allowlist and separate campaign types
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source=Path('ads_qa/render_site_ranked_qa_v1.py').read_text('utf8')
+          assert 'top5_comparison' in source
+          assert 'campaign_mode' in source
+          managed=Path('deploy/managed-files.txt').read_text('utf8')
+          assert 'ads_qa/render_social_batch_v1.py' in managed
+          assert 'automation/auto_campaign_v1.py' in managed
+          assert 'apps/trustfolio' not in managed
+          print('BATCH_QA_CONFIRMED_18_MODES_NO_APP_TOUCH')
+          PY

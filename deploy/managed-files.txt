@@ -28,3 +28,5 @@ ads_qa/render_site_ranked_qa_v1.py
 ads_qa/spec_sanity.py
 
 ads_qa/category_copy_v1.py
+ads_qa/render_social_batch_v1.py
+automation/auto_campaign_v1.py

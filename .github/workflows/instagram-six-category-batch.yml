@@ -1,0 +1,139 @@
+name: TrustFolio six-category multi-type Instagram render batch
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ads_qa/render_social_batch_v1.py'
+      - '.github/workflows/instagram-six-category-batch.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: trustfolio-six-category-campaign-batch
+  cancel-in-progress: false
+jobs:
+  render-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CI image utilities
+        run: python -m pip install --disable-pip-version-check Pillow==11.3.0
+      - name: Run fixture-only batch tests (never publish)
+        run: |
+          python -m unittest -v ads_qa.test_social_batch_v1
+          python -m unittest -v ads_qa.test_category_copy_v1
+          python -m py_compile ads_qa/render_social_batch_v1.py ads_qa/render_site_ranked_qa_v1.py
+      - name: Configure independently verified SSH for ads VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Await the identical verified GitHub production revision on VPS
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for attempt in {1..36}; do
+            deployed="$(ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'cat "$HOME/new_scraper/ads/.trustfolio_deployed_sha"' || true)"
+            if [[ "$deployed" == "$EXPECTED_SHA" ]]; then
+              echo "ADS_VPS_SOURCE_REVISION_VERIFIED=$deployed"
+              exit 0
+            fi
+            echo "Waiting for production allowlist deploy verification (${attempt}/36)"
+            sleep 15
+          done
+          echo "::error::VPS production revision never matched GitHub commit; batch blocked"
+          exit 1
+      - name: Render site-ranked 6 x 3 original creatives on VPS (read-only apps)
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+          RUN_KEY: ${{ github.run_id }}
+        timeout-minutes: 49
+        run: |
+          set -euo pipefail
+          [[ "$RUN_KEY" =~ ^[0-9]+$ ]]
+          REMOTE="${USER}@${HOST}"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" \
+            "set -e; cd \"\$HOME/new_scraper/ads\"; \"\$HOME/venv/bin/python\" ads_qa/render_social_batch_v1.py --output \"\$HOME/new_scraper/ads/ads_qa/batch-runs/$RUN_KEY\""
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" \
+            "tar -czf \"\$HOME/new_scraper/ads/ads_qa/batch-runs/$RUN_KEY.tar.gz\" -C \"\$HOME/new_scraper/ads/ads_qa/batch-runs/$RUN_KEY\" ."
+          mkdir -p campaign
+          scp -o StrictHostKeyChecking=yes "$REMOTE:new_scraper/ads/ads_qa/batch-runs/$RUN_KEY.tar.gz" campaign/ads.tgz
+          tar -xzf campaign/ads.tgz -C campaign
+          rm campaign/ads.tgz
+      - name: Validate artifact paths, every ranking and HTTPS media content
+        env:
+          RUN_KEY: ${{ github.run_id }}
+        timeout-minutes: 8
+        run: |
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          from urllib.parse import urlsplit,parse_qs
+          from urllib.request import Request,urlopen
+          root=Path('campaign')
+          r=json.loads((root/'batch_index.json').read_text('utf8'))
+          assert r['account']=='trustfolio3' and len(r['entries'])==18
+          assert len({(x['category_key'],x['mode']) for x in r['entries']})==18
+          passed=[]
+          for item in r['entries']:
+              if item['status']=='skipped':
+                  print('CAMPAIGN_SKIPPED='+item['category_key']+':'+item['mode']+':'+item['reason'])
+                  continue
+              assert item['status']=='qa_passed'
+              ids=item['website_source_ids']
+              assert len(ids)==5 and len(set(ids))==5
+              url=urlsplit(item['landing_url'])
+              assert url.scheme=='https' and url.hostname=='www.trustfolio.in'
+              params=parse_qs(url.query)
+              assert params['budget']==[str(item['budget_inr'])]
+              if item['brand']: assert params['brand']==[item['brand']]
+              else: assert 'brand' not in params
+              rel=Path(item['local_jpg'])
+              assert not rel.is_absolute() and '..' not in rel.parts
+              raw=(root/rel).read_bytes()
+              assert raw[:3]==bytes([255,216,255]) and len(raw)>1000
+              from PIL import Image
+              with Image.open(root/rel) as im:
+                  assert im.size==(1080,1350)
+              media=item['media_url']
+              host=urlsplit(media)
+              assert host.scheme=='https' and host.hostname=='media.trustfolio.in'
+              with urlopen(Request(media,headers={'User-Agent':'TrustFolioBatchPublicMediaQA/1.0'}),timeout=28) as h:
+                  assert h.status==200
+                  remote=h.read(5_000_000)
+              assert hashlib.sha256(raw).digest()==hashlib.sha256(remote).digest(),'Public image mismatch: '+item['campaign_id']
+              passed.append(item)
+              print('POST_CANDIDATE_JSON='+json.dumps(item,ensure_ascii=False,separators=(',',':')))
+          assert passed,'No eligible creative from the live website API'
+          print('BATCH_QA_READY_COUNT='+str(len(passed)))
+          print('BATCH_QA_SKIPPED_COUNT='+str(18-len(passed)))
+          print('INSTAGRAM_POSTS_CREATED=0; METRICOOL_CONNECTED_PLUGIN_SCHEDULING_REQUIRED')
+          PY
+      - name: Upload every successful source render and social posting manifest to GitHub
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-six-category-three-mode-social-batch-${{ github.run_id }}
+          path: campaign/
+          retention-days: 30
+          if-no-files-found: warn
