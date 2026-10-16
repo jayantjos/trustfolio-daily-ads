@@ -32,6 +32,8 @@ jobs:
         run: python -m unittest -v test_ads_spec_sanity
       - name: Verify category-specific ad headlines and no smartwatch copy leakage
         run: python -m unittest -v ads_qa.test_category_copy_v1
+      - name: Verify three visually distinct dynamic campaign headlines
+        run: python -m unittest -v ads_qa.test_campaign_display_v1
       - name: Validate Python and deployment allowlist
         run: |
           python - <<'PY'
