@@ -290,6 +290,8 @@ def build_manifest(data, template):
             "ad_id":ad.get("ad_id"),
             "ad_type":ad.get("ad_type"),
             "category":ad.get("category"),
+            "brand":ad.get("brand") or "",
+            "budget_inr":ad.get("budget_inr"),
             "headline":ad.get("headline"),
             "landing_url":ad.get("landing_url"),
             "site_ranking_status":ad.get("site_ranking_status") or "unverified",
