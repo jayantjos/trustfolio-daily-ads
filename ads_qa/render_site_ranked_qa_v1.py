@@ -26,8 +26,22 @@ from master_template_renderer_html_v4 import render as render_final
 ADS = Path.home() / "new_scraper" / "ads"
 
 
-def run(category, budget, brand, output_dir):
+def run(category, budget, brand, output_dir, mode="budget"):
+    if mode not in ("budget", "brand_budget", "comparison"):
+        raise ValueError("Unknown advertisement mode")
+    if mode == "brand_budget" and not brand:
+        raise ValueError("A brand ad must use a verified brand")
+    if mode != "brand_budget" and brand:
+        raise ValueError("Only brand-budget campaigns may contain a brand filter")
     input_payload = build_site_ads_payload(category, budget, brand)
+    if mode == "comparison":
+        # Compare five DIFFERENT site-ranked products, never claim that one
+        # product has matching retailer listings without identity evidence.
+        from creative_generator_v1 import display_category
+        input_payload["ads"][0]["ad_type"] = "top5_comparison"
+        input_payload["ads"][0]["headline"] = (
+            f"Compare Top 5 {display_category(category)} Under ₹{int(budget):,}"
+        )
     # Avoid overwriting existing daily creative outputs during isolated QA.
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     input_payload["ads"][0]["model"] = "live-website-qa-" + timestamp
@@ -76,6 +90,8 @@ def run(category, budget, brand, output_dir):
         "campaign_category": category,
         "campaign_budget_inr": budget,
         "campaign_brand": brand or None,
+        "campaign_mode": mode,
+        "campaign_headline": input_payload["ads"][0].get("headline"),
         "landing_url": ad["landing_url"],
         "source_ad_id": ad["ad_id"],
         "source_product_ids_by_rank": ranked_ids,
@@ -105,9 +121,10 @@ def main():
     parser.add_argument("--category",default="smartwatches")
     parser.add_argument("--budget",type=int,default=2000)
     parser.add_argument("--brand",default="")
+    parser.add_argument("--mode",choices=("budget","brand_budget","comparison"),default="budget")
     parser.add_argument("--output-dir",required=True)
     args = parser.parse_args()
-    run(args.category,args.budget,args.brand,args.output_dir)
+    run(args.category,args.budget,args.brand,args.output_dir,mode=args.mode)
 
 
 if __name__=="__main__":
