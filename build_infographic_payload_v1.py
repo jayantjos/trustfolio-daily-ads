@@ -85,6 +85,8 @@ def build_payload(ad):
     metadata = dict(infographic_metadata)
     metadata["campaign_title"] = title
     metadata["campaign_category"] = category_label(category)
+    metadata["campaign_brand"] = ad.get("brand") or ""
+    metadata["campaign_budget_inr"] = ad.get("budget_inr")
 
     # Data is dynamic, but copy MUST be category-specific. The original
     # smartwatch-only metadata subtitle must never leak into other ads.
