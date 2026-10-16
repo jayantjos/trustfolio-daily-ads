@@ -125,7 +125,10 @@ def build(ad):
     ad_type=str(ad.get('source_ad_type') or '')
     campaign_brand=str((ad.get('metadata') or {}).get('campaign_brand') or '')
     title=campaign_hero(key,profile['label'],ad_type,campaign_brand)
-    headline_size=headline_font_size(title)
+    # Budget mode stays pixel-identical to the approved frozen hero style;
+    # long brand/comparison variants get a safe single-line font adjustment.
+    hero_style=(f' style="font-size:{headline_font_size(title)}px;letter-spacing:-2px"'
+                if ad_type in ('brand_recommendation','top5_comparison') else '')
     subtitle=campaign_subtitle(category_tagline(key, ad_type=ad_type),ad_type)
     budget_text=f'Under ₹{h.indian_commas(budget)}' if budget else 'Top 5 Best Picks'
     master_uri='data:image/png;base64,' + base64.b64encode(MASTER.read_bytes()).decode('ascii')
@@ -188,7 +191,7 @@ def build(ad):
 
 
 .rank-art{{position:absolute;z-index:10;border-radius:50%;background-size:1024px 1536px;background-repeat:no-repeat}}
-</style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1" style="font-size:{headline_size}px;letter-spacing:-2px">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(subtitle)}</div>{benefits_html}{''.join(prod_html)}{rank_art}</div></body></html>''',key,profile
+</style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1"{hero_style}>{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(subtitle)}</div>{benefits_html}{''.join(prod_html)}{rank_art}</div></body></html>''',key,profile
 
 def render(ad):
     html_text,key,profile=build(ad); OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)
