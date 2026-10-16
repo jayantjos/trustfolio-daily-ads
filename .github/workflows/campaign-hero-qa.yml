@@ -1,0 +1,32 @@
+name: TrustFolio brand and comparison visual copy QA
+on:
+  push:
+    branches: [fix/brand-comparison-creative-hero-20261016]
+    paths:
+      - 'ads_qa/campaign_display_v1.py'
+      - 'ads_qa/test_campaign_display_v1.py'
+      - 'master_template_renderer_html_v4.py'
+      - 'build_infographic_payload_v1.py'
+      - '.github/workflows/campaign-hero-qa.yml'
+  pull_request:
+    paths:
+      - 'ads_qa/campaign_display_v1.py'
+      - 'ads_qa/test_campaign_display_v1.py'
+      - 'master_template_renderer_html_v4.py'
+      - 'build_infographic_payload_v1.py'
+      - '.github/workflows/campaign-hero-qa.yml'
+permissions:
+  contents: read
+jobs:
+  hero:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify six brand hero and comparison variants fit fixed premium template
+        run: |
+          python -m py_compile ads_qa/campaign_display_v1.py master_template_renderer_html_v4.py
+          python -m unittest -v ads_qa.test_campaign_display_v1
+          python -m unittest -v ads_qa.test_category_copy_v1
