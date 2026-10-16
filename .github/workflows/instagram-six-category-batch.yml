@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install CI image utilities
+        run: python -m pip install --disable-pip-version-check Pillow==11.3.0
       - name: Run fixture-only batch tests (never publish)
         run: |
           python -m unittest -v ads_qa.test_social_batch_v1
@@ -109,7 +111,7 @@ jobs:
               rel=Path(item['local_jpg'])
               assert not rel.is_absolute() and '..' not in rel.parts
               raw=(root/rel).read_bytes()
-              assert raw.startswith(b'\\xff\\xd8\\xff') is False or len(raw)>1000
+              assert raw[:3]==bytes([255,216,255]) and len(raw)>1000
               from PIL import Image
               with Image.open(root/rel) as im:
                   assert im.size==(1080,1350)
