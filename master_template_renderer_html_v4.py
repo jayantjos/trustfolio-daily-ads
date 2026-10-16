@@ -5,6 +5,7 @@ from urllib.parse import quote
 from PIL import Image
 from ads_qa.spec_sanity import is_sane_spec
 from ads_qa.category_copy_v1 import category_tagline
+from ads_qa.campaign_display_v1 import campaign_hero, headline_font_size, campaign_subtitle
 from playwright.sync_api import sync_playwright
 
 ADS = Path(__file__).resolve().parent
@@ -121,7 +122,14 @@ def build(ad):
     ranked={int(p['rank']):p for p in products}
     miss=[r for r in range(1,6) if r not in ranked]
     if miss: raise ValueError(f'missing ranks {miss}')
-    title=f'Best {profile["label"]}'
+    ad_type=str(ad.get('source_ad_type') or '')
+    campaign_brand=str((ad.get('metadata') or {}).get('campaign_brand') or '')
+    title=campaign_hero(key,profile['label'],ad_type,campaign_brand)
+    # Budget mode stays pixel-identical to the approved frozen hero style;
+    # long brand/comparison variants get a safe single-line font adjustment.
+    hero_style=(f' style="font-size:{headline_font_size(title)}px;letter-spacing:-2px"'
+                if ad_type in ('brand_recommendation','top5_comparison') else '')
+    subtitle=campaign_subtitle(category_tagline(key, ad_type=ad_type),ad_type)
     budget_text=f'Under ₹{h.indian_commas(budget)}' if budget else 'Top 5 Best Picks'
     master_uri='data:image/png;base64,' + base64.b64encode(MASTER.read_bytes()).decode('ascii')
     clean_uri=clean_body_uri()
@@ -183,7 +191,7 @@ def build(ad):
 
 
 .rank-art{{position:absolute;z-index:10;border-radius:50%;background-size:1024px 1536px;background-repeat:no-repeat}}
-</style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1">{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(category_tagline(key, ad_type=ad.get('source_ad_type') or ''))}</div>{benefits_html}{''.join(prod_html)}{rank_art}</div></body></html>''',key,profile
+</style></head><body><img class="bg" src="{master_uri}"><div class="clean-body"><img src="{clean_uri}"></div><img class="fixed-footer" src="{approved_uri}"><img class="fixed-benefits" src="{approved_uri}"><div class="overlay"><div class="hero hero1"{hero_style}>{esc(title)}</div><div class="hero hero2">{esc(budget_text)}</div><div class="hero sub">{esc(subtitle)}</div>{benefits_html}{''.join(prod_html)}{rank_art}</div></body></html>''',key,profile
 
 def render(ad):
     html_text,key,profile=build(ad); OUT.mkdir(parents=True,exist_ok=True); CACHE.mkdir(exist_ok=True)

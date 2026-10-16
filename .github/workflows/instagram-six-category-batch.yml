@@ -4,6 +4,10 @@ on:
     branches: [main]
     paths:
       - 'ads_qa/render_social_batch_v1.py'
+      - 'ads_qa/campaign_display_v1.py'
+      - 'creative_generator_v1.py'
+      - 'build_infographic_payload_v1.py'
+      - 'master_template_renderer_html_v4.py'
       - '.github/workflows/instagram-six-category-batch.yml'
   workflow_dispatch:
 permissions:
@@ -26,6 +30,7 @@ jobs:
         run: |
           python -m unittest -v ads_qa.test_social_batch_v1
           python -m unittest -v ads_qa.test_category_copy_v1
+          python -m unittest -v ads_qa.test_campaign_display_v1
           python -m py_compile ads_qa/render_social_batch_v1.py ads_qa/render_site_ranked_qa_v1.py
       - name: Configure independently verified SSH for ads VPS
         env:
@@ -95,6 +100,7 @@ jobs:
           assert r['account']=='trustfolio3' and len(r['entries'])==18
           assert len({(x['category_key'],x['mode']) for x in r['entries']})==18
           passed=[]
+          hashes={}
           for item in r['entries']:
               if item['status']=='skipped':
                   print('CAMPAIGN_SKIPPED='+item['category_key']+':'+item['mode']+':'+item['reason'])
@@ -112,6 +118,7 @@ jobs:
               assert not rel.is_absolute() and '..' not in rel.parts
               raw=(root/rel).read_bytes()
               assert raw[:3]==bytes([255,216,255]) and len(raw)>1000
+              hashes[(item['category_key'],item['mode'])]=hashlib.sha256(raw).hexdigest()
               from PIL import Image
               with Image.open(root/rel) as im:
                   assert im.size==(1080,1350)
@@ -125,6 +132,12 @@ jobs:
               passed.append(item)
               print('POST_CANDIDATE_JSON='+json.dumps(item,ensure_ascii=False,separators=(',',':')))
           assert passed,'No eligible creative from the live website API'
+          for category in {x['category_key'] for x in passed}:
+              budget_hash=hashes.get((category,'budget'))
+              compare_hash=hashes.get((category,'comparison'))
+              if budget_hash and compare_hash and budget_hash==compare_hash:
+                  raise ValueError('Comparison creative is visually identical to budget: '+category)
+          print('DISTINCT_BUDGET_VS_COMPARISON_ARTWORK_VERIFIED')
           print('BATCH_QA_READY_COUNT='+str(len(passed)))
           print('BATCH_QA_SKIPPED_COUNT='+str(18-len(passed)))
           print('INSTAGRAM_POSTS_CREATED=0; METRICOOL_CONNECTED_PLUGIN_SCHEDULING_REQUIRED')
