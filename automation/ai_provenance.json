@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "master_artwork_origin": "unknown",
+  "human_origin_verified": false,
+  "reference_artwork": "assets/trustfolio_approved_reference.jpg",
+  "renderer": "master_template_renderer_html_v4.py",
+  "product_images": "source retail product photographs",
+  "rendering_method": "Python/Pillow HTML Playwright compositing; base reference artwork provenance not yet verified",
+  "reason": "Cannot infer original asset provenance from Python server-rendering alone. Default to disclosure until verified human-designed source is documented.",
+  "decision": "AI label may stay visible until verified no-generative-AI provenance; any subsequent change requires explicit source review."
+}
