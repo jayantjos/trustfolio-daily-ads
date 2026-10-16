@@ -2,10 +2,12 @@
 import json
 import os
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from automation.metricool_publish_v1 import (
-    _find_media_id, _require_env, _check_media, schedule_validated_post,
+    _find_media_id, _require_env, _check_media, schedule_validated_post, ai_disclosure_for_manifest,
 )
 
 
@@ -50,6 +52,20 @@ class MetricoolPublishGateTests(unittest.TestCase):
     def test_media_must_be_public_trustfolio_url(self):
         with self.assertRaisesRegex(ValueError,"permanent public TrustFolio"):
             _check_media("https://evil.example.com/image.jpg","doesnotexist")
+
+    def test_unknown_reference_provenance_discloses_ai(self):
+        self.assertTrue(ai_disclosure_for_manifest(manifest()))
+
+    def test_only_verified_human_artwork_allows_non_ai_label(self):
+        with tempfile.TemporaryDirectory() as folder:
+            file=Path(folder)/"provenance.json"
+            file.write_text('{"master_artwork_origin":"human_designed_no_generative_ai","human_origin_verified":false}')
+            with self.assertRaisesRegex(ValueError,"provenance verification"):
+                ai_disclosure_for_manifest(manifest(),str(file))
+            file.write_text('{"master_artwork_origin":"human_designed_no_generative_ai","human_origin_verified":true}')
+            self.assertFalse(ai_disclosure_for_manifest(manifest(),str(file)))
+            file.write_text('{"master_artwork_origin":"generative_ai","human_origin_verified":false}')
+            self.assertTrue(ai_disclosure_for_manifest(manifest(),str(file)))
 
     def test_media_id_extracted_only_when_real(self):
         self.assertEqual(_find_media_id({"data":{"mediaId":"abc123"}}),"abc123")
