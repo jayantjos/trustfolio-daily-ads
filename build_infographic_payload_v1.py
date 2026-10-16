@@ -18,6 +18,8 @@ OUTPUT = BASE / "ads" / "trustfolio_infographic_payload_v1.json"
 MASTER_PATH = BASE / "ads" / "trustfolio_infographic_data_v1.py"
 sys.path.insert(0, str(MASTER_PATH.parent))
 
+from ads_qa.category_copy_v1 import category_tagline
+
 from trustfolio_infographic_data_v1 import (
     cta_button,
     feature_badges,
@@ -84,10 +86,11 @@ def build_payload(ad):
     metadata["campaign_title"] = title
     metadata["campaign_category"] = category_label(category)
 
-    subtitle = infographic_metadata["subtitle"]
-    if ad.get("ad_type") == "price_comparison":
-        subtitle = "Compare the same product across major platforms"
-    metadata["subtitle"] = subtitle
+    # Data is dynamic, but copy MUST be category-specific. The original
+    # smartwatch-only metadata subtitle must never leak into other ads.
+    metadata["subtitle"] = category_tagline(
+        category, ad_type=ad.get("ad_type") or ""
+    )
 
     return {
         "metadata": metadata,

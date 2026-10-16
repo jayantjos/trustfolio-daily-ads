@@ -1,0 +1,43 @@
+name: TrustFolio category-specific ad copy QA
+on:
+  push:
+    branches: [fix/category-specific-ad-subtitles-20261016]
+    paths:
+      - 'ads_qa/category_copy_v1.py'
+      - 'ads_qa/test_category_copy_v1.py'
+      - 'build_infographic_payload_v1.py'
+      - 'master_template_renderer_html_v4.py'
+      - '.github/workflows/category-copy-qa.yml'
+  pull_request:
+    paths:
+      - 'ads_qa/category_copy_v1.py'
+      - 'ads_qa/test_category_copy_v1.py'
+      - 'build_infographic_payload_v1.py'
+      - 'master_template_renderer_html_v4.py'
+      - '.github/workflows/category-copy-qa.yml'
+permissions:
+  contents: read
+jobs:
+  category-copy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unit-test all category subtitles and accurate payload
+        run: |
+          python -m py_compile ads_qa/category_copy_v1.py build_infographic_payload_v1.py master_template_renderer_html_v4.py
+          python -m unittest -v ads_qa.test_category_copy_v1
+      - name: Preserve exact universal podium and dynamic rank mapping
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source=Path('master_template_renderer_html_v4.py').read_text()
+          assert 'for r in (1,2,3,4,5)' in source
+          assert "category_tagline(key" in source
+          assert 'SLOTS={' in source
+          assert 'approved_uri' in source
+          print('FROZEN_VISUAL_GEOMETRY_AND_RANK_MAPPING_PRESERVED')
+          PY

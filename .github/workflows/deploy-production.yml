@@ -30,6 +30,8 @@ jobs:
           PY
       - name: Reject obviously false wearable specs in advertisement copy
         run: python -m unittest -v test_ads_spec_sanity
+      - name: Verify category-specific ad headlines and no smartwatch copy leakage
+        run: python -m unittest -v ads_qa.test_category_copy_v1
       - name: Validate Python and deployment allowlist
         run: |
           python - <<'PY'
