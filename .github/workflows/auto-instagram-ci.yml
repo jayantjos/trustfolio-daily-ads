@@ -49,6 +49,16 @@ jobs:
           python - <<'PY'
           import json
           plan=json.load(open('qa/plan.json'))
+          if plan['status']=='no_eligible_campaign':
+              # Live backend is an external dependency. A network outage
+              # must skip content safely rather than publish fabricated
+              # ranking; it must not falsely claim this live check passed.
+              attempts=plan.get('attempts') or []
+              if attempts and all(x.get('reason')=='URLError' for x in attempts):
+                  assert plan.get('auto_publish') is False
+                  print('WARNING: LIVE_TRUSTFOLIO_API_UNREACHABLE -- posts fail closed')
+                  raise SystemExit(0)
+              raise AssertionError(plan)
           assert plan['status']=='eligible',plan
           assert plan['source_product_ids_by_rank']==[
               '69f317fc1dafb58cccdbcc6d',
