@@ -155,6 +155,18 @@ def validate_approved_manifest(manifest):
     return key
 
 
+def confirm_page_token_type(cfg):
+    """Read-only: /me must resolve to the expected Facebook Page, not a user.
+
+    A User token can read Page+IG data after permissions are granted; do
+    not confuse that with a Page token for unattended Page publishing.
+    """
+    me=_graph(cfg["version"],"me",cfg["page_token"],fields="id,name")
+    if str(me.get("id") or "")!=cfg["page_id"]:
+        raise PublishingBlocked("Token is not the Trustfolio Page token: /me did not return verified Facebook Page ID")
+    return cfg["page_id"]
+
+
 def confirm_page_identity(cfg):
     """Resolve IG ID through verified FB Page, never from guessed usernames."""
     p=_graph(cfg["version"],cfg["page_id"],cfg["page_token"],
@@ -328,6 +340,7 @@ def publish_verified(manifest,media_url,local_jpg,*,env=None):
     cfg=load_env(env=env)
     # Reuse existing proven media-byte match check from previous QA gate.
     _check_media(media_url,local_jpg)
+    confirm_page_token_type(cfg)
     igid=confirm_page_identity(cfg)
     results=[]
     for network in cfg["networks"]:
