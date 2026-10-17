@@ -1,10 +1,10 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "expected_metricool_instagram": "trustfolio3",
   "expected_metricool_blog_id": "7271681",
   "expected_metricool_user_id": "5635852",
   "timezone": "Asia/Kolkata",
-  "posting_policy": "Artifact and QA first; only publish when TF_AUTO_POST_ENABLED=true and Metricool Advanced/Custom API token is available.",
+  "posting_policy": "Cron generates only QA-verified artifacts; publication remains OFF unless credentials, plan, per-network quotas, duplicate gates and exact account authorization are independently confirmed. Free Metricool 20 total published posts/calendar month across networks; do not assume daily quota.",
   "modes_description": {
     "budget": "Five website-ranked product picks for a price budget.",
     "brand_budget": "Five website-ranked products all of the same brand and under budget; skip if not available.",
@@ -76,6 +76,302 @@
       {
         "category": "laptops",
         "budget": 50000
+      }
+    ]
+  },
+  "rotation": {
+    "description": "Twenty fixed design categories with source-verified website Top-5 picks. Each day's three cron slots rotate category, price tier and ad mode; skip unverified brand/rank.",
+    "cadence_ist": {
+      "budget": "08:30",
+      "brand_budget": "13:30",
+      "comparison": "19:00"
+    },
+    "mode_category_offsets": {
+      "budget": 0,
+      "brand_budget": 7,
+      "comparison": 13
+    },
+    "max_categories_checked_per_slot": 5,
+    "max_brands_checked_per_category": 2,
+    "categories": [
+      {
+        "key": "air-conditioner",
+        "site_slug": "air-conditioner",
+        "budgets": [
+          25000,
+          35000,
+          45000
+        ],
+        "brands": [
+          "Voltas",
+          "LG",
+          "Daikin"
+        ]
+      },
+      {
+        "key": "ceiling-fans",
+        "site_slug": "ceiling-fans",
+        "budgets": [
+          2000,
+          3000,
+          5000
+        ],
+        "brands": [
+          "Crompton",
+          "Havells",
+          "Bajaj"
+        ]
+      },
+      {
+        "key": "cooler",
+        "site_slug": "cooler",
+        "budgets": [
+          5000,
+          8000,
+          12000
+        ],
+        "brands": [
+          "Symphony",
+          "Bajaj",
+          "Crompton"
+        ]
+      },
+      {
+        "key": "desktop-computers",
+        "site_slug": "desktop-computers",
+        "budgets": [
+          30000,
+          45000,
+          65000
+        ],
+        "brands": [
+          "HP",
+          "Dell",
+          "Lenovo"
+        ]
+      },
+      {
+        "key": "drones",
+        "site_slug": "drones",
+        "budgets": [
+          5000,
+          10000,
+          20000
+        ],
+        "brands": [
+          "DJI",
+          "Potensic"
+        ]
+      },
+      {
+        "key": "fridge-refrigeration",
+        "site_slug": "fridge-refrigeration",
+        "budgets": [
+          18000,
+          25000,
+          35000
+        ],
+        "brands": [
+          "Samsung",
+          "LG",
+          "Whirlpool"
+        ]
+      },
+      {
+        "key": "geyser-water-heater",
+        "site_slug": "geyser-water-heater",
+        "budgets": [
+          5000,
+          8000,
+          12000
+        ],
+        "brands": [
+          "Havells",
+          "Bajaj",
+          "AO Smith"
+        ]
+      },
+      {
+        "key": "headphones-earbuds",
+        "site_slug": "headphones-earbuds",
+        "budgets": [
+          2000,
+          3000,
+          5000
+        ],
+        "brands": [
+          "Noise",
+          "boAt",
+          "JBL"
+        ]
+      },
+      {
+        "key": "induction-cooktop",
+        "site_slug": "induction-cooktop",
+        "budgets": [
+          2000,
+          3000,
+          5000
+        ],
+        "brands": [
+          "Prestige",
+          "Philips",
+          "Pigeon"
+        ]
+      },
+      {
+        "key": "laptop",
+        "site_slug": "laptops",
+        "budgets": [
+          35000,
+          55000,
+          75000
+        ],
+        "brands": [
+          "HP",
+          "Lenovo",
+          "Dell"
+        ]
+      },
+      {
+        "key": "microwave-oven",
+        "site_slug": "microwave-oven",
+        "budgets": [
+          8000,
+          12000,
+          18000
+        ],
+        "brands": [
+          "LG",
+          "Samsung",
+          "IFB"
+        ]
+      },
+      {
+        "key": "mixer-grinder",
+        "site_slug": "mixer-grinder",
+        "budgets": [
+          2000,
+          4000,
+          6000
+        ],
+        "brands": [
+          "Bajaj",
+          "Philips",
+          "Prestige"
+        ]
+      },
+      {
+        "key": "smart-phones",
+        "site_slug": "smart-phones",
+        "budgets": [
+          10000,
+          15000,
+          25000
+        ],
+        "brands": [
+          "Samsung",
+          "Motorola",
+          "Redmi"
+        ]
+      },
+      {
+        "key": "smart-tvs",
+        "site_slug": "smart-tvs",
+        "budgets": [
+          15000,
+          25000,
+          40000
+        ],
+        "brands": [
+          "Samsung",
+          "LG",
+          "Onida"
+        ]
+      },
+      {
+        "key": "smartwatches",
+        "site_slug": "smartwatches",
+        "budgets": [
+          2000,
+          3000,
+          5000
+        ],
+        "brands": [
+          "Noise",
+          "boAt",
+          "Fastrack"
+        ]
+      },
+      {
+        "key": "speakers",
+        "site_slug": "speakers",
+        "budgets": [
+          2000,
+          5000,
+          10000
+        ],
+        "brands": [
+          "boAt",
+          "JBL",
+          "Sony"
+        ]
+      },
+      {
+        "key": "tablets",
+        "site_slug": "tablets",
+        "budgets": [
+          12000,
+          20000,
+          35000
+        ],
+        "brands": [
+          "Samsung",
+          "Lenovo",
+          "Redmi"
+        ]
+      },
+      {
+        "key": "vacuum-cleaner",
+        "site_slug": "vacuum-cleaner",
+        "budgets": [
+          5000,
+          10000,
+          20000
+        ],
+        "brands": [
+          "Eureka Forbes",
+          "Philips",
+          "AGARO"
+        ]
+      },
+      {
+        "key": "washing-machine",
+        "site_slug": "washing-machines",
+        "budgets": [
+          20000,
+          25000,
+          35000
+        ],
+        "brands": [
+          "IFB",
+          "LG",
+          "Samsung"
+        ]
+      },
+      {
+        "key": "water-purifier",
+        "site_slug": "water-purifier",
+        "budgets": [
+          10000,
+          15000,
+          25000
+        ],
+        "brands": [
+          "Kent",
+          "Aquaguard",
+          "Livpure"
+        ]
       }
     ]
   }

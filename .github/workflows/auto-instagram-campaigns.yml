@@ -147,7 +147,7 @@ jobs:
           assert plan['status']=='eligible' and plan['account']=='trustfolio3'
           sys.path.insert(0,str(root))
           from ads_qa.render_site_ranked_qa_v1 import run
-          run(plan['category'],int(plan['budget']),plan['brand'],folder)
+          run(plan['category'],int(plan['budget']),plan['brand'],folder,mode=plan['mode'])
           PY
           scp -o StrictHostKeyChecking=yes "$REMOTE:$REMOTE_REL/trustfolio-live-website-top5-1024x1536.png" campaign/
           scp -o StrictHostKeyChecking=yes "$REMOTE:$REMOTE_REL/website-top5-render-qa.json" campaign/
