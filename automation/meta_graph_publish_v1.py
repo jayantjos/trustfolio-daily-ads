@@ -27,6 +27,8 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from automation.metricool_publish_v1 import _check_media
 
 GRAPH_ORIGIN = "https://graph.facebook.com"
