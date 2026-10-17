@@ -95,6 +95,20 @@ class TwentyCategoryRotationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"ad type"):
             check_report(plan,report)
 
+    def test_three_verified_modes_each_day_have_distinct_cron_slots(self):
+        workflow=(ROOT/".github/workflows/auto-instagram-campaigns.yml").read_text("utf8")
+        self.assertIn("TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '3'",workflow)
+        self.assertIn("github.event_name == 'schedule'",workflow)
+        # The brand-budget middle slot must be allowed to publish from
+        # Oct 26 if five matching same-brand ranked products exist.
+        self.assertIn("github.event.schedule == '0 8 * * *'",workflow)
+        self.assertIn("github.event.schedule == '0 3 * * *'",workflow)
+        self.assertIn("github.event.schedule == '30 13 * * *'",workflow)
+        self.assertIn("2026-10-26",workflow)
+        self.assertIn("TF_AUTO_POST_ENABLED",workflow)
+        self.assertEqual(tuple(POLICY["rotation"]["cadence_ist"].values()),
+                         ("08:30","13:30","19:00"))
+
     def test_github_cron_forwards_mode_to_ads_vps_renderer(self):
         source=(ROOT/".github/workflows/auto-instagram-campaigns.yml").read_text("utf8")
         self.assertIn("mode=plan['mode']",source)
