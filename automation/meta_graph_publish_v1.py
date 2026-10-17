@@ -172,22 +172,24 @@ def confirm_page_identity(cfg):
 
 
 def check_instagram_quota(cfg, igid):
-    r=_graph(cfg["version"],igid+"/content_publishing_limit",cfg["page_token"])
-    stats = r.get("data") if isinstance(r,dict) else None
-    if isinstance(stats,list) and stats:
-        stats=stats[0]
-    elif isinstance(stats,dict):
-        pass
-    else:
-        stats=r
+    """Read live Meta limits, whose total/duration are nested under config.
+
+    Graph's default response may only contain quota_usage; explicitly request
+    config so we can refuse publication if the account-specific limit is absent.
+    """
+    r=_graph(cfg["version"],igid+"/content_publishing_limit",
+             cfg["page_token"],fields="quota_usage,config")
     try:
+        stats=r["data"][0]
         usage=int(stats["quota_usage"])
-        total=int(stats["quota_total"])
-    except (TypeError,KeyError,ValueError):
-        raise PublishingBlocked("Instagram content publishing quota unreadable; no post attempted")
-    if total <= 0 or usage < 0 or usage >= total:
+        config=stats["config"]
+        total=int(config["quota_total"])
+        duration=int(config["quota_duration"])
+    except (TypeError,KeyError,ValueError,IndexError):
+        raise PublishingBlocked("Instagram content publishing quota unreadable; no post attempted") from None
+    if total <= 0 or duration <= 0 or usage < 0 or usage >= total:
         raise PublishingBlocked("Instagram rolling 24-hour publishing limit reached")
-    return {"quota_usage":usage,"quota_total":total}
+    return {"quota_usage":usage,"quota_total":total,"quota_duration":duration}
 
 
 def ensure_ledger(cfg):
