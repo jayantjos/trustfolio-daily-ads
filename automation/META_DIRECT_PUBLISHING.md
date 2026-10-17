@@ -120,3 +120,53 @@ not mean unlimited or guaranteed posting.
   https://developers.facebook.com/docs/pages-api/posts/
 
 Do not ask the user to run ad-server commands or paste access tokens.
+
+## Actual live proof and controlled unattended rollout (Oct 17, 2026)
+
+The owner authorized a one-time direct Meta API publication (independent
+of Metricool) and the exact QA-verified `headphones-earbuds` under
+`₹5,000` campaign was published by GitHub Actions
+[run 39047834993](https://github.com/jayantjos/trustfolio-daily-ads/actions/runs/39047834993).
+
+Meta returned publication IDs and independent Graph read-back verified:
+
+- Instagram `@trustfolio3`: https://www.instagram.com/p/DemfwV-FNtj/
+- Facebook Trustfolio Page: https://www.facebook.com/photo.php?fbid=122210308130911225&set=a.122109062984911225&type=3
+
+The publisher's `trustfolio-meta-publishing-ledger` creates a distinct
+per-network, per-day reservation and records the Meta object IDs. Never
+blindly retry an ambiguous write.
+
+**Unattended rollout from 2026-10-26 IST only**, after the existing
+Metricool October 17–25 queue has run:
+
+- Budget/Top 5 at 08:30 IST: publish to Instagram and Facebook if website
+  provides exactly five verified ranked items, HTTPS media SHA matches,
+  Page token is still valid and linked to `@trustfolio3`, and Meta quota
+  permits it.
+- Comparison at 19:00 IST: same secure publishing gate.
+- Brand + budget at 13:30 IST: generate and QA only, **no live posts yet**.
+- Limit to **2 posts per social account per day** initially. One
+  campaign published on both networks consumes one local slot on each.
+  Longer-term scale to 20 categories × different budgets must first
+  verify sufficient website inventory, publish cap, social quality and
+  non-repetition. Publishing is not unlimited.
+- Cron GitHub push/PR events never publish. An independently hardcoded
+  October 26 date guard stops early publication even if someone sets a
+  repository start-date variable to an earlier value.
+- `TF_META_DIRECT_PUBLISH_ENABLED` defaults to `true` with the tested
+  token, but an explicit GitHub Actions variable set to `false` is the
+  **emergency shutoff**. Old `TF_AUTO_POST_ENABLED` (Metricool) must
+  remain `false`.
+- At 07:40 IST daily, `meta-readonly-connection.yml` re-verifies
+  genuine Page token, linked Instagram account and available quota.
+  Failed read-only tests must be investigated; they cannot publish posts.
+- Token currently reported by the owner as expiring on **December 16,
+  2026**. This date was **not** independently verified by our read-only
+  `/me` and quota checks. Renew securely in GitHub Secrets before expiry,
+  and never publish tokens in chat, logs or source code.
+
+**Important:** “auto-publish enabled” is not proof an individual post
+was delivered. Verify each GitHub Actions run and returned Meta post IDs.
+GitHub scheduled workflows may start late; if verified website inventory
+is insufficient, that slot safely skips rather than invents products.
