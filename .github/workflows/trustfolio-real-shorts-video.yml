@@ -96,7 +96,41 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: campaign
 
+      - name: Distinguish legitimate no-eligible-product slot from broken source QA artifact
+        id: validate_source
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path('campaign')
+          plan_path=root/'plan.json'
+          if not plan_path.is_file():
+              raise SystemExit('Missing campaign/plan.json: source artifact is invalid')
+          plan=json.loads(plan_path.read_text('utf8'))
+          status=plan.get('status')
+          if status=='no_eligible_campaign':
+              print('SHORTS_STATUS=SKIPPED_NO_VERIFIED_FIVE_PRODUCT_SOURCE')
+              print('NO_FAKE_PRODUCT_OR_VIDEO_GENERATED=true')
+              with open(os.environ['GITHUB_OUTPUT'],'a') as out:
+                  out.write('eligible=false\\n'.replace('\\n','\n'))
+          elif status=='eligible':
+              needed=[root/'post/post.json',root/'website-top5-render-qa.json']
+              if any(not file.is_file() or file.stat().st_size==0 for file in needed):
+                  raise SystemExit('Eligible source run unexpectedly lacks product QA/art payload')
+              manifest=json.loads(needed[0].read_text('utf8'))
+              img=root/'post'/str(manifest.get('output_jpg') or '')
+              if not img.is_file() or img.stat().st_size==0:
+                  raise SystemExit('Eligible source run unexpectedly lacks approved creative JPEG')
+              print('SHORTS_SOURCE=WEBSITE_RANKED_FIVE_PRODUCTS_PRESENT')
+              with open(os.environ['GITHUB_OUTPUT'],'a') as out:
+                  out.write('eligible=true\\n'.replace('\\n','\n'))
+          else:
+              raise SystemExit('Unknown source campaign status: '+str(status))
+          PY
+
       - name: Render four motion scenes into a genuine vertical MP4
+        if: steps.validate_source.outputs.eligible == 'true'
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -123,6 +157,7 @@ jobs:
           PY
 
       - name: Upload actual H264 video and source-linked QA audit for future YouTube approval
+        if: steps.validate_source.outputs.eligible == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: trustfolio-real-youtube-shorts-video-${{ github.run_id }}
