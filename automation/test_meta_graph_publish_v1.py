@@ -41,7 +41,32 @@ def enabled_env():
     }
 
 
+from automation.meta_readonly_preflight import run_read_only
+
+
 class DirectMetaSafetyTests(unittest.TestCase):
+    def test_readonly_connection_check_requires_page_token(self):
+        with self.assertRaisesRegex(m.PublishingBlocked,"secret missing"):
+            run_read_only({})
+
+    def test_readonly_connection_check_never_attempts_publication(self):
+        with patch("automation.meta_readonly_preflight.confirm_page_identity",
+                    return_value="1780000000123") as identity, \
+             patch("automation.meta_readonly_preflight.check_instagram_quota",
+                    return_value={"quota_usage":1,"quota_total":50}) as quota, \
+             patch.object(m,"publish_instagram") as ig, \
+             patch.object(m,"publish_facebook") as fb:
+            out=run_read_only({"TF_META_PAGE_ACCESS_TOKEN":"a"*35,
+                                "TF_META_PAGE_ID":m.EXPECTED_PAGE_ID})
+            self.assertFalse(out["publication_attempted"])
+            self.assertEqual(out["instagram_username_verified"],"trustfolio3")
+            self.assertEqual(out["instagram_quota"]["quota_total"],50)
+            identity.assert_called_once()
+            quota.assert_called_once()
+            ig.assert_not_called()
+            fb.assert_not_called()
+
+
     def test_disabled_by_default(self):
         with self.assertRaisesRegex(m.PublishingBlocked,"OFF"):
             m.load_env(env={})
