@@ -136,6 +136,8 @@ def check_report(plan, report):
         raise ValueError("Rendered category or budget changed")
     if (report.get("campaign_brand") or "") != plan["brand"]:
         raise ValueError("Rendered brand changed")
+    if report.get("campaign_mode") not in (None, plan["mode"]):
+        raise ValueError("Rendered ad type does not match selected budget/brand/comparison mode")
     ids = report.get("source_product_ids_by_rank")
     if ids != report.get("visual_product_ids_by_rank") or len(ids or []) != 5:
         raise ValueError("Website and infographic rankings differ")
