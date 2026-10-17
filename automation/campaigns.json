@@ -4,7 +4,7 @@
   "expected_metricool_blog_id": "7271681",
   "expected_metricool_user_id": "5635852",
   "timezone": "Asia/Kolkata",
-  "posting_policy": "Cron generates only QA-verified artifacts; publication remains OFF unless credentials, plan, per-network quotas, duplicate gates and exact account authorization are independently confirmed. Free Metricool 20 total published posts/calendar month across networks; do not assume daily quota.",
+  "posting_policy": "Official Meta Graph API: From Oct 26, 2026 IST cron may publish ONE budget, ONE same-brand+budget, ONE Top-5 comparison ad each day to @trustfolio3 and Trustfolio Facebook Page (up to 3/network/day). All ads require exactly 5 live site-ranked products, mode/brand validation, approved art, public-image SHA integrity, duplicate ledger and live IG API quota. Skip a mode if no valid 5-product ranking. The three formats rotate 20 categories independently across 20-day cycles, not 3 posts for all 20 categories every day. Metricool auto-publication is OFF. Video Shorts export is separately QA-only, uploading/publishing to YouTube/X/LinkedIn requires explicit account OAuth authorization.",
   "modes_description": {
     "budget": "Five website-ranked product picks for a price budget.",
     "brand_budget": "Five website-ranked products all of the same brand and under budget; skip if not available.",
