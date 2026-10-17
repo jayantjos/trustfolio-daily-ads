@@ -234,7 +234,7 @@ jobs:
             --media-url "$MEDIA_BASE/$MEDIA_PREFIX/$ID.jpg"
 
       - name: Post via Metricool ONLY after media/identity/duplicate preflight
-        if: steps.plan.outputs.eligible == 'true' && steps.plan.outputs.publish == 'true'
+        if: steps.plan.outputs.eligible == 'true' && steps.plan.outputs.publish == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED != 'true'
         env:
           TF_METRICOOL_API_TOKEN: ${{ secrets.TF_METRICOOL_API_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
