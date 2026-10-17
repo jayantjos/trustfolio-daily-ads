@@ -135,3 +135,62 @@ designed without generative AI should `master_artwork_origin` be set to
 Published Instagram posts are not editable through Metricool's
 `updateScheduledPost` connector (which supports only future scheduled
 posts). Do not claim that an existing platform-managed label has been removed.
+
+
+## Twenty-category rotating budgets (October 2026)
+
+`automation/campaigns.json` now contains the canonical **20-category** catalogue
+from the premium renderer, including each category's verified website-route
+candidate, three INR budget tiers, and *candidate* brands. Nothing in these
+lists asserts stock or brand availability. A live website Top-5 check is
+mandatory before an ad qualifies.
+
+Three GitHub cron slots are currently configured at 08:30, 13:30 and
+19:00 IST for budget, brand+budget and five-different-products comparison.
+They start from **different category offsets**, selecting one category
+per slot (with bounded fallback to the next valid category) and rotate to
+the next price tier when a category comes around again about 20 days later.
+Under normal conditions this results in **3 rendered campaign previews/day**,
+NOT 20 or 60 Instagram publications/day. GitHub cron can run late and QA
+errors can cause an eligible campaign to be skipped.
+
+The renderer bug from GitHub scheduled run `39030118311` is fixed:
+the selected `mode` is now passed to `ads_qa.render_site_ranked_qa_v1.run`.
+Previously brand and comparison runs were mistakenly sent as budget and
+could fail with `Only brand-budget campaigns may contain a brand filter`.
+The post QA gate also verifies reported campaign mode.
+
+### Publication capacity and plan choices
+
+**Publishing remains disabled** unless `TF_AUTO_POST_ENABLED=true`, the
+correct Instagram target is confirmed, and a working Metricool Advanced/Custom
+API token is added securely in GitHub Secrets. The ChatGPT-connected Metricool
+MCP connector is separate from GitHub Actions and cannot be assumed to
+authorize unattended GitHub-to-Metricool publishing.
+
+Metricool Free includes **20 actually published posts per calendar month
+total across connected networks**; each separately published Instagram
+and Facebook post counts. Scheduling posts beyond this quota does not
+increase the number that will successfully publish. Current official
+plan documentation:
+https://help.metricool.com/main-differences-between-free-and-paid-plans-bl0v9
+
+Metricool Starter enables unlimited planner publishing subject to fair use,
+plus LinkedIn, but its REST API does not support GitHub cron posting.
+Metricool Advanced/Custom provides API access. X/Twitter may require
+a separate plan add-on. YouTube standard uploads require video; static
+Instagram posters are not automatically YouTube videos.
+
+If the owner requests one new post for **each of 20 categories every day**,
+that is at least 20/day/network; three modes for all 20 is 60/day/network.
+Cross-publishing to Instagram and Facebook doubles the count. Do not
+enable that volume as an assumed default: first verify the subscribed
+plan, platform permissions, audience fit and publisher quotas.
+
+The current default is category rotation with three daily QA renders,
+not unattended publication and not guaranteed coverage if the website
+lacks five genuine items. The remaining pre-scheduled October 17–25
+Metricool posts must not be duplicated by an unattended job.
+
+No code or data under `~/apps/trustfolio`, original scraper, or
+existing published posts is modified by this change.
