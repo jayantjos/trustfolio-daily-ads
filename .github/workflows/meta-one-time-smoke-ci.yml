@@ -19,7 +19,7 @@ jobs:
           must=[
             "    branches: [main]", "paths:", "meta-one-time-smoke-20261017.yml",
             "run-id: 39046946638", "name: trustfolio-social-campaign-39046946638",
-            "github-token: ${{ secrets.GITHUB_TOKEN }}",
+            "github-token: "+chr(36)+"{{ secrets.GITHUB_TOKEN }}",
             "tfauto-286cd1844ab7424f30",
             "plan['category']=='headphones-earbuds'",
             "plan['budget']==5000",
