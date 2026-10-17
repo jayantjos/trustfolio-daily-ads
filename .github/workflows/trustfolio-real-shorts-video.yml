@@ -113,7 +113,7 @@ jobs:
               print('SHORTS_STATUS=SKIPPED_NO_VERIFIED_FIVE_PRODUCT_SOURCE')
               print('NO_FAKE_PRODUCT_OR_VIDEO_GENERATED=true')
               with open(os.environ['GITHUB_OUTPUT'],'a') as out:
-                  out.write('eligible=false\\n'.replace('\\n','\n'))
+                  out.write('eligible=false\n')
           elif status=='eligible':
               needed=[root/'post/post.json',root/'website-top5-render-qa.json']
               if any(not file.is_file() or file.stat().st_size==0 for file in needed):
@@ -124,7 +124,7 @@ jobs:
                   raise SystemExit('Eligible source run unexpectedly lacks approved creative JPEG')
               print('SHORTS_SOURCE=WEBSITE_RANKED_FIVE_PRODUCTS_PRESENT')
               with open(os.environ['GITHUB_OUTPUT'],'a') as out:
-                  out.write('eligible=true\\n'.replace('\\n','\n'))
+                  out.write('eligible=true\n')
           else:
               raise SystemExit('Unknown source campaign status: '+str(status))
           PY
