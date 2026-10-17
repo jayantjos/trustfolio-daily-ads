@@ -1,5 +1,10 @@
 name: TrustFolio Meta official read-only connection test
 on:
+  # This read-only identity check runs when its own workflow is merged to
+  # main; no API publish endpoints are invoked and no posts are created.
+  push:
+    branches: [main]
+    paths: ['.github/workflows/meta-readonly-connection.yml']
   workflow_dispatch:
 permissions:
   contents: read
