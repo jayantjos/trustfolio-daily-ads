@@ -50,7 +50,9 @@ class DirectMetaSafetyTests(unittest.TestCase):
             run_read_only({})
 
     def test_readonly_connection_check_never_attempts_publication(self):
-        with patch("automation.meta_readonly_preflight.confirm_page_identity",
+        with patch("automation.meta_readonly_preflight.confirm_page_token_type",
+                    return_value=m.EXPECTED_PAGE_ID) as page_token, \
+             patch("automation.meta_readonly_preflight.confirm_page_identity",
                     return_value="1780000000123") as identity, \
              patch("automation.meta_readonly_preflight.check_instagram_quota",
                     return_value={"quota_usage":1,"quota_total":50,"quota_duration":86400}) as quota, \
@@ -61,6 +63,7 @@ class DirectMetaSafetyTests(unittest.TestCase):
             self.assertFalse(out["publication_attempted"])
             self.assertEqual(out["instagram_username_verified"],"trustfolio3")
             self.assertEqual(out["instagram_quota"]["quota_total"],50)
+            page_token.assert_called_once()
             identity.assert_called_once()
             quota.assert_called_once()
             ig.assert_not_called()
@@ -118,6 +121,18 @@ class DirectMetaSafetyTests(unittest.TestCase):
                     m.validate_approved_manifest(item)
         self.assertEqual(m.validate_approved_manifest(qa_manifest()),
                          "tfauto-"+"b"*18)
+
+    def test_access_token_type_must_be_actual_page_not_user(self):
+        cfg={"version":"v25.0","page_id":m.EXPECTED_PAGE_ID,"page_token":"secret"}
+        with patch.object(m,"_graph",return_value={"id":m.EXPECTED_PAGE_ID,
+                                                   "name":"Trustfolio"}) as graph:
+            self.assertEqual(m.confirm_page_token_type(cfg),m.EXPECTED_PAGE_ID)
+            self.assertEqual(graph.call_args.args[1],"me")
+            self.assertEqual(graph.call_args.kwargs["fields"],"id,name")
+        with patch.object(m,"_graph",return_value={"id":"29193850746900249",
+                                                   "name":"Facebook User"}):
+            with self.assertRaisesRegex(m.PublishingBlocked,"not the Trustfolio Page token"):
+                m.confirm_page_token_type(cfg)
 
     def test_facebook_identity_must_link_right_instagram(self):
         cfg={"version":"v25.0","page_id":m.EXPECTED_PAGE_ID,"page_token":"secret"}
