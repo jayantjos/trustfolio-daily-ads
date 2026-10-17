@@ -1,5 +1,7 @@
 name: TrustFolio Meta official read-only connection test
 on:
+  # Re-verify owner's newly saved Meta token after parsing official nested
+  # quota_usage + config.quota_total + config.quota_duration.
   # This read-only identity check runs when its own workflow is merged to
   # main; no API publish endpoints are invoked and no posts are created.
   push:
