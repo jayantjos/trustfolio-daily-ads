@@ -1,0 +1,37 @@
+name: TrustFolio Meta official read-only connection test
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-meta-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
+      TF_META_PAGE_ID: ${{ vars.TF_META_PAGE_ID || '619193294620746' }}
+      TF_META_GRAPH_VERSION: ${{ vars.TF_META_GRAPH_VERSION || 'v25.0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify no publishing code can run from this workflow
+        run: |
+          python -m py_compile automation/meta_readonly_preflight.py
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('automation/meta_readonly_preflight.py').read_text('utf8')
+          assert 'publish_verified(' not in s
+          assert 'confirm_page_identity(' in s
+          assert 'check_instagram_quota(' in s
+          print('OFFICIAL_META_READ_ONLY_PREFLIGHT_CONFIRMED')
+          PY
+      - name: Check Facebook Page, linked Instagram identity, and publishing quota
+        run: |
+          set -euo pipefail
+          python automation/meta_readonly_preflight.py
+      - name: Remind to enable only after account verification
+        run: |
+          echo "META_CONNECTED_READ_ONLY=true"
+          echo "META_DIRECT_LIVE_PUBLISHING_STILL_DISABLED_UNTIL_EXPLICIT_ACTIONS_VARIABLE"

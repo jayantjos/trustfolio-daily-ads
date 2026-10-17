@@ -1,0 +1,67 @@
+name: TrustFolio official Meta direct publishing safety CI
+on:
+  push:
+    branches: [feature/direct-meta-graph-social-20261017]
+    paths:
+      - 'automation/meta_graph_publish_v1.py'
+      - 'automation/meta_readonly_preflight.py'
+      - 'automation/test_meta_graph_publish_v1.py'
+      - '.github/workflows/meta-direct-publish-ci.yml'
+      - '.github/workflows/meta-readonly-connection.yml'
+      - '.github/workflows/auto-instagram-campaigns.yml'
+  pull_request:
+    paths:
+      - 'automation/meta_graph_publish_v1.py'
+      - 'automation/meta_readonly_preflight.py'
+      - 'automation/test_meta_graph_publish_v1.py'
+      - '.github/workflows/meta-direct-publish-ci.yml'
+      - '.github/workflows/meta-readonly-connection.yml'
+      - '.github/workflows/auto-instagram-campaigns.yml'
+permissions:
+  contents: read
+jobs:
+  no-network-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify Python compilation and all mocked direct Meta Graph flows
+        run: |
+          set -euo pipefail
+          python -m py_compile automation/meta_graph_publish_v1.py automation/meta_readonly_preflight.py automation/test_meta_graph_publish_v1.py
+          python -m unittest -v automation.test_meta_graph_publish_v1
+      - name: Verify existing website Top-5 campaign and unchanged ad template tests
+        run: |
+          python -m pip install --disable-pip-version-check Pillow==11.3.0
+          python -m unittest -v automation.test_20_category_rotation automation.test_auto_campaign_v1
+          python -m unittest -v ads_qa.test_category_copy_v1 test_ads_spec_sanity
+      - name: Validate cron publishing is strictly gated by secrets and ownership
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          flow=Path('.github/workflows/auto-instagram-campaigns.yml').read_text('utf8')
+          required=[
+              'TF_META_DIRECT_PUBLISH_ENABLED', 'TF_META_PAGE_ACCESS_TOKEN',
+              'TF_META_START_DATE', 'TF_META_MAX_POSTS_PER_DAY_PER_NETWORK',
+              'github.event_name == \'schedule\'', '--preflight-only',
+              'Post via Metricool ONLY after',
+              'Publish to verified Instagram and Facebook through official Meta Graph API',
+          ]
+          for v in required:
+              assert v in flow,v
+          code=Path('automation/meta_graph_publish_v1.py').read_text('utf8')
+          assert 'instagram_business_account' in code
+          assert 'content_publishing_limit' in code
+          assert 'meta-publication-ledger' in code
+          assert 'TF_AUTO_POST_ENABLED' in code
+          assert 'DEFAULT_START_DATE = "2026-10-26"' in code
+          readonly=Path('automation/meta_readonly_preflight.py').read_text('utf8')
+          assert 'publish_verified(' not in readonly
+          assert 'confirm_page_identity(' in readonly
+          assert 'check_instagram_quota(' in readonly
+          print('META_READ_ONLY_IDENTITY_CHECK_CANNOT_PUBLISH')
+          print('DIRECT_META_PUBLISHER_STAYS_DISABLED_WITHOUT_EXPLICIT_AUTHORIZATION')
+          PY

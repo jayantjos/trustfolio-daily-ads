@@ -47,6 +47,12 @@ jobs:
       MEDIA_BASE: https://media.trustfolio.in
       MEDIA_PREFIX: trustfolio-auto
       TF_AUTO_POST_ENABLED: ${{ vars.TF_AUTO_POST_ENABLED || 'false' }}
+      TF_META_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_META_DIRECT_PUBLISH_ENABLED || 'false' }}
+      TF_META_POST_NETWORKS: ${{ vars.TF_META_POST_NETWORKS || 'instagram,facebook' }}
+      TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: ${{ vars.TF_META_MAX_POSTS_PER_DAY_PER_NETWORK || '2' }}
+      TF_META_START_DATE: ${{ vars.TF_META_START_DATE || '2026-10-26' }}
+      TF_META_PAGE_ID: ${{ vars.TF_META_PAGE_ID || '619193294620746' }}
+      TF_META_GRAPH_VERSION: ${{ vars.TF_META_GRAPH_VERSION || 'v25.0' }}
       TF_METRICOOL_BLOG_ID: ${{ vars.TF_METRICOOL_BLOG_ID || '7271681' }}
       TF_METRICOOL_USER_ID: ${{ vars.TF_METRICOOL_USER_ID || '5635852' }}
       RUN_KEY: ${{ github.run_id }}
@@ -201,8 +207,34 @@ jobs:
           print('PUBLIC_MEDIA_SHA256_VERIFIED='+key)
           PY
 
+      - name: Validate direct Meta API media eligibility without publishing
+        if: steps.plan.outputs.eligible == 'true'
+        env:
+          ID: ${{ steps.plan.outputs.campaign_id }}
+        run: |
+          set -euo pipefail
+          python automation/meta_graph_publish_v1.py \
+            --manifest campaign/post/post.json \
+            --jpg "campaign/post/$ID.jpg" \
+            --media-url "$MEDIA_BASE/$MEDIA_PREFIX/$ID.jpg" \
+            --preflight-only
+
+      - name: Publish to verified Instagram and Facebook through official Meta Graph API
+        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish == true))
+        env:
+          TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ID: ${{ steps.plan.outputs.campaign_id }}
+        run: |
+          set -euo pipefail
+          python automation/meta_graph_publish_v1.py \
+            --manifest campaign/post/post.json \
+            --jpg "campaign/post/$ID.jpg" \
+            --media-url "$MEDIA_BASE/$MEDIA_PREFIX/$ID.jpg"
+
       - name: Post via Metricool ONLY after media/identity/duplicate preflight
-        if: steps.plan.outputs.eligible == 'true' && steps.plan.outputs.publish == 'true'
+        if: steps.plan.outputs.eligible == 'true' && steps.plan.outputs.publish == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED != 'true'
         env:
           TF_METRICOOL_API_TOKEN: ${{ secrets.TF_METRICOOL_API_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
