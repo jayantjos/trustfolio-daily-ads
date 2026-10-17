@@ -1,0 +1,142 @@
+name: TrustFolio authorized one-time direct Meta IG FB test
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/meta-one-time-smoke-20261017.yml'
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: trustfolio-social-publication
+  cancel-in-progress: false
+
+jobs:
+  publish-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TF_META_GRAPH_VERSION: 'v25.0'
+      TF_META_PAGE_ID: '619193294620746'
+      TEST_RUN_ID: '39046946638'
+      TEST_CAMPAIGN_ID: 'tfauto-286cd1844ab7424f30'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download immutable VPS-rendered website-ranked creative from successful GitHub QA
+        uses: actions/download-artifact@v4
+        with:
+          name: trustfolio-social-campaign-39046946638
+          run-id: 39046946638
+          repository: ${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: campaign
+
+      - name: Prove this is a one-time October 17 approval, unique category and genuine ranked creative
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          from automation.auto_campaign_v1 import check_report
+          from automation.meta_graph_publish_v1 import validate_approved_manifest
+          assert datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()=='2026-10-17', 'One-shot test date is no longer authorized'
+          root=Path('campaign')
+          plan=json.loads((root/'plan.json').read_text('utf8'))
+          report=json.loads((root/'website-top5-render-qa.json').read_text('utf8'))
+          manifest=json.loads((root/'post/post.json').read_text('utf8'))
+          expected='tfauto-286cd1844ab7424f30'
+          assert plan['status']=='eligible'
+          assert plan['campaign_id']==manifest['campaign_id']==expected
+          assert plan['date_ist']=='2026-10-17' and plan['mode']=='budget'
+          assert plan['category']=='headphones-earbuds' and plan['budget']==5000 and plan['brand']==''
+          assert check_report(plan,report)==manifest['ranked_product_ids']
+          assert validate_approved_manifest(manifest)==expected
+          assert manifest['output_jpg']==expected+'.jpg'
+          assert (root/'post'/manifest['output_jpg']).is_file()
+          assert (root/'trustfolio-live-website-top5-1024x1536.png').is_file()
+          print('ONE_TIME_META_TEST_APPROVED_QA=true')
+          print('CAMPAIGN='+expected+' CATEGORY=headphones-earbuds BUDGET=5000')
+          PY
+
+      - name: Verify unchanged public media JPEG bytes and matching product ranking
+        run: |
+          set -euo pipefail
+          python automation/meta_graph_publish_v1.py \
+            --manifest campaign/post/post.json \
+            --jpg "campaign/post/$TEST_CAMPAIGN_ID.jpg" \
+            --media-url "https://media.trustfolio.in/trustfolio-auto/$TEST_CAMPAIGN_ID.jpg" \
+            --preflight-only
+
+      - name: Confirm owner Meta Page token, linked IG username and current quota with ZERO posts
+        env:
+          TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          python automation/meta_readonly_preflight.py
+
+      - name: Publish exactly once to verified Trustfolio IG and Facebook through official Meta API
+        id: publish
+        env:
+          TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TF_META_DIRECT_PUBLISH_ENABLED: 'true'
+          TF_AUTO_POST_ENABLED: 'false'
+          TF_META_START_DATE: '2026-10-17'
+          TF_META_POST_NETWORKS: 'instagram,facebook'
+          TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '1'
+        run: |
+          set -euo pipefail
+          python automation/meta_graph_publish_v1.py \
+            --manifest campaign/post/post.json \
+            --jpg "campaign/post/$TEST_CAMPAIGN_ID.jpg" \
+            --media-url "https://media.trustfolio.in/trustfolio-auto/$TEST_CAMPAIGN_ID.jpg"
+
+      - name: Verify live Meta publication IDs and links from immutable GitHub audit ledger
+        if: always() && steps.publish.outcome != 'skipped'
+        env:
+          TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'PY'
+          import base64,json,os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from automation.meta_graph_publish_v1 import _github,_graph,LEDGER_BRANCH
+          today=datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()
+          key=os.environ['TEST_CAMPAIGN_ID']
+          for network in ('instagram','facebook'):
+              path='contents/meta-publication-ledger/'+today+'/'+network+'-'+key+'.json?ref='+LEDGER_BRANCH
+              try:
+                  obj=_github(os.environ['GITHUB_TOKEN'],path)
+                  record=json.loads(base64.b64decode(obj['content']).decode())
+                  state=record.get('status')
+                  print('META_LEDGER_NETWORK='+network+' STATUS='+str(state))
+                  if state!='api_accepted_published':
+                      print('META_LIVE_VERIFIED_'+network.upper()+'=NO')
+                      continue
+                  field='meta_media_id' if network=='instagram' else 'meta_photo_or_post_id'
+                  mediaid=str(record.get(field) or '')
+                  print('META_'+network.upper()+'_POST_ID='+mediaid)
+                  fields='id,permalink' if network=='instagram' else 'id,link'
+                  response=_graph(os.environ['TF_META_GRAPH_VERSION'],mediaid,
+                                  os.environ['TF_META_PAGE_ACCESS_TOKEN'],fields=fields)
+                  assert str(response.get('id'))==mediaid
+                  print('META_LIVE_VERIFIED_'+network.upper()+'=YES')
+                  permalink=response.get('permalink') or response.get('link')
+                  if permalink and permalink.startswith('https://'):
+                      print('META_LIVE_URL_'+network.upper()+'='+permalink)
+              except Exception as exc:
+                  # Publication may have completed before this GET failed.
+                  # A non-destructive verifier MUST NOT retry POST here.
+                  print('META_LIVE_VERIFICATION_'+network.upper()+'_PENDING='+type(exc).__name__)
+          PY
