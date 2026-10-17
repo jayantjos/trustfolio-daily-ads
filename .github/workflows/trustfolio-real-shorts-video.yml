@@ -1,0 +1,133 @@
+name: TrustFolio actual Top-5 YouTube Shorts and Reels video QA
+on:
+  pull_request:
+    paths:
+      - 'automation/render_real_social_short_v1.py'
+      - 'automation/test_render_real_social_short_v1.py'
+      - '.github/workflows/trustfolio-real-shorts-video.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'automation/render_real_social_short_v1.py'
+      - 'automation/test_render_real_social_short_v1.py'
+      - '.github/workflows/trustfolio-real-shorts-video.yml'
+  workflow_run:
+    workflows: [TrustFolio automated Instagram campaigns]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: trustfolio-vertical-video-${{ github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  find-approved-artifact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion == 'success')
+    outputs:
+      source_id: ${{ steps.source.outputs.source_id }}
+      present: ${{ steps.source.outputs.present }}
+    steps:
+      - name: Identify verified main-branch QA creative artifact
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_WORKFLOW_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            [[ "$SOURCE_WORKFLOW_RUN" =~ ^[0-9]+$ ]]
+            source="$SOURCE_WORKFLOW_RUN"
+          else
+            # Verified source QA from the real Meta API live IG+FB test.
+            source="39046946638"
+          fi
+          echo "source_id=$source" >> "$GITHUB_OUTPUT"
+          name="trustfolio-social-campaign-$source"
+          names="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$source/artifacts?per_page=30" --jq '.artifacts[].name')"
+          if printf '%s\n' "$names" | grep -Fxq "$name"; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "VERIFIED_SOURCE_ARTIFACT_FOUND=$name"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "NO_ELIGIBLE_WEBSITE_QA_ARTIFACT_TO_RENDER"
+          fi
+
+  render-real-short:
+    needs: find-approved-artifact
+    if: needs.find-approved-artifact.outputs.present == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Pillow and verify actual H264 encoder available
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check Pillow==11.3.0
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
+          fi
+          command -v ffmpeg && command -v ffprobe
+          ffmpeg -hide_banner -encoders | grep -q libx264
+
+      - name: Run fail-closed local video source/mode unit tests
+        run: |
+          python -m py_compile automation/render_real_social_short_v1.py
+          python -m unittest -v automation.test_render_real_social_short_v1
+
+      - name: Retrieve immutable website-ranked ad and exact 5 IDs
+        uses: actions/download-artifact@v4
+        with:
+          name: trustfolio-social-campaign-${{ needs.find-approved-artifact.outputs.source_id }}
+          run-id: ${{ needs.find-approved-artifact.outputs.source_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: campaign
+
+      - name: Render four motion scenes into a genuine vertical MP4
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          root=Path('campaign')
+          m=json.loads((root/'post/post.json').read_text('utf8'))
+          key=m['campaign_id']
+          assert key.startswith('tfauto-')
+          jpg=root/'post'/m['output_jpg']
+          assert jpg.is_file()
+          out=root/'shorts'/('trustfolio-'+key+'-short-1080x1920.mp4')
+          subprocess.run(['python','automation/render_real_social_short_v1.py',
+                          '--post',str(root/'post/post.json'),
+                          '--report',str(root/'website-top5-render-qa.json'),
+                          '--jpg',str(jpg),'--output',str(out)],check=True)
+          audit=json.loads(out.with_suffix('.qa.json').read_text('utf8'))
+          assert audit['campaign_id']==key
+          assert audit['ranked_product_ids']==m['ranked_product_ids']
+          assert audit['publishing_enabled'] is False
+          assert audit['status']=='qa_video_rendered_not_uploaded_to_social_accounts'
+          print('TRUSTFOLIO_GENUINE_VERTICAL_VIDEO_VERIFIED='+out.name)
+          print('YOUTUBE_OAUTH_UPLOAD_ATTEMPTED=NO')
+          PY
+
+      - name: Upload actual H264 video and source-linked QA audit for future YouTube approval
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-real-youtube-shorts-video-${{ github.run_id }}
+          path: |
+            campaign/shorts/*.mp4
+            campaign/shorts/*.qa.json
+          retention-days: 30
+          if-no-files-found: error
