@@ -50,7 +50,8 @@ jobs:
       # Proven live Meta IG+FB publication, 2026-10-17; repo variable "false" is emergency OFF switch.
       TF_META_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_META_DIRECT_PUBLISH_ENABLED || 'true' }}
       TF_META_POST_NETWORKS: ${{ vars.TF_META_POST_NETWORKS || 'instagram,facebook' }}
-      TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: ${{ vars.TF_META_MAX_POSTS_PER_DAY_PER_NETWORK || '2' }}
+      # Exactly three approved mode slots/day, no more. Change via reviewed code only.
+      TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '3'
       TF_META_START_DATE: ${{ vars.TF_META_START_DATE || '2026-10-26' }}
       TF_META_PAGE_ID: ${{ vars.TF_META_PAGE_ID || '619193294620746' }}
       TF_META_GRAPH_VERSION: ${{ vars.TF_META_GRAPH_VERSION || 'v25.0' }}
@@ -221,9 +222,10 @@ jobs:
             --preflight-only
 
       - name: Publish to verified Instagram and Facebook through official Meta Graph API
-        # Initial rollout: only verified budget and comparison slots, max two posts/day/network.
-        # Keep brand-budget as daily QA only until brand-only live reliability is proven.
-        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '30 13 * * *')
+        # Exactly one candidate for each: budget, brand+budget, Top-5 comparison.
+        # Website must return all five same-brand products or brand slot skips.
+        # Existing Oct 17-25 Metricool queue remains untouched.
+        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '0 8 * * *' || github.event.schedule == '30 13 * * *')
         env:
           TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -232,7 +234,7 @@ jobs:
         run: |
           set -euo pipefail
           # Hard launch boundary cannot be bypassed by an early repository variable.
-          # Only the first two source-ranked, QA-verified cron slots publish daily.
+          # Three source-ranked, QA-verified cron slots may publish daily, one per ad type.
           if [[ "$(TZ=Asia/Kolkata date +%F)" < "2026-10-26" ]]; then
             echo "META_AUTO_PUBLICATION=WAITING_UNTIL_2026-10-26_IST"
             exit 0
@@ -260,5 +262,5 @@ jobs:
         run: |
           echo "CREATIVE_ARTIFACT_UPLOADED=YES"
           echo "METRICOOL_UNATTENDED_PUBLICATION=DISABLED"
-          echo "META_DIRECT_PUBLICATION=ONLY_SCHEDULED_08_30_AND_19_00_IST_FROM_2026_10_26"
+          echo "META_DIRECT_PUBLICATION=THREE_SCHEDULED_08_30_13_30_19_00_IST_FROM_2026_10_26"
           echo "SOURCE_WEBSITE_APPS_MODIFIED=NO"

@@ -170,3 +170,32 @@ Metricool October 17–25 queue has run:
 was delivered. Verify each GitHub Actions run and returned Meta post IDs.
 GitHub scheduled workflows may start late; if verified website inventory
 is insufficient, that slot safely skips rather than invents products.
+
+## Three ad formats per day (October 17 owner-approved update)
+
+From **2026-10-26 IST**, after the pre-existing Metricool campaign queue:
+- 08:30 IST `budget`: up to 1 verified image post each on Instagram/Facebook
+- 13:30 IST `brand_budget`: up to 1 post each ONLY if every one of five
+  source-ranked products matches the requested brand under the budget.
+  The planner tries bounded brand/price/category candidates and skips if none
+  qualifies. Never fabricate a full single-brand five-product list.
+- 19:00 IST `comparison`: up to 1 post each, comparing **five distinct
+  source-ranked products**; no same-product cross-retailer savings claim.
+
+Local cap: exactly **3 per account per day** (maximum six Meta network
+publications/day), in addition to Instagram's actual Graph API rolling quota
+checked before publishing. For a normal 30-day period, the configuration
+allows up to 90 Instagram + 90 Facebook = 180 network posts, **not
+guaranteed**. Meta's API returned a live 100/24h ceiling in October 2026;
+it is not a safe unlimited-use recommendation. Facebook limits and
+anti-spam rules can be separate.
+
+All twenty configured categories receive all three modes over their
+independent round-robin cycles (normally 20 days per mode), but modes
+need **not** share the same category on a particular day, and source
+eligibility can cause skips/fallback. This is **3 per day total per
+account**, NOT 3 for each of 20 categories daily (60 per account/day).
+Preserve all queued Metricool posts dated through October 25; emergency
+STOP is GitHub Actions variable `TF_META_DIRECT_PUBLISH_ENABLED=false`.
+No repository push, PR, or manual workflow dispatch publishes these
+automated campaign jobs.
