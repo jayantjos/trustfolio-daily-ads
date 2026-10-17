@@ -27,6 +27,54 @@ def campaign_id(day, mode, category, budget, brand):
     return "tfauto-" + hashlib.sha256(value.encode()).hexdigest()[:18]
 
 
+def rotation_candidates(mode, policy, day):
+    """Deterministic 20-category queue, budget ladder and verified-brand trials.
+
+    Each mode starts at a different category offset so Instagram does not
+    repeat the same category three times per day. Each full category cycle
+    advances the budget tier. Missing public Top-5 results are skipped.
+    """
+    rotation = policy.get("rotation") or {}
+    categories = rotation.get("categories") or []
+    if not categories:
+        return None  # backwards-compatible legacy campaigns
+    if len(categories) != 20 or len({x["key"] for x in categories}) != 20:
+        raise ValueError("Daily rotation requires 20 unique canonical categories")
+    offsets = rotation.get("mode_category_offsets") or {}
+    index = (day.toordinal() + int(offsets.get(mode, 0))) % len(categories)
+    cycle = day.toordinal() // len(categories)
+    limit = int(rotation.get("max_categories_checked_per_slot", 5))
+    if not (1 <= limit <= 20):
+        raise ValueError("Invalid category retry limit")
+    brand_limit = int(rotation.get("max_brands_checked_per_category", 2))
+    if not (1 <= brand_limit <= 4):
+        raise ValueError("Invalid brand retry limit")
+    candidates = []
+    for distance in range(limit):
+        entry = categories[(index + distance) % len(categories)]
+        category = str(entry["site_slug"]).strip()
+        budgets = [int(v) for v in entry["budgets"]]
+        if not budgets or len(set(budgets)) != len(budgets) or any(v < 100 for v in budgets):
+            raise ValueError("Invalid budget ladder for " + category)
+        # Every 20 calendar days the chosen category advances to its next
+        # price tier; check one alternative tier if website has <5 products.
+        selected = cycle % len(budgets)
+        amounts = [budgets[(selected + i) % len(budgets)] for i in range(min(2, len(budgets)))]
+        if mode == "brand_budget":
+            brands = [str(b).strip() for b in entry.get("brands", []) if str(b).strip()]
+            if not brands:
+                continue
+            start = cycle % len(brands)
+            for j in range(min(brand_limit, len(brands))):
+                brand = brands[(start + j) % len(brands)]
+                for budget in amounts:
+                    candidates.append({"category":category, "budget":budget, "brand":brand})
+        else:
+            for budget in amounts:
+                candidates.append({"category":category, "budget":budget, "brand":""})
+    return candidates
+
+
 def choose_campaign(mode, policy, *, day, overrides=None, fetcher=build_site_ads_payload):
     if mode not in MODES:
         raise ValueError("Unsupported campaign type")
@@ -40,11 +88,13 @@ def choose_campaign(mode, policy, *, day, overrides=None, fetcher=build_site_ads
             raise ValueError("Manual campaign requires category/budget and brand for brand mode")
         candidates = [{"category": category, "budget": budget, "brand": brand}]
     else:
-        candidates = list(policy["campaigns"][mode])
-        if not candidates:
-            raise ValueError("Empty campaign schedule")
-        offset = day.toordinal() % len(candidates)
-        candidates = candidates[offset:] + candidates[:offset]
+        candidates = rotation_candidates(mode, policy, day)
+        if candidates is None:
+            candidates = list(policy["campaigns"][mode])
+            if not candidates:
+                raise ValueError("Empty campaign schedule")
+            offset = day.toordinal() % len(candidates)
+            candidates = candidates[offset:] + candidates[:offset]
 
     failures = []
     for candidate in candidates:
