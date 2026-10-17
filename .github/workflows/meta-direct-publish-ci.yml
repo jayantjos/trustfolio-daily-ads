@@ -4,14 +4,18 @@ on:
     branches: [feature/direct-meta-graph-social-20261017]
     paths:
       - 'automation/meta_graph_publish_v1.py'
+      - 'automation/meta_readonly_preflight.py'
       - 'automation/test_meta_graph_publish_v1.py'
       - '.github/workflows/meta-direct-publish-ci.yml'
+      - '.github/workflows/meta-readonly-connection.yml'
       - '.github/workflows/auto-instagram-campaigns.yml'
   pull_request:
     paths:
       - 'automation/meta_graph_publish_v1.py'
+      - 'automation/meta_readonly_preflight.py'
       - 'automation/test_meta_graph_publish_v1.py'
       - '.github/workflows/meta-direct-publish-ci.yml'
+      - '.github/workflows/meta-readonly-connection.yml'
       - '.github/workflows/auto-instagram-campaigns.yml'
 permissions:
   contents: read
@@ -27,7 +31,7 @@ jobs:
       - name: Verify Python compilation and all mocked direct Meta Graph flows
         run: |
           set -euo pipefail
-          python -m py_compile automation/meta_graph_publish_v1.py automation/test_meta_graph_publish_v1.py
+          python -m py_compile automation/meta_graph_publish_v1.py automation/meta_readonly_preflight.py automation/test_meta_graph_publish_v1.py
           python -m unittest -v automation.test_meta_graph_publish_v1
       - name: Verify existing website Top-5 campaign and unchanged ad template tests
         run: |
@@ -54,5 +58,10 @@ jobs:
           assert 'meta-publication-ledger' in code
           assert 'TF_AUTO_POST_ENABLED' in code
           assert 'DEFAULT_START_DATE = "2026-10-26"' in code
+          readonly=Path('automation/meta_readonly_preflight.py').read_text('utf8')
+          assert 'publish_verified(' not in readonly
+          assert 'confirm_page_identity(' in readonly
+          assert 'check_instagram_quota(' in readonly
+          print('META_READ_ONLY_IDENTITY_CHECK_CANNOT_PUBLISH')
           print('DIRECT_META_PUBLISHER_STAYS_DISABLED_WITHOUT_EXPLICIT_AUTHORIZATION')
           PY
