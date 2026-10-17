@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from automation.meta_graph_publish_v1 import (
     EXPECTED_PAGE_ID, PublishingBlocked,
-    confirm_page_identity, check_instagram_quota
+    confirm_page_token_type, confirm_page_identity, check_instagram_quota
 )
 
 
@@ -27,6 +27,7 @@ def run_read_only(environ=None):
         "page_id":page_id,
         "page_token":token,
     }
+    confirm_page_token_type(cfg)
     igid = confirm_page_identity(cfg)
     usage=check_instagram_quota(cfg,igid)
     return {"facebook_page_verified":page_id,"instagram_username_verified":"trustfolio3",
