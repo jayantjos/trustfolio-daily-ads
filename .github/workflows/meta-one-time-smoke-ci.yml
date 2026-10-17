@@ -1,0 +1,43 @@
+name: TrustFolio one-shot Meta test authorization CI
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/meta-one-time-smoke-20261017.yml'
+      - '.github/workflows/meta-one-time-smoke-ci.yml'
+permissions:
+  contents: read
+jobs:
+  safe-one-time-workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate strictly scoped run, no untrusted artifact, and no test posts on PR
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('.github/workflows/meta-one-time-smoke-20261017.yml').read_text('utf8')
+          must=[
+            "    branches: [main]", "paths:", "meta-one-time-smoke-20261017.yml",
+            "run-id: 39046946638", "name: trustfolio-social-campaign-39046946638",
+            "github-token: ${{ secrets.GITHUB_TOKEN }}",
+            "tfauto-286cd1844ab7424f30",
+            "plan['category']=='headphones-earbuds'",
+            "plan['budget']==5000",
+            "date().isoformat()=='2026-10-17'",
+            "TF_META_DIRECT_PUBLISH_ENABLED: 'true'",
+            "TF_META_START_DATE: '2026-10-17'",
+            "TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '1'",
+            "TF_META_POST_NETWORKS: 'instagram,facebook'",
+            "TF_AUTO_POST_ENABLED: 'false'",
+            "automation/meta_readonly_preflight.py",
+            "--preflight-only",
+            "content",
+            "meta-publication-ledger/",
+          ]
+          for required in must:
+              assert required in s,required
+          assert "  pull_request:" not in s and "  workflow_dispatch:" not in s
+          assert "secrets.TF_META_PAGE_ACCESS_TOKEN" in s
+          print('ONE_SHOT_META_GUARDS_PRESENT')
+          print('TEST_DOES_NOT_PUBLISH_ANY_SOCIAL_POSTS')
+          PY
