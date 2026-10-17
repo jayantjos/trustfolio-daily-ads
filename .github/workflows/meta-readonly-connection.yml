@@ -1,5 +1,7 @@
 name: TrustFolio Meta official read-only connection test
 on:
+  # Re-verify the updated owner's Meta token /me resolves to the actual
+  # Trustfolio Facebook Page (a User Token must NOT be accepted).
   # Re-verify owner's newly saved Meta token after parsing official nested
   # quota_usage + config.quota_total + config.quota_duration.
   # This read-only identity check runs when its own workflow is merged to
