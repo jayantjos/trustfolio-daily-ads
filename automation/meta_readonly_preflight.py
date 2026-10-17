@@ -5,6 +5,9 @@ Reports only verified Page ID, Instagram handle and rolling 24-hour quota.
 Does not print access tokens, personally identifying account metadata or posts.
 """
 import os
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from automation.meta_graph_publish_v1 import (
     EXPECTED_PAGE_ID, PublishingBlocked,
     confirm_page_identity, check_instagram_quota
