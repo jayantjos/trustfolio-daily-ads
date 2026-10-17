@@ -1,0 +1,64 @@
+name: TrustFolio direct Meta daily rollout safety CI
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/auto-instagram-campaigns.yml'
+      - '.github/workflows/meta-readonly-connection.yml'
+      - '.github/workflows/meta-cron-rollout-ci.yml'
+  push:
+    branches: [feature/activate-meta-direct-daily-from-20261026]
+    paths:
+      - '.github/workflows/auto-instagram-campaigns.yml'
+      - '.github/workflows/meta-readonly-connection.yml'
+      - '.github/workflows/meta-cron-rollout-ci.yml'
+permissions:
+  contents: read
+jobs:
+  validate-safe-meta-schedule:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install minimal workflow syntax parser
+        run: python -m pip install --disable-pip-version-check PyYAML==6.0.2
+      - name: Assert Oct 26 minimum launch, two post slots and zero push/PR publishing
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          flow_path=Path('.github/workflows/auto-instagram-campaigns.yml')
+          data=yaml.load(flow_path.read_text('utf8'),Loader=yaml.BaseLoader)
+          assert data['on']['schedule']==[
+              {'cron':'0 3 * * *'},{'cron':'0 8 * * *'},{'cron':'30 13 * * *'}]
+          job=data['jobs']['render-qa-schedule']
+          env=job['env']
+          assert env['TF_META_DIRECT_PUBLISH_ENABLED']=="${{ vars.TF_META_DIRECT_PUBLISH_ENABLED || 'true' }}"
+          assert env['TF_AUTO_POST_ENABLED']=="${{ vars.TF_AUTO_POST_ENABLED || 'false' }}"
+          assert env['TF_META_MAX_POSTS_PER_DAY_PER_NETWORK']=="${{ vars.TF_META_MAX_POSTS_PER_DAY_PER_NETWORK || '2' }}"
+          assert env['TF_META_START_DATE']=="${{ vars.TF_META_START_DATE || '2026-10-26' }}"
+          publisher=[s for s in job['steps'] if s.get('name','').startswith('Publish to verified Instagram and Facebook')]
+          assert len(publisher)==1
+          publish=publisher[0]
+          cond=publish['if']
+          assert "github.event_name == 'schedule'" in cond
+          assert "github.event.schedule == '0 3 * * *'" in cond
+          assert "github.event.schedule == '30 13 * * *'" in cond
+          assert "github.event.schedule == '0 8 * * *'" not in cond
+          assert "workflow_dispatch" not in cond
+          assert "2026-10-26" in publish['run']
+          assert 'exit 0' in publish['run']
+          assert '--manifest campaign/post/post.json' in publish['run']
+          assert 'secrets.TF_META_PAGE_ACCESS_TOKEN' in publish['env']['TF_META_PAGE_ACCESS_TOKEN']
+          health=yaml.load(Path('.github/workflows/meta-readonly-connection.yml').read_text('utf8'),Loader=yaml.BaseLoader)
+          assert health['on']['schedule']==[{'cron':'10 2 * * *'}]
+          src=Path('automation/meta_readonly_preflight.py').read_text('utf8')
+          assert 'publish_verified(' not in src
+          assert 'confirm_page_token_type(' in src
+          print('DIRECT_META_TWO_SLOTS_PER_NETWORK_DAILY_FROM_2026_10_26')
+          print('DIRECT_META_PUSH_AND_PR_POSTS_DISABLED')
+          print('METRICOOL_UNATTENDED_POSTS_OFF')
+          print('DAILY_TOKEN_READ_ONLY_HEALTH_CHECK_ON')
+          PY
