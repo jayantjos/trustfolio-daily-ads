@@ -24,7 +24,7 @@ jobs:
           python-version: '3.11'
       - name: Install minimal workflow syntax parser
         run: python -m pip install --disable-pip-version-check PyYAML==6.0.2
-      - name: Assert Oct 26 minimum launch, two post slots and zero push/PR publishing
+      - name: Assert Oct 26 minimum launch, three format slots and zero push/PR publishing
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -38,7 +38,7 @@ jobs:
           assert "vars.TF_META_DIRECT_PUBLISH_ENABLED" in env['TF_META_DIRECT_PUBLISH_ENABLED']
           assert "'true'" in env['TF_META_DIRECT_PUBLISH_ENABLED']
           assert "'false'" in env['TF_AUTO_POST_ENABLED']
-          assert "'2'" in env['TF_META_MAX_POSTS_PER_DAY_PER_NETWORK']
+          assert env['TF_META_MAX_POSTS_PER_DAY_PER_NETWORK']=='3'
           assert "'2026-10-26'" in env['TF_META_START_DATE']
           publisher=[s for s in job['steps'] if s.get('name','').startswith('Publish to verified Instagram and Facebook')]
           assert len(publisher)==1
@@ -47,7 +47,7 @@ jobs:
           assert "github.event_name == 'schedule'" in cond
           assert "github.event.schedule == '0 3 * * *'" in cond
           assert "github.event.schedule == '30 13 * * *'" in cond
-          assert "github.event.schedule == '0 8 * * *'" not in cond
+          assert "github.event.schedule == '0 8 * * *'" in cond
           assert "workflow_dispatch" not in cond
           assert "2026-10-26" in publish['run']
           assert 'exit 0' in publish['run']
@@ -58,7 +58,7 @@ jobs:
           src=Path('automation/meta_readonly_preflight.py').read_text('utf8')
           assert 'publish_verified(' not in src
           assert 'confirm_page_token_type(' in src
-          print('DIRECT_META_TWO_SLOTS_PER_NETWORK_DAILY_FROM_2026_10_26')
+          print('DIRECT_META_THREE_FORMATS_PER_NETWORK_DAILY_FROM_2026_10_26')
           print('DIRECT_META_PUSH_AND_PR_POSTS_DISABLED')
           print('METRICOOL_UNATTENDED_POSTS_OFF')
           print('DAILY_TOKEN_READ_ONLY_HEALTH_CHECK_ON')
