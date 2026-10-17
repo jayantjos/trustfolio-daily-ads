@@ -47,7 +47,8 @@ jobs:
       MEDIA_BASE: https://media.trustfolio.in
       MEDIA_PREFIX: trustfolio-auto
       TF_AUTO_POST_ENABLED: ${{ vars.TF_AUTO_POST_ENABLED || 'false' }}
-      TF_META_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_META_DIRECT_PUBLISH_ENABLED || 'false' }}
+      # Proven live Meta IG+FB publication, 2026-10-17; repo variable "false" is emergency OFF switch.
+      TF_META_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_META_DIRECT_PUBLISH_ENABLED || 'true' }}
       TF_META_POST_NETWORKS: ${{ vars.TF_META_POST_NETWORKS || 'instagram,facebook' }}
       TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: ${{ vars.TF_META_MAX_POSTS_PER_DAY_PER_NETWORK || '2' }}
       TF_META_START_DATE: ${{ vars.TF_META_START_DATE || '2026-10-26' }}
@@ -220,7 +221,9 @@ jobs:
             --preflight-only
 
       - name: Publish to verified Instagram and Facebook through official Meta Graph API
-        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish == true))
+        # Initial rollout: only verified budget and comparison slots, max two posts/day/network.
+        # Keep brand-budget as daily QA only until brand-only live reliability is proven.
+        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '30 13 * * *')
         env:
           TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -228,6 +231,12 @@ jobs:
           ID: ${{ steps.plan.outputs.campaign_id }}
         run: |
           set -euo pipefail
+          # Hard launch boundary cannot be bypassed by an early repository variable.
+          # Only the first two source-ranked, QA-verified cron slots publish daily.
+          if [[ "$(TZ=Asia/Kolkata date +%F)" < "2026-10-26" ]]; then
+            echo "META_AUTO_PUBLICATION=WAITING_UNTIL_2026-10-26_IST"
+            exit 0
+          fi
           python automation/meta_graph_publish_v1.py \
             --manifest campaign/post/post.json \
             --jpg "campaign/post/$ID.jpg" \
@@ -246,9 +255,10 @@ jobs:
             --jpg "campaign/post/$ID.jpg" \
             --media-url "$MEDIA_BASE/$MEDIA_PREFIX/$ID.jpg"
 
-      - name: Explain QA-only mode
+      - name: Explain legacy Metricool QA mode
         if: steps.plan.outputs.eligible == 'true' && steps.plan.outputs.publish != 'true'
         run: |
           echo "CREATIVE_ARTIFACT_UPLOADED=YES"
-          echo "PUBLICATION=DISABLED_UNTIL_TF_AUTO_POST_ENABLED_TRUE"
+          echo "METRICOOL_UNATTENDED_PUBLICATION=DISABLED"
+          echo "META_DIRECT_PUBLICATION=ONLY_SCHEDULED_08_30_AND_19_00_IST_FROM_2026_10_26"
           echo "SOURCE_WEBSITE_APPS_MODIFIED=NO"
