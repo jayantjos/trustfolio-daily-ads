@@ -53,7 +53,7 @@ class DirectMetaSafetyTests(unittest.TestCase):
         with patch("automation.meta_readonly_preflight.confirm_page_identity",
                     return_value="1780000000123") as identity, \
              patch("automation.meta_readonly_preflight.check_instagram_quota",
-                    return_value={"quota_usage":1,"quota_total":50}) as quota, \
+                    return_value={"quota_usage":1,"quota_total":50,"quota_duration":86400}) as quota, \
              patch.object(m,"publish_instagram") as ig, \
              patch.object(m,"publish_facebook") as fb:
             out=run_read_only({"TF_META_PAGE_ACCESS_TOKEN":"a"*35,
@@ -139,14 +139,27 @@ class DirectMetaSafetyTests(unittest.TestCase):
 
     def test_dynamic_publishing_quota_from_actual_graph_response(self):
         cfg={"version":"v25.0","page_token":"secret"}
-        with patch.object(m,"_graph",return_value={"data":[{"quota_usage":15,"quota_total":50}]}):
-            self.assertEqual(m.check_instagram_quota(cfg,"1791")["quota_total"],50)
-        with patch.object(m,"_graph",return_value={"data":[{"quota_usage":50,"quota_total":50}]}):
+        response={"data":[{"quota_usage":15,"config":{
+            "quota_total":50,"quota_duration":86400}}]}
+        with patch.object(m,"_graph",return_value=response) as graph:
+            status=m.check_instagram_quota(cfg,"1791")
+            self.assertEqual(status["quota_total"],50)
+            self.assertEqual(status["quota_usage"],15)
+            self.assertEqual(status["quota_duration"],86400)
+            self.assertEqual(graph.call_args.kwargs["fields"],"quota_usage,config")
+        response={"data":[{"quota_usage":50,"config":{
+            "quota_total":50,"quota_duration":86400}}]}
+        with patch.object(m,"_graph",return_value=response):
             with self.assertRaisesRegex(m.PublishingBlocked,"limit reached"):
                 m.check_instagram_quota(cfg,"1791")
-        with patch.object(m,"_graph",return_value={"data":[{"quota_usage":50}]}):
-            with self.assertRaisesRegex(m.PublishingBlocked,"unreadable"):
-                m.check_instagram_quota(cfg,"1791")
+        for response in (
+            {"data":[{"quota_usage":1}]},
+            {"data":[{"quota_usage":1,"config":{"quota_total":50}}]},
+            {"data":[]},
+        ):
+            with self.subTest(response=response),patch.object(m,"_graph",return_value=response):
+                with self.assertRaisesRegex(m.PublishingBlocked,"unreadable"):
+                    m.check_instagram_quota(cfg,"1791")
 
     def test_ledger_already_reserved_never_posts_twice(self):
         cfg={"github_token":"gh","today":"2026-10-27"}
