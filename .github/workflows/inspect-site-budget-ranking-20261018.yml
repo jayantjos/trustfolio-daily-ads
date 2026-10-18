@@ -1,0 +1,60 @@
+name: Inspect actual website budget ranking after live refresh
+on:
+  push:
+    branches: [fix/site-budget-after-live-price-20261018]
+    paths: [.github/workflows/inspect-site-budget-ranking-20261018.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify pinned SSH server
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Inspect existing GET ranking and POST price-update handlers without modifications
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" python3 - <<'PY'
+          from pathlib import Path
+          import re,os
+          root=Path.home()/'apps/trustfolio'
+          paths={
+            'node-backend/controllers/ProductController.js':[(540,840)],
+            'node-backend/controllers/LivePriceController.js':[(1,190)],
+            'node-backend/services/LivePriceService.js':[(1,230)],
+            'node-backend/routes/index.js':[(1,110)],
+            'trustfolio-main/src/components/ProductsTable.tsx':[(220,490)],
+            'trustfolio-main/src/services/api.service.ts':[(325,385)],
+            'trustfolio-main/src/app/category/[slug]/products/page.tsx':[(1,160)],
+          }
+          for f,ranges in paths.items():
+            p=root/f
+            print('===FILE',f,'EXISTS',p.is_file(),'===')
+            if not p.is_file():continue
+            lines=p.read_text(errors='replace').splitlines()
+            print('NUMBER_OF_LINES',len(lines))
+            for a,b in ranges:
+              for idx in range(a-1,min(b,len(lines))):
+                line=lines[idx]
+                if re.search(r'(api[_-]?key|authorization|secret|password|private[_-]?key|access[_-]?token)\s*[:=]',line,re.I):
+                  line='[redacted configuration]'
+                print(f'{idx+1:04d} {line[:320]}')
+          print('READ_ONLY_INSPECTION_COMPLETED')
+          PY
