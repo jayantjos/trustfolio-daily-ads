@@ -1,0 +1,92 @@
+name: TrustFolio website live budget refill isolated staging QA
+on:
+  push:
+    branches: [investigate/website-budget-live-price-refill-20261018]
+    paths: ['.github/workflows/stage-website-budget-refill.yml']
+permissions: { contents: read }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline ranking, live-price, and hard budget cap tests
+        run: node --test website_patch/test_live_budget_select.js
+      - name: Verify pinned SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          [[ "$HOSTKEY" == '200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC' ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Stage copies of relevant website files only
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          remote="${USER}@${HOST}"
+          dest="trustfolio_budget_fix_staging/${GITHUB_RUN_ID}"
+          ssh -o StrictHostKeyChecking=yes "$remote" "mkdir -p \"\$HOME/$dest/tools\""
+          scp -o StrictHostKeyChecking=yes website_patch/{live_budget_select.js,test_live_budget_select.js,patch_website_staging.py} "$remote:$dest/tools/"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$remote" "RUN_ID=${GITHUB_RUN_ID} python3 -" <<'PY'
+          import os, shutil
+          from pathlib import Path
+          home=Path.home()
+          source=home/'apps/trustfolio'
+          stage=home/'trustfolio_budget_fix_staging'/os.environ['RUN_ID']/'site'
+          files=[
+            'node-backend/services/ProductRecommendationService.js',
+            'node-backend/controllers/ProductController.js',
+            'trustfolio-main/src/services/api.service.ts',
+            'trustfolio-main/src/components/ProductsTable.tsx',
+            'trustfolio-main/src/app/category/[slug]/products/page.tsx',
+          ]
+          for rel in files:
+            dst=stage/rel
+            dst.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(source/rel,dst)
+          print('STAGING_ISOLATED_COPIES='+str(len(files)))
+          PY
+      - name: Apply patch ONLY to isolated copy, syntax/type syntax checks, no live website restart
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          remote="${USER}@${HOST}"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$remote" "RUN_ID=${GITHUB_RUN_ID} bash -s" <<'REMOTE'
+          set -euo pipefail
+          staging="$HOME/trustfolio_budget_fix_staging/$RUN_ID"
+          python3 "$staging/tools/patch_website_staging.py" --root "$staging/site"
+          node --check "$staging/site/node-backend/services/ProductRecommendationService.js"
+          node --check "$staging/site/node-backend/controllers/ProductController.js"
+          node --check "$staging/site/node-backend/services/LiveBudgetSelection.js"
+          node --test "$staging/tools/test_live_budget_select.js"
+          cd "$HOME/apps/trustfolio/trustfolio-main"
+          STAGING="$staging/site" node <<'NODE'
+          const ts=require('typescript'), fs=require('fs'), path=require('path');
+          const root=process.env.STAGING;
+          const list=[
+            'trustfolio-main/src/services/api.service.ts',
+            'trustfolio-main/src/components/ProductsTable.tsx',
+            'trustfolio-main/src/app/category/[slug]/products/page.tsx',
+          ];
+          for (const name of list) {
+            const input=fs.readFileSync(path.join(root,name),'utf8');
+            const result=ts.transpileModule(input,{fileName:name,reportDiagnostics:true,compilerOptions:{
+              jsx:ts.JsxEmit.Preserve,target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.ESNext,
+            }});
+            if ((result.diagnostics || []).some(d=>d.category===ts.DiagnosticCategory.Error)) throw Error('TS syntax failure '+name);
+            console.log('STAGED_TS_SYNTAX_PASSED='+name);
+          }
+          NODE
+          echo 'STAGING_CODE_TESTS_PASSED=true'
+          echo 'PRODUCTION_WEBSITE_UNCHANGED=true'
+          REMOTE
