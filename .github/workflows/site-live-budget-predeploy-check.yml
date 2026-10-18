@@ -1,0 +1,51 @@
+name: Check website source revision before targeted backend release
+on:
+  push:
+    branches: [fix/site-budget-after-live-price-20261018]
+    paths: [.github/workflows/site-live-budget-predeploy-check.yml]
+permissions: {contents: read}
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure pinned SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Git revision, working state, health and selected backup checksum
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "${USER}@${HOST}" bash -s <<'REMOTE'
+          set -eu
+          BASE="$HOME/apps/trustfolio"
+          STAGE="$HOME/trustfolio_site_live_budget_staging/39090614546"
+          echo GIT_BRANCH
+          git -C "$BASE" branch --show-current || true
+          echo GIT_HEAD
+          git -C "$BASE" rev-parse HEAD || true
+          echo GIT_STATUS_TARGETS
+          git -C "$BASE" status --short -- node-backend/controllers/ProductController.js node-backend/services/ProductRecommendationService.js || true
+          echo BACKUP_CHECKSUM_MATCH
+          cmp "$BASE/node-backend/controllers/ProductController.js" "$STAGE/original/ProductController.js"
+          cmp "$BASE/node-backend/services/ProductRecommendationService.js" "$STAGE/original/ProductRecommendationService.js"
+          echo ORIGINALS_MATCH_STAGING_BACKUPS
+          echo PM2_BACKEND
+          pm2 describe trustfolio-backend | grep -E '(status|script path|exec cwd|restart time)' | head -10 || true
+          echo API_HEALTH
+          curl -sS --connect-timeout 5 --max-time 10 -o /dev/null -w 'HTTP_STATUS=%{http_code}\n' 'https://api.trustfolio.in/api/products/top?category=smartwatches&budget=2000&limit=5' || true
+          echo PREFLIGHT_DONE
+          REMOTE
