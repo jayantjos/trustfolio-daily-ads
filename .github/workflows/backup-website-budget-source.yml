@@ -1,0 +1,68 @@
+name: TrustFolio website budget fix source backup
+on:
+  push:
+    branches: [investigate/website-budget-live-price-refill-20261018]
+    paths: ['.github/workflows/backup-website-budget-source.yml']
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify VPS pinned SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          [[ "$HOSTKEY" == '200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC' ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Create immutable source archive with checksum on VPS (not GitHub)
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          umask 077
+          repo="$HOME/apps/trustfolio"
+          base="$HOME/trustfolio_budget_fix_backups"
+          mkdir -p "$base"
+          chmod 700 "$base"
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          dest="$base/pre-live-budget-refill-$stamp"
+          mkdir -m 700 "$dest"
+          cd "$repo"
+          files=(
+            node-backend/services/ProductRecommendationService.js
+            node-backend/services/LivePriceService.js
+            node-backend/controllers/ProductController.js
+            node-backend/controllers/LivePriceController.js
+            node-backend/routes/index.js
+            trustfolio-main/src/components/ProductsTable.tsx
+            'trustfolio-main/src/app/category/[slug]/products/page.tsx'
+            trustfolio-main/src/services/api.service.ts
+            trustfolio-main/src/types/product.ts
+          )
+          for f in "${files[@]}"; do test -f "$f"; done
+          git rev-parse HEAD > "$dest/source_git_head.txt"
+          git status --porcelain > "$dest/source_git_status.txt"
+          tar -czf "$dest/trustfolio-live-budget-original-files.tar.gz" "${files[@]}"
+          sha256sum "$dest/trustfolio-live-budget-original-files.tar.gz" > "$dest/SHA256SUMS"
+          (cd "$dest"; sha256sum -c SHA256SUMS)
+          tar -tzf "$dest/trustfolio-live-budget-original-files.tar.gz" > "$dest/archive-manifest.txt"
+          test "$(wc -l < "$dest/archive-manifest.txt")" -eq "${#files[@]}"
+          chmod -R go-rwx "$dest"
+          echo "SOURCE_BACKUP_VERIFIED=true"
+          echo "SOURCE_BACKUP_DIR=$dest"
+          echo "SOURCE_BACKUP_FILE_COUNT=${#files[@]}"
+          echo "SOURCE_GIT_HEAD=$(git rev-parse HEAD)"
+          echo "SOURCE_CODE_NOT_MODIFIED=true"
+          REMOTE
