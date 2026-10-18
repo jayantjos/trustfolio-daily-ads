@@ -1,0 +1,67 @@
+name: TrustFolio price refill feasibility and backup readiness
+on:
+  push:
+    branches: [investigate/website-budget-live-price-refill-20261018]
+    paths: ['.github/workflows/audit-website-budget-runtime.yml']
+permissions: { contents: read }
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Pinned SSH for readonly inspection
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          [[ "$HOSTKEY" == '200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC' ]]
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Read exact code sections and available backup tools
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          mkdir -p artifacts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'python3 -' > artifacts/ranking-runtime-check.txt <<'PY'
+          import os, shutil, subprocess, re
+          from pathlib import Path
+          root=Path.home()/'apps/trustfolio'
+          targets={
+            'node-backend/services/ProductRecommendationService.js':[(590,855)],
+            'node-backend/controllers/ProductController.js':[(1,79),(740,780)],
+            'trustfolio-main/src/components/ProductsTable.tsx':[(180,265),(455,625)],
+            'deploy.sh':[(1,110)],
+          }
+          for f,ranges in targets.items():
+            p=root/f; print('FILE_BEGIN',f,p.exists())
+            if not p.is_file():continue
+            lines=p.read_text(encoding='utf8',errors='replace').splitlines()
+            for a,b in ranges:
+              for n in range(a,min(b,len(lines))+1):
+                s=lines[n-1]
+                if re.search(r'(secret|token|password|api.?key|authorization)\s*[:=]',s,re.I):s='[REDACTED]'
+                print(f'{n:04d}: {s}')
+            print('FILE_END',f)
+          for bin in ('node','npm','mongodump','mongorestore','mongosh','docker','pm2','tar','gzip'):
+            print('BINARY',bin,shutil.which(bin))
+          for sub in ('.','node-backend','trustfolio-main'):
+            p=root/sub
+            try:
+              c=subprocess.run(['git','remote','-v'],cwd=p,capture_output=True,text=True,timeout=5)
+              print('GIT_HAS_REMOTE',sub,bool(c.stdout.strip()))
+            except Exception:pass
+          for d in (root/'node-backend/tests',root/'node-backend/test',root/'node-backend/scripts',root/'backups',Path.home()/'backups',Path.home()/'trustfolio_backups'):
+            if d.is_dir(): print('BACKUP_OR_TEST_FILES',str(d),[p.name for p in list(d.iterdir())[:35]])
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-budget-refill-feasibility-audit
+          path: artifacts/
+          retention-days: 7
