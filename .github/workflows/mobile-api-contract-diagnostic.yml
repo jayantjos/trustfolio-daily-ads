@@ -1,0 +1,85 @@
+name: TrustFolio Android vs website API contract diagnostics
+on:
+  push:
+    branches: [diagnostics/mobile-app-live-price-20261018]
+    paths: ['.github/workflows/mobile-api-contract-diagnostic.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Public backend response headers, prices and live metadata
+        run: |
+          python3 - <<'PY'
+          import json
+          import urllib.parse
+          import urllib.request
+          for cat,budget in (("washing-machines",35000),("smartwatches",2000)):
+              path="/api/products/top?"+urllib.parse.urlencode(dict(category=cat,budget=budget,limit=5))
+              url="https://api.trustfolio.in"+path
+              req=urllib.request.Request(url, headers={"Accept":"application/json","User-Agent":"TrustFolio-Mobile-API-Diagnostic/1.0"})
+              with urllib.request.urlopen(req,timeout=70) as response:
+                  status=response.status
+                  headers={k:v for k,v in response.headers.items() if k.lower() in ("cache-control","age","etag","last-modified","vary","server","content-type","x-cache","cf-cache-status")}
+                  j=json.loads(response.read(800000))
+              d=j.get("data") or {}
+              products=d.get("products") or []
+              print("API_CATEGORY",cat,"STATUS",status)
+              print("API_HEADERS",json.dumps(headers))
+              print("RESPONSE_DATA_KEYS",sorted(d.keys()))
+              print("RESPONSE_REFRESH_FLAG",d.get("livePriceRefreshCompleted"))
+              print("API_ROWS",json.dumps([{"rank":p.get("rank"),"id":p.get("id"),"price_inr":p.get("price_inr"),"price_source":p.get("price_source"),"live_price_status":p.get("live_price_status"),"brand":p.get("brand"),"platform":p.get("platform")} for p in products]))
+              assert j.get("success") is True and d.get("livePriceRefreshCompleted") is True
+              assert all(0 < float(p["price_inr"]) <= budget for p in products)
+              print("BUDGET_CONTRACT_PASS",cat)
+          PY
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Backend route, Android source roots and cache mechanism source
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "${USER}@${HOST}" python3 - <<'PY'
+          from pathlib import Path
+          import os,re
+          home=Path.home()
+          backend=home/'apps/trustfolio/node-backend'
+          print('VPS_HOME_TOP_DIRS',[p.name for p in home.iterdir() if p.is_dir() and not p.name.startswith('.')][:80])
+          for fn in ('controllers/ProductController.js','services/LiveBudgetRecommendationService.js','routes/index.js'):
+              path=backend/fn
+              lines=path.read_text(errors='replace').splitlines()
+              print('SERVER_FILE',fn)
+              p=re.compile(r'getTopProducts|topCacheKey|topProductsResponseCache|livePriceRefreshCompleted|cacheControl|cache-control|LiveBudgetRecommendationService|/products/top|/live-prices|refresh|price_source|live_price_status',re.I)
+              for i,line in enumerate(lines):
+                  if p.search(line) and not re.search(r'((api.?key|secret|password|authorization|token)\s*[:=])',line,re.I):
+                      print(f'  {i+1}: {line.strip()[:230]}')
+          for root in (home/'apps',home/'projects',home/'workspaces',home/'AndroidStudioProjects',home/'mobile'):
+              if not root.is_dir():continue
+              found=[]
+              for base, dirs, names in os.walk(root):
+                  if Path(base).relative_to(root).parts.__len__()>5:
+                      dirs.clear()
+                      continue
+                  dirs[:]=[d for d in dirs if d not in {'node_modules','.next','.git','.gradle','venv','build','dist','site-packages','.venv','public','static'} and not d.startswith('.')]
+                  for name in names:
+                      if name in {'build.gradle','build.gradle.kts','settings.gradle','settings.gradle.kts','pubspec.yaml','AndroidManifest.xml','gradlew'}:
+                          found.append(str((Path(base)/name).relative_to(home)))
+              print('ANDROID_PROJECT_MARKERS',root.name,found[:40])
+          print('CODE_SEARCH_COMPLETE_READ_ONLY')
+          PY
