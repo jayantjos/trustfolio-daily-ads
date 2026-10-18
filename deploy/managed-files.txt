@@ -2,6 +2,7 @@
 ad_link_manifest_v1.py
 campaign_link_contract_v1.py
 site_top5_ads_v1.py
+website_live_price_sync_v1.py
 creative_config_v1.json
 batch_render_creatives_v1.py
 build_infographic_payload_v1.py
