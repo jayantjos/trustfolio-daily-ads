@@ -1,0 +1,99 @@
+name: TrustFolio genuine washing-machine Reel and Shorts QA
+on:
+  push:
+    branches: [feature/live-washing-machine-reel-qa-20261018]
+    paths: [.github/workflows/one-time-live-washing-machine-reel.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  real-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install and check real MP4 encoder
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check Pillow==11.3.0
+          python -m unittest -v automation.test_render_real_social_short_v1
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -hide_banner -encoders | grep -q libx264
+      - name: Download source-verified washing machine VPS ad
+        uses: actions/download-artifact@v4
+        with:
+          name: trustfolio-washing-machine-vps-image
+          run-id: 39091239568
+          repository: \${{ github.repository }}
+          github-token: \${{ secrets.GITHUB_TOKEN }}
+          path: campaign/source
+      - name: Verify original live-price results and package actual ranked Top 5
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          from automation.auto_campaign_v1 import campaign_id,package_assets
+          p=Path('campaign/source')
+          report=json.loads((p/'website-top5-render-qa.json').read_text())
+          ids=report['source_product_ids_by_rank']
+          prices=report['displayed_prices_by_rank']
+          assert report['campaign_category']=='washing-machines'
+          assert report['campaign_budget_inr']==35000
+          assert report['campaign_mode']=='budget'
+          assert report['live_price_refresh_completed'] is True
+          assert report['visual_product_ids_by_rank']==ids
+          assert report['dimensions']==[1024,1536]
+          assert report['visual_geometry_errors']==[]
+          assert report['automatic_publication'] is False
+          assert len(ids)==5 and len(set(ids))==5
+          assert len(prices)==5 and all(0<float(x)<=35000 for x in prices)
+          day=datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()
+          plan={'status':'eligible','mode':'budget','date_ist':day,
+                'category':'washing-machines','budget':35000,'brand':'',
+                'campaign_id':campaign_id(day,'budget','washing-machines',35000,''),
+                'source_product_ids_by_rank':ids,'account':'trustfolio3','auto_publish':False}
+          Path('campaign/plan.json').write_text(json.dumps(plan,indent=2))
+          package_assets(plan,report,p/'trustfolio-live-website-top5-1024x1536.png',Path('campaign/post'))
+          print('FIVE_REAL_PRODUCTS_VERIFIED_PRICES='+','.join(map(str,prices)))
+          print('VIDEO_IMAGE_SOURCE_RUN=39091239568')
+          PY
+      - name: Encode real 12-second 1080x1920 H264 motion video (QA only)
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from automation.render_real_social_short_v1 import render
+          root=Path('campaign')
+          post=json.loads((root/'post/post.json').read_text())
+          output=root/'shorts'/('washing-machines-live-'+post['campaign_id']+'.mp4')
+          audit=render(root/'post/post.json',root/'post'/post['output_jpg'],
+                       root/'source/website-top5-render-qa.json',output)
+          assert audit['ranked_product_ids']==post['ranked_product_ids']
+          assert audit['width']==1080 and audit['height']==1920
+          assert audit['publishing_enabled'] is False
+          assert audit['codec']=='h264'
+          print('REAL_REEL_VIDEO_VERIFIED='+str(output))
+          print('VIDEO_SHA256='+audit['video_sha256'])
+          print('SOCIAL_UPLOAD_ATTEMPTED=NO')
+          PY
+      - name: Retain MP4, QA report and live product source for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-real-washing-machine-reel-\${{ github.run_id }}
+          path: |
+            campaign/shorts/*.mp4
+            campaign/shorts/*.qa.json
+            campaign/source/website-top5-render-qa.json
+            campaign/plan.json
+            campaign/post/post.json
+          if-no-files-found: warn
+          retention-days: 30
