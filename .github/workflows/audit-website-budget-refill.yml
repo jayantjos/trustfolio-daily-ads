@@ -1,0 +1,80 @@
+name: TrustFolio budget refill source and backup audit (read only)
+on:
+  push:
+    branches: [investigate/website-budget-live-price-refill-20261018]
+    paths: ['.github/workflows/audit-website-budget-refill.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Configure verified VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Inspect recommended product ranking and deployment safety
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" "python3 -" > artifacts/budget-refill-audit.txt <<'PY'
+          from pathlib import Path
+          import os, subprocess, re
+          root=Path.home()/'apps/trustfolio'
+          print('ROOT',root,'exists',root.exists())
+          for sub in ('','node-backend','trustfolio-main'):
+            d=root/sub
+            if d.is_dir():
+              for cmd in (['git','rev-parse','--is-inside-work-tree'],['git','rev-parse','--short','HEAD'],['git','status','--porcelain']):
+                try:
+                  p=subprocess.run(cmd,cwd=d,text=True,capture_output=True,timeout=4)
+                  print('GIT',sub,cmd[1],p.returncode,(p.stdout or p.stderr)[:1600])
+                except Exception as e:print('GIT_ERROR',sub,type(e).__name__)
+          for sub in ('node-backend/services','node-backend/controllers','node-backend','trustfolio-main/src/components'):
+            d=root/sub
+            if d.is_dir():
+              print('DIR',sub,sorted(p.name for p in d.iterdir() if 'Product' in p.name or 'price' in p.name.lower() or p.name in ('package.json','ecosystem.config.js')))
+          targets=[
+            ('node-backend/services/ProductRecommendationService.js',[(1,600)]),
+            ('node-backend/controllers/ProductController.js',[(1,100),(595,775)]),
+            ('node-backend/services/LivePriceService.js',[(1,165)]),
+            ('node-backend/package.json',[(1,95)]),
+            ('trustfolio-main/src/components/ProductsTable.tsx',[(1,125),(230,341),(365,440)]),
+            ('trustfolio-main/src/app/category/[slug]/products/page.tsx',[(145,255)]),
+          ]
+          for rel,ranges in targets:
+            p=root/rel
+            print('FILE_BEGIN',rel,'exists',p.is_file())
+            if not p.is_file():continue
+            lines=p.read_text(encoding='utf8',errors='replace').splitlines()
+            for lo,hi in ranges:
+              for i in range(lo-1,min(len(lines),hi)):
+                s=lines[i]
+                if re.search(r'(secret|token|password|api.?key|authorization)\s*[:=]',s,re.I):s='[REDACTED]'
+                print(f'{i+1:04d}: {s}')
+            print('FILE_END',rel)
+          for d in (Path.home()/'apps',Path.home()/'trustfolio_backups',Path.home()/'trustfolio_releases',root/'deploy',root/'node-backend'/'tests'):
+            if d.is_dir():
+              print('SAFE_DIR_LIST',str(d),[p.name for p in list(d.iterdir())[:50]])
+          PY
+      - name: Upload read-only audit (no website writes)
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-budget-refill-source-audit
+          path: artifacts/
+          retention-days: 7
