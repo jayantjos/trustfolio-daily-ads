@@ -1,0 +1,90 @@
+name: TrustFolio product database logical backup for budget fix
+on:
+  push:
+    branches: [investigate/website-budget-live-price-refill-20261018]
+    paths: ['.github/workflows/backup-product-db-budget-refill.yml']
+permissions: { contents: read }
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Pinned SSH for backup
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          [[ "$HOSTKEY" == '200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC' ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Backup original Mongo product collections to private VPS EJSON gzip and verify
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          umask 077
+          cd "$HOME/apps/trustfolio/node-backend"
+          node - <<'NODE'
+          const fs=require('fs'),path=require('path'),crypto=require('crypto'),zlib=require('zlib');
+          const {once}=require('events');
+          require('dotenv').config({path:'.env'});
+          const mongoose=require('mongoose');
+          const {EJSON}=require('bson');
+          const uri=process.env.MONGODB_URI;
+          const dbName=process.env.MONGODB_DATABASE;
+          if(!uri||!dbName)throw Error('Missing configured production Mongo database');
+          (async()=>{
+            await mongoose.connect(uri,{dbName,serverSelectionTimeoutMS:10000,maxPoolSize:2});
+            const db=mongoose.connection.db;
+            const names=['my_products','my_products_deleted'];
+            const estimates={};
+            for(const name of names)estimates[name]=await db.collection(name).estimatedDocumentCount();
+            console.log('BACKUP_TARGETS_RECORD_ESTIMATES='+JSON.stringify(estimates));
+            if(estimates.my_products<5)throw Error('Active products collection not verified in configured DB');
+            if(estimates.my_products>1000000||estimates.my_products_deleted>1000000)throw Error('Backup unexpectedly large; stop for manual review');
+            const base=path.join(process.env.HOME,'trustfolio_budget_fix_backups');
+            fs.mkdirSync(base,{recursive:true,mode:0o700});
+            const dir=fs.mkdtempSync(path.join(base,'pre-live-budget-product-db-'));
+            fs.chmodSync(dir,0o700);
+            const manifest={format:'Extended_JSON_v2_NDJSON_GZIP',db_name_verified:true,created_at:new Date().toISOString(),collections:{}};
+            for(const name of names){
+              const file=path.join(dir,name+'.ejsonl.gz');
+              const out=fs.createWriteStream(file,{mode:0o600});
+              const zip=zlib.createGzip({level:6});
+              zip.pipe(out);
+              let count=0;
+              for await(const doc of db.collection(name).find({}, {batchSize:250})){
+                if(!zip.write(EJSON.stringify(doc,null,0,{relaxed:false})+'\n'))await once(zip,'drain');
+                count++;
+              }
+              zip.end();
+              await once(out,'finish');
+              const hash=crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+              manifest.collections[name]={file:path.basename(file),records:count,sha256:hash,bytes:fs.statSync(file).size};
+              console.log('BACKUP_COLLECTION='+name+' RECORDS='+count+' GZIP_BYTES='+fs.statSync(file).size);
+            }
+            fs.writeFileSync(path.join(dir,'manifest.json'),JSON.stringify(manifest,null,2),{mode:0o600});
+            for(const info of Object.values(manifest.collections)){
+              const file=path.join(dir,info.file);
+              const hash=crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+              if(hash!==info.sha256)throw Error('Snapshot checksum verification failed');
+              const unpacked=zlib.gunzipSync(fs.readFileSync(file)).toString('utf8');
+              const lines=unpacked.trim()?unpacked.trimEnd().split('\n'):[];
+              if(lines.length!==info.records)throw Error('Snapshot record count verification failed');
+              // Round trip first/last BSON extended-json records.
+              if(lines.length)for(const line of [lines[0],lines[lines.length-1]]) EJSON.parse(line,{relaxed:false});
+            }
+            console.log('LOGICAL_DB_BACKUP_VERIFIED=true');
+            console.log('LOGICAL_DB_BACKUP_PRIVATE_DIR='+dir);
+            console.log('DB_CONTENT_NOT_UPLOADED_TO_GITHUB=true');
+          })().catch(e=>{console.error('BACKUP_ABORTED='+e.message);process.exitCode=1;}).finally(()=>mongoose.disconnect());
+          NODE
+          REMOTE
