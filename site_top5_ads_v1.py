@@ -17,6 +17,7 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from campaign_link_contract_v1 import campaign_link, check_ranked_site_snapshot
+from website_live_price_sync_v1 import fetch_live_price_rows, overlay_site_live_prices
 
 API_ORIGIN = "https://api.trustfolio.in"
 MAX_RESPONSE_BYTES = 500_000
@@ -135,6 +136,11 @@ def normalize_site_ad(category, budget_inr, brand, response, *, generated_at=Non
             "title": title,
             "brand": product_brand,
             "price_inr": price,
+            "stored_price_inr": original.get("stored_price_inr", original.get("price_inr")),
+            "price_source": original.get("price_source") or "website_catalog",
+            "live_price_status": original.get("live_price_status"),
+            "live_checked_at": original.get("live_checked_at"),
+            "live_priced_at": original.get("live_priced_at"),
             "image_url": image,
             "platform": platform,
             "rating": original.get("average_rating"),
@@ -178,11 +184,21 @@ def normalize_site_ad(category, budget_inr, brand, response, *, generated_at=Non
 
 def build_site_ads_payload(category, budget_inr, brand="", *, opener=urlopen):
     response = fetch_public_top5(category, budget_inr, brand, opener=opener)
-    ad = normalize_site_ad(category, budget_inr, brand, response)
+    source_products = response.get("products") if isinstance(response, dict) else None
+    if not isinstance(source_products, list) or len(source_products) != 5:
+        raise ValueError("Website does not currently have exactly five ranked products")
+    ids = [str(p.get("id") or "") for p in source_products if isinstance(p, dict)]
+    # Website results page makes this second request AFTER it fetches the Top-5.
+    live_rows = fetch_live_price_rows(ids, opener=opener)
+    refreshed = overlay_site_live_prices(response, live_rows, _positive_budget(budget_inr))
+    ad = normalize_site_ad(category, budget_inr, brand, refreshed)
+    ad["price_refresh_source"] = "trustfolio_website_live_prices_api"
+    ad["live_price_refresh_completed"] = True
     return {
-        "engine": "TrustFolio Website Top-5 API",
+        "engine": "TrustFolio Website Top-5 + Live Price API",
         "generated_at": ad["ranking_observed_at"],
         "ranking_source": "live_trustfolio_website_api",
+        "price_refresh_source": "trustfolio_website_live_prices_api",
         "ads": [ad],
     }
 

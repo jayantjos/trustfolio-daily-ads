@@ -55,6 +55,8 @@ def run(category, budget, brand, output_dir, mode="budget"):
         raise ValueError("Website ranking or budget/brand deep-link is not verified")
     if len(ad["products"]) != 5:
         raise ValueError("Expected exactly five website-ranked products")
+    if input_payload["ads"][0].get("live_price_refresh_completed") is not True:
+        raise ValueError("Website live-price refresh was not run before rendering")
     ranked_ids = [p.get("product_id") for p in ad["products"]]
     if any(not pid for pid in ranked_ids) or len(set(ranked_ids)) != 5:
         raise ValueError("Website ranked product IDs missing or duplicated")
@@ -96,6 +98,12 @@ def run(category, budget, brand, output_dir, mode="budget"):
         "source_ad_id": ad["ad_id"],
         "source_product_ids_by_rank": ranked_ids,
         "visual_product_ids_by_rank": visual_ids,
+        "live_price_refresh_completed": input_payload["ads"][0].get("live_price_refresh_completed") is True,
+        "live_price_api": "https://api.trustfolio.in/api/live-prices",
+        "price_sources_by_rank": [p.get("price_source") for p in ad["products"]],
+        "live_statuses_by_rank": [p.get("live_price_status") for p in ad["products"]],
+        "original_catalog_prices_by_rank": [p.get("stored_price_inr") for p in ad["products"]],
+        "displayed_prices_by_rank": [p.get("price_inr") for p in ad["products"]],
         "source_observed_at": input_payload["generated_at"],
         "png": target.name,
         "dimensions": [1024,1536],
@@ -108,6 +116,9 @@ def run(category, budget, brand, output_dir, mode="budget"):
         json.dumps(report,indent=2,ensure_ascii=False)+"\n",encoding="utf8")
     print("TRUSTFOLIO_SITE_RENDER_SUCCESS")
     print("SITE_RANKING_VERIFIED=true")
+    print("LIVE_PRICE_REFRESH_COMPLETED=true")
+    print("DISPLAYED_PRICES=" + ",".join(str(p.get("price_inr")) for p in ad["products"]))
+    print("PRICE_SOURCES=" + ",".join(str(p.get("price_source")) for p in ad["products"]))
     print("PRODUCT_ID_ORDER="+",".join(ranked_ids))
     print("RENDERED_IMAGE="+str(target))
     print("LANDING_URL="+ad["landing_url"])
