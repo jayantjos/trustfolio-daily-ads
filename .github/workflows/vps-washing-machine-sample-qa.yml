@@ -1,0 +1,99 @@
+name: TrustFolio one-time washing machine VPS sample
+on:
+  push:
+    branches: [feature/washing-machine-vps-sample-20261018]
+    paths: ['.github/workflows/vps-washing-machine-sample-qa.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - name: Authenticate to pinned VPS host
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" && -n "$KEY" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Render ONLY from live TrustFolio Top-5 website API on VPS
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" "RUN_KEY=${GITHUB_RUN_ID} bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/new_scraper/ads"
+          out="$HOME/new_scraper/ads/ads_qa/washing-machine-sample-${RUN_KEY}"
+          mkdir -p "$out"
+          eligible=0
+          for budget in 35000 25000 20000; do
+            echo "TRY_LIVE_WASHING_MACHINE_TOP5_BUDGET=${budget}"
+            if "$HOME/venv/bin/python" ads_qa/render_site_ranked_qa_v1.py --category washing-machines --budget "$budget" --mode budget --output-dir "$out"; then
+              eligible=1
+              echo "ELIGIBLE_BUDGET=${budget}"
+              break
+            fi
+          done
+          if [ "$eligible" -ne 1 ]; then
+            echo "NO_ELIGIBLE_VERIFIED_WASHING_MACHINE_TOP5; NO_IMAGE_AND_NO_PUBLICATION"
+            exit 22
+          fi
+          REMOTE
+          mkdir -p artifacts
+          scp -o StrictHostKeyChecking=yes "${USER}@${HOST}:new_scraper/ads/ads_qa/washing-machine-sample-${GITHUB_RUN_ID}/trustfolio-live-website-top5-1024x1536.png" artifacts/
+          scp -o StrictHostKeyChecking=yes "${USER}@${HOST}:new_scraper/ads/ads_qa/washing-machine-sample-${GITHUB_RUN_ID}/website-top5-render-qa.json" artifacts/
+      - name: Verify image dimensions source ranking and no geometry issues
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('artifacts/website-top5-render-qa.json')
+          r=json.loads(p.read_text())
+          assert r['campaign_category']=='washing-machines'
+          assert r['campaign_budget_inr'] in (20000,25000,35000)
+          assert r['dimensions']==[1024,1536]
+          assert r['source_product_ids_by_rank']==r['visual_product_ids_by_rank']
+          assert len(r['visual_product_ids_by_rank'])==5
+          assert r['renderer']=='master_template_renderer_html_v4'
+          assert r.get('automatic_publication') is False
+          assert not r.get('visual_geometry_errors'), r.get('visual_geometry_errors')
+          assert Path('artifacts/trustfolio-live-website-top5-1024x1536.png').stat().st_size>10000
+          print('VPS_WASHING_MACHINE_IMAGE_VERIFIED',r['campaign_budget_inr'])
+          print('LANDING_URL',r['landing_url'])
+          PY
+      - name: Publish only verified creative as shareable read-only media
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          remote="new_scraper/ads/ads_qa/washing-machine-sample-${GITHUB_RUN_ID}/trustfolio-live-website-top5-1024x1536.png"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" "mkdir -p ~/public_media/trustfolio-vps-qa && cp ~/${remote} ~/public_media/trustfolio-vps-qa/washing-machines-${GITHUB_RUN_ID}.png && chmod 644 ~/public_media/trustfolio-vps-qa/washing-machines-${GITHUB_RUN_ID}.png"
+          url="https://media.trustfolio.in/trustfolio-vps-qa/washing-machines-${GITHUB_RUN_ID}.png"
+          if curl -fLIsS --retry 2 --connect-timeout 10 --max-time 25 "$url" >/dev/null; then
+            echo "VERIFIED_IMAGE_URL=$url"
+          else
+            echo "Public media URL not verified; use GitHub Actions artifact instead"
+          fi
+      - name: Upload QA image and evidence as private workflow artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-washing-machine-vps-image
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
