@@ -1,0 +1,78 @@
+name: Read-only mobile-app live-price diagnostics
+on:
+  push:
+    branches: [diagnostics/mobile-app-live-price-20261018]
+    paths: ['.github/workflows/mobile-live-price-inspect-once.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Connect pinned VPS securely
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Search app modules and API calls read-only with sensitive config excluded
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "${USER}@${HOST}" python3 - <<'PY'
+          from pathlib import Path
+          import os,re
+          home=Path.home()
+          print('DIAGNOSTIC_START')
+          roots=[home/'apps',home/'projects',home/'mobile',home/'trustfolio',home/'new_scraper']
+          for root in roots:
+            if root.is_dir():
+              print('TOP_DIR',str(root.relative_to(home)),sorted([p.name for p in root.iterdir() if p.is_dir() and not p.name.startswith('.')])[:45])
+          skip={'.git','node_modules','.next','.gradle','.dart_tool','build','dist','.venv','venv','coverage','logs','android-sdk','.expo','static','generated_creatives','assets','public','uploads','backups','trustfolio_releases'}
+          files=[]
+          for root in roots[:4]:
+            if not root.is_dir():continue
+            for base,dirs,names in os.walk(root):
+              rel=Path(base).relative_to(home)
+              if len(rel.parts)>10:
+                dirs.clear();continue
+              dirs[:]=[d for d in dirs if d not in skip and not d.startswith('.')]
+              for name in names:
+                p=Path(base)/name
+                if p.suffix.lower() in {'.kt','.java','.dart','.tsx','.ts','.jsx','.js'}:
+                  try:
+                    if p.stat().st_size<100000:files.append(p)
+                  except OSError:pass
+              if len(files)>18000:break
+          print('SOURCE_FILE_COUNT',len(files))
+          patt=re.compile(r'(/api/products/top|/api/live-prices|livePrices|getLivePrices|getTopProducts|price_inr|budget|productService\.get|TopProducts)',re.I)
+          keypaths=re.compile(r'(android|mobile|app|flutter|kotlin|service|repository|products|recommendation)',re.I)
+          found=[]
+          for p in files:
+            if 'node-backend' in p.parts and 'apps' in p.parts: continue
+            try:lines=p.read_text(encoding='utf-8',errors='replace').splitlines()
+            except OSError:continue
+            matches=[(i+1,s.strip()) for i,s in enumerate(lines) if patt.search(s)]
+            if not matches:continue
+            is_mobile=any(x in p.parts for x in ['android','mobile','flutter','androidApp','app','src']) or p.suffix in {'.kt','.dart','.java'}
+            score=(10 if p.suffix in {'.kt','.dart','.java'} else 0)+len(matches)
+            found.append((score,p,matches,is_mobile))
+          found.sort(key=lambda x:(-int(x[3]),-x[0]))
+          for score,p,matches,is_mobile in found[:65]:
+            print('MATCH_FILE',str(p.relative_to(home)),'mobile_candidate',is_mobile,'hits',len(matches))
+            for n,line in matches[:12]:
+              if re.search(r'(authorization|secret|token|api[_-]?key|password|client_secret|bearer)\s*[:=]',line,re.I):continue
+              print(' ',n,line[:210])
+          print('DIAGNOSTIC_END')
+          PY
