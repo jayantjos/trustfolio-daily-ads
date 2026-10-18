@@ -20,16 +20,19 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check Pillow==11.3.0
           python -m unittest -v automation.test_render_real_social_short_v1
-          command -v ffmpeg
-          command -v ffprobe
-          ffmpeg -hide_banner -encoders | grep -q libx264
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
+          fi
+          command -v ffmpeg && command -v ffprobe
+          ffmpeg -hide_banner -encoders | grep libx264
       - name: Download source-verified washing machine VPS ad
         uses: actions/download-artifact@v4
         with:
           name: trustfolio-washing-machine-vps-image
           run-id: 39091239568
-          repository: \${{ github.repository }}
-          github-token: \${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           path: campaign/source
       - name: Verify original live-price results and package actual ranked Top 5
         run: |
@@ -88,7 +91,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: trustfolio-real-washing-machine-reel-\${{ github.run_id }}
+          name: trustfolio-real-washing-machine-reel-${{ github.run_id }}
           path: |
             campaign/shorts/*.mp4
             campaign/shorts/*.qa.json
