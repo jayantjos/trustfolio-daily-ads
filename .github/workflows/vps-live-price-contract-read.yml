@@ -1,0 +1,61 @@
+name: TrustFolio exact live-price contract source read
+on:
+  push:
+    branches: [feature/washing-machine-vps-sample-20261018]
+    paths: ['.github/workflows/vps-live-price-contract-read.yml']
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure pinned SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Read only targeted source segments
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          mkdir -p artifacts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" "python3 -" >artifacts/live-price-contract-source.txt <<'PY'
+          from pathlib import Path
+          root=Path.home()/'apps/trustfolio'
+          paths={
+            'node-backend/services/LivePriceService.js':[(1,165)],
+            'node-backend/controllers/LivePriceController.js':[(1,50)],
+            'node-backend/controllers/ProductController.js':[(70,110),(590,800)],
+            'node-backend/routes/index.js':[(40,57)],
+            'trustfolio-main/src/types/product.ts':[(1,110)],
+            'trustfolio-main/src/services/api.service.ts':[(1,115),(330,367)],
+            'trustfolio-main/src/components/ProductsTable.tsx':[(275,365)],
+            'trustfolio-main/src/app/category/[slug]/products/page.tsx':[(1,145)],
+          }
+          for f,ranges in paths.items():
+            p=root/f
+            print('FILE_BEGIN',f,'size',p.stat().st_size if p.exists() else 'MISSING')
+            if not p.is_file(): continue
+            lines=p.read_text(encoding='utf8',errors='replace').splitlines()
+            for a,b in ranges:
+              for i in range(a-1,min(b,len(lines))):
+                print(f'{i+1:04d}: {lines[i]}')
+            print('FILE_END',f)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-exact-live-price-contract
+          path: artifacts/
+          retention-days: 7
