@@ -1,0 +1,67 @@
+name: TrustFolio guarded one-time production backend budget-live rollout
+on:
+  push:
+    branches: [fix/trustfolio-backend-budget-rerank-20261018]
+    paths: [.github/workflows/site-live-budget-rollout-once.yml]
+permissions: {contents: read}
+concurrency:
+  group: trustfolio-website-backend-live-budget-20261018
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '20'}
+      - run: |
+          set -euo pipefail
+          node --test site_patches/LiveBudgetRecommendationService.test.js
+          bash -n site_patches/deploy_live_budget_from_staging.sh
+          python3 -m py_compile site_patches/apply_live_budget_patch.py
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Confirm tested staging inputs match branch source byte for byte
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          remote="${USER}@${HOST}"
+          stage="trustfolio_site_live_budget_staging/39090614546"
+          for fn in LiveBudgetRecommendationService.js LiveBudgetRecommendationService.test.js apply_live_budget_patch.py; do
+            local_sum="$(sha256sum "site_patches/$fn" | cut -d' ' -f1)"
+            remote_sum="$(ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$remote" "sha256sum ~/$stage/$fn | cut -d' ' -f1")"
+            [[ "$local_sum" == "$remote_sum" ]] || { echo "Staged source mismatch: $fn"; exit 1; }
+          done
+          echo "EXACT_TESTED_STAGING_SOURCE_MATCHED"
+      - name: Copy guarded deployment script and promote only backed-up Node backend source
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          remote="${USER}@${HOST}"
+          stage="trustfolio_site_live_budget_staging/39090614546"
+          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes site_patches/deploy_live_budget_from_staging.sh "$remote:$stage/deploy_live_budget_from_staging.sh"
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$remote" "bash ~/$stage/deploy_live_budget_from_staging.sh 39090614546"
+          echo "SITE_BACKEND_ROLLOUT_RUN=${GITHUB_RUN_ID}"
