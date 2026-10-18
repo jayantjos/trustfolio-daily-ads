@@ -1,0 +1,19 @@
+name: TrustFolio site live-budget algorithm unit QA
+on:
+  push:
+    branches: [fix/site-budget-after-live-price-20261018]
+    paths: ['.github/workflows/site-live-budget-unit-qa.yml']
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '20'}
+      - name: Verify replacement and budget rejection without database mutations
+        run: |
+          node --test site_patches/LiveBudgetRecommendationService.test.js
+          node --check site_patches/LiveBudgetRecommendationService.js
+          python3 -m py_compile site_patches/apply_live_budget_patch.py
