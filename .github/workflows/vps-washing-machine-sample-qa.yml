@@ -1,3 +1,4 @@
+# Updated after TrustFolio backend live-budget replacement deployment 2026-10-18
 name: TrustFolio one-time washing machine VPS sample
 on:
   push:
