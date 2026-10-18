@@ -1,0 +1,55 @@
+name: Stage website budget-before-display patch on VPS with backup (no production writes)
+on:
+  push:
+    branches: [fix/site-budget-after-live-price-20261018]
+    paths: [.github/workflows/vps-stage-site-live-budget-20261018.yml]
+permissions: {contents: read}
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify pinned SSH host and key
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o ConnectionAttempts=2 -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'echo VPS_SSH_UP'
+      - name: Stage original website source, backup and patches without touching application
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          remote="${USER}@${HOST}"
+          folder="trustfolio_site_live_budget_staging/${GITHUB_RUN_ID}"
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$remote" "mkdir -p ~/$folder/node-backend/{services,controllers} ~/$folder/original && cp ~/apps/trustfolio/node-backend/services/ProductRecommendationService.js ~/$folder/node-backend/services/ && cp ~/apps/trustfolio/node-backend/controllers/ProductController.js ~/$folder/node-backend/controllers/ && cp ~/apps/trustfolio/node-backend/services/ProductRecommendationService.js ~/$folder/original/ && cp ~/apps/trustfolio/node-backend/controllers/ProductController.js ~/$folder/original/ && sha256sum ~/$folder/original/*"
+          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes site_patches/LiveBudgetRecommendationService.js site_patches/LiveBudgetRecommendationService.test.js site_patches/apply_live_budget_patch.py "$remote:$folder/"
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$remote" "set -eu; STAGE=\"\$HOME/$folder\"; python3 \"\$STAGE/apply_live_budget_patch.py\" --backend-dir \"\$STAGE/node-backend\"; cp \"\$STAGE/LiveBudgetRecommendationService.js\" \"\$STAGE/node-backend/services/\"; node --check \"\$STAGE/node-backend/controllers/ProductController.js\"; node --check \"\$STAGE/node-backend/services/ProductRecommendationService.js\"; node --check \"\$STAGE/node-backend/services/LiveBudgetRecommendationService.js\"; node --test \"\$STAGE/LiveBudgetRecommendationService.test.js\"; echo STAGED_BACKUP_AND_SYNTAX_VALIDATED"
+      - name: Retain isolated staging metadata and hashes
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "${USER}@${HOST}" "STAGE=\"\$HOME/trustfolio_site_live_budget_staging/${GITHUB_RUN_ID}\"; echo STAGE_DIR=\"\$STAGE\"; sha256sum \"\$STAGE/original/\"* \"\$STAGE/node-backend/controllers/ProductController.js\" \"\$STAGE/node-backend/services/\"*.js" >artifacts/staging-hashes.txt
+          echo "PRODUCTION_FILES_MODIFIED=false" >> artifacts/staging-hashes.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trustfolio-site-budget-live-stage
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
