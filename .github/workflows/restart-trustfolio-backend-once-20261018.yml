@@ -1,0 +1,128 @@
+name: One-time TrustFolio backend restart after live-budget fix
+on:
+  push:
+    branches:
+      - maintenance/trustfolio-backend-restart-20261018-0848
+    paths:
+      - .github/workflows/restart-trustfolio-backend-once-20261018.yml
+permissions:
+  contents: read
+concurrency:
+  group: trustfolio-backend-restart-once-20261018
+  cancel-in-progress: false
+jobs:
+  restart-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Configure independently pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$HOSTKEY" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          ssh-keygen -y -P '' -f "$HOME/.ssh/id_ed25519" >/dev/null
+      - name: Verify deployed website source, restart only backend PM2 and verify status
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 "${USER}@${HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          [[ -f "services/LiveBudgetRecommendationService.js" ]]
+          grep -Fq "LiveBudgetRecommendationService.getTopProductsForCategoryAndBudget" controllers/ProductController.js
+          grep -Fq "excludeProductIds" services/ProductRecommendationService.js
+          node --check controllers/ProductController.js
+          node --check services/ProductRecommendationService.js
+          node --check services/LiveBudgetRecommendationService.js
+          echo "LIVE_BUDGET_BACKEND_CODE_PRESENT=true"
+          pm2 jlist | node -e '
+            let s="";
+            process.stdin.on("data", c=>s+=c);
+            process.stdin.on("end",()=>{
+              const p=JSON.parse(s);
+              const backend=p.find(x=>x.name==="trustfolio-backend");
+              const web=p.find(x=>x.name==="trustfolio-web");
+              const admin=p.find(x=>x.name==="trustfolio-admin");
+              if (!backend || backend.pm2_env.status!=="online" ||
+                  !backend.pm2_env.pm_cwd.endsWith("/apps/trustfolio/node-backend"))
+                process.exit(3);
+              if (!web || !admin || web.pm2_env.status!=="online" || admin.pm2_env.status!=="online")
+                process.exit(4);
+              console.log("PM2_BEFORE backend="+backend.pm2_env.status+" pid="+backend.pid+
+                          " web="+web.pm2_env.status+" admin="+admin.pm2_env.status);
+            });'
+          echo "RESTARTING_ONLY=trustfolio-backend"
+          pm2 restart trustfolio-backend
+          sleep 4
+          pm2 jlist | node -e '
+            let s="";
+            process.stdin.on("data", c=>s+=c);
+            process.stdin.on("end",()=>{
+              const p=JSON.parse(s);
+              for (const name of ["trustfolio-backend","trustfolio-web","trustfolio-admin"]) {
+                const x=p.find(y=>y.name===name);
+                if (!x || x.pm2_env.status!=="online") process.exit(5);
+                console.log("PM2_AFTER "+name+"="+x.pm2_env.status+" pid="+x.pid);
+              }
+            });'
+          echo "BACKEND_RESTART_COMPLETED=true"
+          REMOTE
+      - name: Verify public website, live-price budget and ranking on two real searches
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+
+          def fetch(url):
+              last = None
+              for attempt in range(3):
+                  try:
+                      with urlopen(Request(url,headers={"Accept":"application/json","User-Agent":"TrustFolioMaintenanceQA/1.0"}), timeout=65) as r:
+                          return r.status, r.read(600000)
+                  except Exception as error:
+                      last=error
+                      time.sleep(2)
+              raise RuntimeError(f"HTTP validation failed: {last}")
+
+          code, _ = fetch("https://www.trustfolio.in/")
+          assert 200 <= code < 400, f"Unexpected website status {code}"
+          print("TRUSTFOLIO_FRONTEND_HTTP="+str(code))
+          queries = [
+              ("washing-machines",35000),
+              ("smartwatches",2000),
+          ]
+          for category, budget in queries:
+              url = "https://api.trustfolio.in/api/products/top?"+urlencode({"category":category,"budget":budget,"limit":5})
+              status, body = fetch(url)
+              assert status == 200, (category, status)
+              resp = json.loads(body)
+              assert resp.get("success") is True, (category,resp.get("message"))
+              data = resp.get("data") or {}
+              assert data.get("livePriceRefreshCompleted") is True, f"{category} live-budget pipeline inactive"
+              products = data.get("products") or []
+              assert 1 <= len(products) <= 5, f"{category} returned no usable candidates"
+              ids = [str(p.get("id") or "") for p in products]
+              assert all(ids) and len(set(ids)) == len(ids), "Duplicate product IDs"
+              assert [p.get("rank") for p in products] == list(range(1,len(products)+1)), "Unexpected rank"
+              prices = [float(p["price_inr"]) for p in products]
+              assert all(0 < p <= budget for p in prices), f"{category}: over-budget products"
+              print("SITE_LIVE_BUDGET_QA category="+category+" budget="+str(budget)+
+                    " count="+str(len(products))+" prices="+",".join(map(str,prices))+
+                    " liveRefresh=true")
+          print("SITE_POST_RESTART_CHECKS_PASSED=true")
+          PY
