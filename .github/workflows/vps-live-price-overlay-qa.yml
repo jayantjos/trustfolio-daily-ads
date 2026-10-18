@@ -1,0 +1,102 @@
+name: TrustFolio updated website live-price overlay QA
+on:
+  push:
+    branches: [feature/washing-machine-vps-sample-20261018]
+    paths: ['.github/workflows/vps-live-price-overlay-qa.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Offline unit tests website source price parity
+        run: |
+          set -euo pipefail
+          python -m py_compile website_live_price_sync_v1.py site_top5_ads_v1.py
+          python -m unittest -v test_site_top5_ads_v1 test_campaign_link_contract_v1
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Upload isolated code under server ads QA only
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          remote="${USER}@${HOST}"
+          ssh -o StrictHostKeyChecking=yes "$remote" "mkdir -p ~/new_scraper/ads/ads_qa/live-price-staging-${GITHUB_RUN_ID}"
+          scp -o StrictHostKeyChecking=yes website_live_price_sync_v1.py site_top5_ads_v1.py ads_qa/render_site_ranked_qa_v1.py "$remote:new_scraper/ads/ads_qa/live-price-staging-${GITHUB_RUN_ID}/"
+      - name: Test real washing machine ad via GET and POST in staging (no social publication)
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          ssh -o StrictHostKeyChecking=yes "${USER}@${HOST}" "RUN_KEY=${GITHUB_RUN_ID} bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/new_scraper/ads"
+          "$HOME/venv/bin/python" - <<'PY'
+          import importlib.util, sys, json
+          from pathlib import Path
+          home=Path.home()
+          staging=home/'new_scraper/ads/ads_qa'/('live-price-staging-'+__import__('os').environ['RUN_KEY'])
+          sys.path.insert(0,str(staging))
+          sys.path.insert(1,str(home/'new_scraper/ads'))
+          source=importlib.util.spec_from_file_location('site_top5_ads_v1',staging/'site_top5_ads_v1.py')
+          module=importlib.util.module_from_spec(source)
+          sys.modules['site_top5_ads_v1']=module
+          source.loader.exec_module(module)
+          renderer=importlib.util.spec_from_file_location('live_qa_renderer',staging/'render_site_ranked_qa_v1.py')
+          renderer_module=importlib.util.module_from_spec(renderer)
+          renderer.loader.exec_module(renderer_module)
+          result={'status':'no_eligible_live_price_verified_campaign','attempts':[]}
+          for budget in (35000,25000,20000):
+              target=staging/('washing-'+str(budget))
+              try:
+                  png=renderer_module.run('washing-machines',budget,'',target,mode='budget')
+                  data=json.loads((target/'website-top5-render-qa.json').read_text())
+                  assert data['live_price_refresh_completed'] is True
+                  assert len(data['price_sources_by_rank'])==5
+                  assert all(0<float(p)<=budget for p in data['displayed_prices_by_rank'])
+                  assert data['visual_product_ids_by_rank']==data['source_product_ids_by_rank']
+                  result={'status':'verified','budget':budget,'path':str(png),
+                          'prices':data['displayed_prices_by_rank'],'sources':data['price_sources_by_rank'],
+                          'landing_url':data['landing_url']}
+                  break
+              except (ValueError,OSError,KeyError,AssertionError) as error:
+                  result['attempts'].append({'budget':budget,'reason':str(error)[:160]})
+          (staging/'staging-live-price-result.json').write_text(json.dumps(result,indent=2))
+          print('STAGING_LIVE_PRICE_RESULT='+json.dumps(result))
+          PY
+          REMOTE
+          scp -o StrictHostKeyChecking=yes "${USER}@${HOST}:new_scraper/ads/ads_qa/live-price-staging-${GITHUB_RUN_ID}/staging-live-price-result.json" artifacts/
+          budget=$(python -c "import json; d=json.load(open('artifacts/staging-live-price-result.json'));print(d.get('budget',''))")
+          if [[ -n "$budget" ]]; then
+            scp -o StrictHostKeyChecking=yes "${USER}@${HOST}:new_scraper/ads/ads_qa/live-price-staging-${GITHUB_RUN_ID}/washing-${budget}/trustfolio-live-website-top5-1024x1536.png" artifacts/
+            scp -o StrictHostKeyChecking=yes "${USER}@${HOST}:new_scraper/ads/ads_qa/live-price-staging-${GITHUB_RUN_ID}/washing-${budget}/website-top5-render-qa.json" artifacts/
+          fi
+      - name: Preserve staged proof for review (do not publish)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-live-price-staging-qa
+          path: artifacts/
+          retention-days: 14
