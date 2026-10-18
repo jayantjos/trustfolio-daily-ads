@@ -1,0 +1,76 @@
+name: TrustFolio website live-price API inspection
+on:
+  push:
+    branches: [feature/washing-machine-vps-sample-20261018]
+    paths: ['.github/workflows/vps-live-price-api-inspection.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Inspect website API source READ-ONLY without env or secrets
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" "python3 - " > artifacts/read-only-live-price-code-map.txt <<'PY'
+          from pathlib import Path
+          import os, re
+          root=Path.home()/'apps'/'trustfolio'
+          print('PROJECT_ROOT_PRESENT',root.is_dir())
+          if root.is_dir():
+            print('ROOT_DIRS',[(p.name, p.is_dir()) for p in root.iterdir() if not p.name.startswith('.')][:60])
+          keywords=re.compile(r'live.{0,25}price|refresh.{0,30}price|price.{0,30}refresh|fresh.{0,25}price|topProducts|top-products|/products/top|searchProducts|fetchProducts|fetch.{0,25}price|compare.{0,30}price|real.{0,25}time|price.{0,25}fetch',re.I)
+          extensions={'.ts','.tsx','.js','.jsx','.py'}
+          skip={'node_modules','.next','.git','dist','build','coverage','venv','.venv','vendor','uploads','public','static','logs'}
+          files=[]
+          if root.is_dir():
+            for base, dirs, names in os.walk(root):
+              dirs[:]=[d for d in dirs if d not in skip and not d.startswith('.')]
+              for fn in names:
+                p=Path(base)/fn
+                if p.suffix in extensions and p.stat().st_size < 180_000:
+                  files.append(p)
+              if len(files)>25000:break
+          print('FILES_SCANNED',len(files))
+          matched=0
+          for p in files:
+            try: lines=p.read_text('utf-8',errors='replace').splitlines()
+            except OSError:continue
+            hits=[(i+1,l.strip()) for i,l in enumerate(lines) if keywords.search(l)]
+            if not hits: continue
+            print('FILE',str(p.relative_to(root)),'HITS',len(hits))
+            for lineno,line in hits[:15]:
+              # avoid printing likely API keys, auth headers, secret tokens
+              if re.search(r'(authorization|api[_-]?key|secret|password|token)\s*[:=]',line,re.I):continue
+              print(' ',lineno,line[:240])
+            matched+=1
+            if matched>=100:break
+          print('TOTAL_MATCHED_FILES_SHOWN',matched)
+          PY
+      - name: Upload read-only inspection report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-website-live-price-code-map
+          path: artifacts/
+          retention-days: 7
