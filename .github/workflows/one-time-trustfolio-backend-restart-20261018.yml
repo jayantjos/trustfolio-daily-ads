@@ -1,0 +1,102 @@
+name: One-time TrustFolio backend restart and live budget health check
+on:
+  push:
+    branches: [ops/restart-trustfolio-backend-20261018]
+    paths: ['.github/workflows/one-time-trustfolio-backend-restart-20261018.yml']
+permissions:
+  contents: read
+concurrency:
+  group: trustfolio-backend-maintenance-restart
+  cancel-in-progress: false
+jobs:
+  restart_and_verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Configure verified VPS SSH access
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Check deployed budget fix and backup then restart only website API
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o ConnectionAttempts=2 -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          BASE="$HOME/apps/trustfolio/node-backend"
+          BACKUP="$HOME/trustfolio_backend_backups/live-budget-39090614546"
+          test -s "$BACKUP/ProductController.js"
+          test -s "$BACKUP/ProductRecommendationService.js"
+          test -s "$BASE/services/LiveBudgetRecommendationService.js"
+          grep -Fq "LiveBudgetRecommendationService.getTopProductsForCategoryAndBudget(" "$BASE/controllers/ProductController.js"
+          grep -Fq "excludeProductIds" "$BASE/services/ProductRecommendationService.js"
+          node --check "$BASE/controllers/ProductController.js"
+          node --check "$BASE/services/ProductRecommendationService.js"
+          node --check "$BASE/services/LiveBudgetRecommendationService.js"
+          echo "BACKUP_AND_DEPLOYED_FIX_VERIFIED=true"
+          pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=JSON.parse(s);const p=a.find(z=>z.name==="trustfolio-backend");if(!p)process.exit(2);console.log("BEFORE_BACKEND_STATUS="+p.pm2_env.status);console.log("BEFORE_BACKEND_PID="+p.pid)})'
+          pm2 restart trustfolio-backend
+          echo "RESTART_COMMAND_EXIT=0"
+          for i in 1 2 3 4 5 6; do
+            if pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=JSON.parse(s);const p=a.find(z=>z.name==="trustfolio-backend");if(!p||p.pm2_env.status!=="online"||p.pid<=0)process.exit(1);console.log("AFTER_BACKEND_STATUS="+p.pm2_env.status);console.log("AFTER_BACKEND_PID="+p.pid)})'; then break; fi
+            sleep 3
+          done
+          # Final mandatory process check
+          pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let a=JSON.parse(s);const p=a.find(z=>z.name==="trustfolio-backend");if(!p||p.pm2_env.status!=="online"||p.pid<=0)process.exit(1);console.log("BACKEND_RESTART_VERIFIED=true");for(const name of ["trustfolio-web","trustfolio-admin"]){const service=a.find(z=>z.name===name);console.log(name+"_status="+(service?.pm2_env?.status||"unknown"))}})'
+          REMOTE
+      - name: Check website and the live budget Top-5 API after restart
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, time
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          cases = [
+              ("smartwatches", 2000),
+              ("washing-machines", 35000),
+          ]
+          for category, budget in cases:
+              query = urlencode({"category":category,"budget":budget,"limit":5})
+              url = "https://api.trustfolio.in/api/products/top?" + query
+              last = None
+              result = None
+              for attempt in range(4):
+                  try:
+                      with urlopen(Request(url,headers={"Accept":"application/json","User-Agent":"TrustFolioBackendRestartQA/1.0"}),timeout=70) as response:
+                          assert response.status == 200
+                          result = json.loads(response.read(600000))
+                      break
+                  except Exception as exc:
+                      last=exc
+                      time.sleep(3)
+              if result is None: raise RuntimeError(f"API unreachable for {category}: {last}")
+              assert result.get("success") is True, f"API failed for {category}"
+              data=result.get("data") or {}
+              assert data.get("livePriceRefreshCompleted") is True, f"live-budget refresh missing: {category}"
+              products=data.get("products") or []
+              assert len(products) == 5, f"Expected verified Top 5 for {category}; got {len(products)}"
+              assert [p.get("rank") for p in products] == [1,2,3,4,5]
+              ids=[str(p.get("id") or "") for p in products]
+              assert all(ids) and len(set(ids)) == 5
+              prices=[float(p["price_inr"]) for p in products]
+              assert all(0 < x <= budget for x in prices), f"Over-budget response: {category}"
+              print(f"API_PASS category={category} budget={budget} count=5 live_refresh=true prices={prices}")
+          with urlopen(Request("https://www.trustfolio.in/category/washing-machines/products?budget=35000",headers={"User-Agent":"TrustFolioBackendRestartQA/1.0"}),timeout=30) as response:
+              print("WEBSITE_HTTP_STATUS",response.status)
+              assert response.status==200
+          print("POST_RESTART_WEBSITE_AND_API_QA=PASSED")
+          PY
