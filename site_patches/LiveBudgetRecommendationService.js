@@ -5,8 +5,6 @@
  * Never insert an unranked/random product. Additional waves ask the same ranker
  * for the next best products, excluding IDs already examined.
  */
-const OriginalRanker = require('./ProductRecommendationService');
-const LivePriceService = require('./LivePriceService');
 const MAX_WAVES = 4; // at most 20 candidate IDs / request
 
 function goodPrice(value, budgetCap) {
@@ -15,8 +13,8 @@ function goodPrice(value, budgetCap) {
 }
 
 async function getTopProductsForCategoryAndBudget(category, budgetInINR, opts = {}, dependencies = {}) {
-  const ranker = dependencies.ranker || OriginalRanker;
-  const priceService = dependencies.prices || LivePriceService;
+  const ranker = dependencies.ranker || require('./ProductRecommendationService');
+  const priceService = dependencies.prices || require('./LivePriceService');
   const budgetCap = Math.floor(Number(budgetInINR));
   const limit = Math.min(5, Math.max(1, Number(opts.limit) || 5));
   if (!Number.isFinite(budgetCap) || budgetCap <= 0) {
