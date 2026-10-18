@@ -1,0 +1,52 @@
+name: Quick website backend runtime and restart inspection
+on:
+  push:
+    branches: [fix/site-budget-after-live-price-20261018]
+    paths: [.github/workflows/inspect-website-backend-runtime-quick.yml]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure pinned SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Non-mutating runtime and local backend tests discovery
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "${USER}@${HOST}" bash -s <<'REMOTE'
+          set -eu
+          ROOT="$HOME/apps/trustfolio"
+          echo BEGIN_RUNTIME_INSPECTION
+          ls -ld "$ROOT" "$ROOT/node-backend" "$ROOT/trustfolio-main"
+          echo GIT_PROJECT_ROOT
+          (timeout 7 git -C "$ROOT" rev-parse --show-toplevel) || true
+          echo TEST_FILES
+          find "$ROOT/node-backend" -maxdepth 3 \( -name '*test.js' -o -name '*spec.js' \) -not -path '*/node_modules/*' | head -30 || true
+          echo PACKAGE_SCRIPTS
+          node -e 'const p=require(process.argv[1]); console.log(JSON.stringify({scripts:p.scripts,main:p.main},null,2))' "$ROOT/node-backend/package.json"
+          echo PM2_SNAPSHOT
+          if command -v pm2 >/dev/null 2>&1; then
+            timeout 12 pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).map(x=>({name:x.name,status:x.pm2_env.status,cwd:x.pm2_env.pm_cwd,script:x.pm2_env.pm_exec_path})),null,2))}catch(e){console.log("pm2 status unavailable")}})' || true
+          fi
+          echo SYSTEMD_MATCHES
+          timeout 7 systemctl list-units --type=service --no-pager --plain 2>/dev/null | grep -Ei '(trustfolio|node|api)' | head -20 || true
+          echo PROCESS_SNAPSHOT
+          ps -eo comm,args | grep -Ei '(pm2|node-backend|trustfolio)' | grep -v grep | head -15 | cut -c1-220 || true
+          echo END_RUNTIME_INSPECTION
+          REMOTE
