@@ -1,0 +1,49 @@
+name: Inspect original MongoDB ranker and site API internals
+on:
+  push:
+    branches: [fix/site-budget-after-live-price-20261018]
+    paths: [.github/workflows/inspect-recommendation-service-20261018.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Configure pinned SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Print exact original ranking algorithm and API imports READ-ONLY
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root=Path.home()/'apps/trustfolio/node-backend'
+          controller=root/'controllers/ProductController.js'
+          for i,line in enumerate(controller.read_text(errors='replace').splitlines()[:85],1):
+            print('PRODUCT_CONTROLLER_IMPORT',i,line[:320])
+          files=list((root/'services').glob('*Recommendation*')) + list((root/'services').glob('*recommendation*'))
+          for p in files:
+            print('RANKER_FILE',p.name)
+            lines=p.read_text(errors='replace').splitlines()
+            print('RANKER_LINES',len(lines))
+            for i,line in enumerate(lines[:1050],1):
+              if re.search(r'(api[_-]?key|authorization|secret|password|private[_-]?key|access[_-]?token)\s*[:=]',line,re.I):line='[redacted]'
+              print(f'RANKER {i:04d} {line[:320]}')
+          print('READ_ONLY_RANKER_INSPECTION_COMPLETE')
+          PY
