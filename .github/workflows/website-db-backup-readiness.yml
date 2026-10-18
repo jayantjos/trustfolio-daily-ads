@@ -1,0 +1,56 @@
+name: TrustFolio database backup readiness probe
+on:
+  push:
+    branches: [investigate/website-budget-live-price-refill-20261018]
+    paths: ['.github/workflows/website-db-backup-readiness.yml']
+permissions: { contents: read }
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          [[ "$HOSTKEY" == '200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC' ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Read only configuration discovery and disk
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          echo "DB_ENV_FILE_PRESENT=$([ -f .env ] && echo yes || echo no)"
+          echo "ENV_VAR_NAMES=$(grep -hE '^[A-Za-z_]+=' .env 2>/dev/null | cut -d= -f1 | grep -Ei 'mongo|database|db' | paste -sd, - || true)"
+          echo "DISK_AVAILABLE_KB=$(df -Pk "$HOME" | awk 'NR==2{print $4}')"
+          node - <<'NODE'
+          require('dotenv').config({ path: '.env' });
+          const mongoose=require('mongoose');
+          const uri=process.env.MONGODB_URI || process.env.MONGO_URI || process.env.MONGO_URL || process.env.DATABASE_URL;
+          if (!uri) {console.log('BACKUP_DB_CONNECTION_UNAVAILABLE=no_uri');process.exit(0);}
+          mongoose.connect(uri,{serverSelectionTimeoutMS:6000,maxPoolSize:2})
+            .then(async()=>{
+              const col=mongoose.connection.collection('my_products');
+              const removed=mongoose.connection.collection('my_products_deleted');
+              const count=await col.estimatedDocumentCount();
+              const deleted=await removed.estimatedDocumentCount();
+              console.log('DB_READONLY_CONNECT=success');
+              console.log('PRODUCT_RECORD_ESTIMATE='+count);
+              console.log('DELETED_RECORD_ESTIMATE='+deleted);
+              console.log('BSON_EJSON_AVAILABLE='+!!require('bson').EJSON);
+            })
+            .catch(()=>{console.log('DB_READONLY_CONNECT=failed');})
+            .finally(async()=>{await mongoose.disconnect();});
+          NODE
+          REMOTE
