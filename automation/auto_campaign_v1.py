@@ -49,11 +49,12 @@ def _same_parity_days_before(day):
     return count
 
 
-def rotation_candidates(mode, policy, day):
+def rotation_candidates(mode, policy, day, *, slot=0):
     """Odd/even calendar-date category cohorts and rotating budget tiers.
 
     Odd dates select one of ten categories at indices 0,2,...,18; even dates
-    select indices 1,3,...,19. Each ad format has a different category offset.
+    select indices 1,3,...,19. Each ad format has its own offset and two
+    separately scheduled slots with non-overlapping primary categories.
     A category's primary budget advances every ten same-parity dates (one
     complete cohort cycle); even dates begin a different tier from odd dates.
     All category retries stay in their parity cohort. Missing real Top-5
@@ -65,12 +66,14 @@ def rotation_candidates(mode, policy, day):
         return None  # backwards-compatible legacy campaigns
     if len(categories) != 20 or len({x["key"] for x in categories}) != 20:
         raise ValueError("Daily rotation requires 20 unique canonical categories")
+    if type(slot) is not int or slot not in (0, 1):
+        raise ValueError("Daily rotation slot must be 0 or 1")
     offsets = rotation.get("mode_category_offsets") or {}
     cohort_size = len(categories) // 2
     same_parity_slot = _same_parity_days_before(day)
     # Odd days use even indices (0,2,...); even days use odd indices (1,3,...).
     parity_offset = 0 if day.day % 2 else 1
-    index = 2 * ((same_parity_slot + int(offsets.get(mode, 0))) % cohort_size) + parity_offset
+    index = 2 * ((same_parity_slot + int(offsets.get(mode, 0)) + 2 * slot) % cohort_size) + parity_offset
     cycle = same_parity_slot // cohort_size
     limit = int(rotation.get("max_categories_checked_per_slot", 5))
     if not (1 <= limit <= 20):
@@ -105,7 +108,7 @@ def rotation_candidates(mode, policy, day):
     return candidates
 
 
-def choose_campaign(mode, policy, *, day, overrides=None, fetcher=build_site_ads_payload):
+def choose_campaign(mode, policy, *, day, slot=0, overrides=None, fetcher=build_site_ads_payload):
     if mode not in MODES:
         raise ValueError("Unsupported campaign type")
     day = date.fromisoformat(str(day))
@@ -118,7 +121,7 @@ def choose_campaign(mode, policy, *, day, overrides=None, fetcher=build_site_ads
             raise ValueError("Manual campaign requires category/budget and brand for brand mode")
         candidates = [{"category": category, "budget": budget, "brand": brand}]
     else:
-        candidates = rotation_candidates(mode, policy, day)
+        candidates = rotation_candidates(mode, policy, day, slot=slot)
         if candidates is None:
             candidates = list(policy["campaigns"][mode])
             if not candidates:
@@ -141,7 +144,7 @@ def choose_campaign(mode, policy, *, day, overrides=None, fetcher=build_site_ads
             if not all(ids) or len(set(ids)) != 5:
                 raise ValueError("Website source product IDs invalid")
             result = {
-                "status": "eligible", "mode": mode, "date_ist": day.isoformat(),
+                "status": "eligible", "mode": mode, "slot": slot, "date_ist": day.isoformat(),
                 "category": category, "budget": budget, "brand": brand,
                 "campaign_id": campaign_id(day,mode,category,budget,brand),
                 "source_product_ids_by_rank": ids,
@@ -153,7 +156,7 @@ def choose_campaign(mode, policy, *, day, overrides=None, fetcher=build_site_ads
         except (ValueError, KeyError, IndexError, TypeError, OSError) as error:
             failures.append({"category":category,"budget":budget,"brand":brand,
                              "reason":type(error).__name__})
-    return {"status":"no_eligible_campaign","mode":mode,"date_ist":day.isoformat(),
+    return {"status":"no_eligible_campaign","mode":mode,"slot":slot,"date_ist":day.isoformat(),
             "attempts":failures,"auto_publish":False}
 
 
@@ -263,6 +266,8 @@ def main():
     subs=parser.add_subparsers(dest="action",required=True)
     p=subs.add_parser("select")
     p.add_argument("--mode",choices=MODES,required=True)
+    p.add_argument("--slot",type=int,choices=(0,1),default=0,
+                   help="Second daily slot uses different odd/even category and budget")
     p.add_argument("--day",default=datetime.now(IST).date().isoformat())
     p.add_argument("--policy",default="automation/campaigns.json")
     p.add_argument("--category",default="")
@@ -276,7 +281,7 @@ def main():
     if args.action=="select":
         policy=json.loads(Path(args.policy).read_text("utf8"))
         overrides={"category":args.category,"budget":args.budget,"brand":args.brand}
-        plan=choose_campaign(args.mode,policy,day=args.day,overrides=overrides)
+        plan=choose_campaign(args.mode,policy,day=args.day,slot=args.slot,overrides=overrides)
         Path(args.output).write_text(json.dumps(plan,indent=2)+"\n",encoding="utf8")
         print("CAMPAIGN_STATUS="+plan["status"])
         if plan["status"]=="eligible":
