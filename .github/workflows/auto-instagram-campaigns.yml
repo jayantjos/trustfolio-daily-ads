@@ -224,7 +224,8 @@ jobs:
       - name: Publish to verified Instagram and Facebook through official Meta Graph API
         # Exactly one candidate for each: budget, brand+budget, Top-5 comparison.
         # Website must return all five same-brand products or brand slot skips.
-        # Existing Oct 17-25 Metricool queue remains untouched.
+        # Existing Oct 17-25 Instagram Metricool queue remains untouched;
+        # FB-only automated posts are allowed Oct 20-25, both Oct 26 onward.
         if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '0 8 * * *' || github.event.schedule == '30 13 * * *')
         env:
           TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
@@ -233,12 +234,28 @@ jobs:
           ID: ${{ steps.plan.outputs.campaign_id }}
         run: |
           set -euo pipefail
-          # Hard launch boundary cannot be bypassed by an early repository variable.
-          # Three source-ranked, QA-verified cron slots may publish daily, one per ad type.
-          if [[ "$(TZ=Asia/Kolkata date +%F)" < "2026-10-26" ]]; then
-            echo "META_AUTO_PUBLICATION=WAITING_UNTIL_2026-10-26_IST"
+          # Instagram Oct 17-25 is already scheduled on Metricool, so
+          # NEVER duplicate it. Facebook has no comparable pending queue.
+          # Explicit FB-only phase from Oct 20, while Instagram waits until Oct 26.
+          # Hard dates override any earlier TF_META_START_DATE repo variable.
+          today="$(TZ=Asia/Kolkata date +%F)"
+          if [[ "$today" < "2026-10-20" ]]; then
+            echo "META_AUTO_PUBLICATION=WAITING_UNTIL_2026-10-20_IST"
             exit 0
           fi
+          if [[ "$today" < "2026-10-26" ]]; then
+            export TF_META_POST_NETWORKS=facebook
+            export TF_META_START_DATE=2026-10-20
+            echo "META_AUTO_PUBLICATION=FACEBOOK_ONLY_UNTIL_2026-10-25_IST"
+          else
+            echo "META_AUTO_PUBLICATION=INSTAGRAM_AND_FACEBOOK"
+          fi
+          # A freshly rendered but already outdated JPEG cannot be published:
+          # re-query GET /api/products/top + POST /api/live-prices and compare
+          # all five ranked product IDs and prices with the final image QA.
+          python automation/verify_price_before_meta_publish_v1.py \
+            --plan campaign/plan.json \
+            --report campaign/website-top5-render-qa.json
           python automation/meta_graph_publish_v1.py \
             --manifest campaign/post/post.json \
             --jpg "campaign/post/$ID.jpg" \
@@ -262,5 +279,5 @@ jobs:
         run: |
           echo "CREATIVE_ARTIFACT_UPLOADED=YES"
           echo "METRICOOL_UNATTENDED_PUBLICATION=DISABLED"
-          echo "META_DIRECT_PUBLICATION=THREE_SCHEDULED_08_30_13_30_19_00_IST_FROM_2026_10_26"
+          echo "META_DIRECT_PUBLICATION=FACEBOOK_ONLY_2026_10_20_TO_25_BOTH_NETWORKS_FROM_OCT26"
           echo "SOURCE_WEBSITE_APPS_MODIFIED=NO"
