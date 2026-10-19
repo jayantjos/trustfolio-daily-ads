@@ -1,0 +1,73 @@
+name: TrustFolio ads-only prepublication price and Facebook rollout QA
+on:
+  pull_request:
+    paths:
+      - 'automation/verify_price_before_meta_publish_v1.py'
+      - 'automation/test_verify_price_before_meta_publish_v1.py'
+      - '.github/workflows/auto-instagram-campaigns.yml'
+      - '.github/workflows/ads-price-fb-ci.yml'
+  push:
+    branches: [fix/verify-live-price-before-meta-and-facebook-start-20261019]
+    paths:
+      - 'automation/verify_price_before_meta_publish_v1.py'
+      - 'automation/test_verify_price_before_meta_publish_v1.py'
+      - '.github/workflows/auto-instagram-campaigns.yml'
+      - '.github/workflows/ads-price-fb-ci.yml'
+permissions:
+  contents: read
+jobs:
+  safe-price-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify existing source and original 5 rank product preservation and separate live overlay
+        run: |
+          set -euo pipefail
+          python -m py_compile automation/verify_price_before_meta_publish_v1.py
+          python -m unittest -v automation.test_verify_price_before_meta_publish_v1
+          python -m unittest -v test_site_top5_ads_v1
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('site_top5_ads_v1.py').read_text('utf8')
+          overlay=Path('website_live_price_sync_v1.py').read_text('utf8')
+          assert 'fetch_public_top5(category, budget_inr, brand' in s
+          assert 'fetch_live_price_rows(ids,' in s
+          assert 'overlay_site_live_prices(response, live_rows,' in s
+          assert 'source_product_id' in s
+          assert 'return result' in overlay
+          assert 'get("status") == "ok"' in overlay
+          assert 'raise ValueError("Displayed price exceeds advertised budget; ad withheld")' in overlay
+          print('ORIGINAL_TRUSTFOLIO_TOP_5_PLUS_PRICE_OVERLAY_UNCHANGED')
+          print('WEB_BACKEND_AND_SCRAPER_NOT_MODIFIED')
+          PY
+      - name: Check protected Instagram queue and Facebook-only launch date
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s=Path('.github/workflows/auto-instagram-campaigns.yml').read_text('utf8')
+          required=[
+            'github.event_name == \'schedule\'',
+            'if [[ "$today" < "2026-10-20" ]]; then',
+            'if [[ "$today" < "2026-10-26" ]]; then',
+            'export TF_META_POST_NETWORKS=facebook',
+            'export TF_META_START_DATE=2026-10-20',
+            'META_AUTO_PUBLICATION=INSTAGRAM_AND_FACEBOOK',
+            'python automation/verify_price_before_meta_publish_v1.py',
+            '--report campaign/website-top5-render-qa.json',
+            'python automation/meta_graph_publish_v1.py',
+            "TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '3'",
+          ]
+          for value in required:
+              assert value in s,value
+          check=s.index('python automation/verify_price_before_meta_publish_v1.py')
+          publish=s.index('python automation/meta_graph_publish_v1.py \\\n            --manifest campaign/post/post.json')
+          assert check<publish
+          assert 'TF_AUTO_POST_ENABLED: ' in s
+          print('FACEBOOK_ONLY_OCT_20_TO_25')
+          print('INSTAGRAM_METRICOOL_SCHEDULE_NOT_DUPLICATED')
+          print('ADS_RANK_AND_PRICE_RECHECK_BEFORE_EVERY_META_POST')
+          PY
