@@ -1,0 +1,100 @@
+name: TrustFolio ads-only live-price rank parity and Facebook rollout CI
+on:
+  pull_request:
+    paths:
+      - 'automation/verify_price_before_meta_publish_v1.py'
+      - 'automation/test_verify_price_before_meta_publish_v1.py'
+      - '.github/workflows/auto-instagram-campaigns.yml'
+      - '.github/workflows/ads-price-fb-parity-ci.yml'
+  push:
+    branches: [fix/ads-only-live-price-preserve-existing-top5-20261019]
+    paths:
+      - 'automation/verify_price_before_meta_publish_v1.py'
+      - 'automation/test_verify_price_before_meta_publish_v1.py'
+      - '.github/workflows/auto-instagram-campaigns.yml'
+      - '.github/workflows/ads-price-fb-parity-ci.yml'
+permissions:
+  contents: read
+jobs:
+  verify-existing-ranked-products:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Prove original website ranks, live price sources, and publisher safety with no network writes
+        run: |
+          set -euo pipefail
+          python -m py_compile automation/verify_price_before_meta_publish_v1.py
+          python -m unittest -v \
+            automation.test_verify_price_before_meta_publish_v1 \
+            automation.test_live_price_before_publish_v1 \
+            test_site_top5_ads_v1
+      - name: Prove old Top-5 source remains unchanged and live overlay adds prices separately
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source=Path('site_top5_ads_v1.py').read_text('utf8')
+          overlay=Path('website_live_price_sync_v1.py').read_text('utf8')
+          validate=Path('automation/verify_price_before_meta_publish_v1.py').read_text('utf8')
+          required_source=[
+              'fetch_public_top5(category, budget_inr, brand',
+              'fetch_live_price_rows(ids, opener=opener)',
+              'overlay_site_live_prices(response, live_rows,',
+              'normalize_site_ad(category, budget_inr, brand, refreshed)',
+              'source_product_id',
+          ]
+          for term in required_source: assert term in source,term
+          required_overlay=[
+              'LIVE_PRICE_URL = "https://api.trustfolio.in/api/live-prices"',
+              '"ids": ids',
+              'if isinstance(live, dict) and live.get("status") == "ok":',
+              'copy["price_inr"] = amount',
+              'raise ValueError("Displayed price exceeds advertised budget; ad withheld")',
+              'result["products"] = refreshed',
+          ]
+          for term in required_overlay: assert term in overlay,term
+          required_guard=[
+              'LIVE_PRICE_URL',
+              'max_age_seconds=1200',
+              'recent_ids!=ids',
+              'recent_source!=sources[rank]',
+              'LIVE_PRICING_COMPLETE_DOES_NOT_MEAN_ALL_FIVE_LIVE=true',
+          ]
+          for term in required_guard: assert term in validate,term
+          print('ORIGINAL_FIVE_WEBSITE_RANKS_AND_LIVE_PRICE_OVERLAY_PRESERVED')
+          print('LIVE_VS_CATALOG_FALLBACK_COUNTED_SEPARATELY')
+          print('NO_WEBSITE_APP_OR_SCRAPER_CHANGE_REQUIRED')
+          PY
+      - name: Confirm three daily cron modes and price check BEFORE official Meta publication
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          src=Path('.github/workflows/auto-instagram-campaigns.yml').read_text('utf8')
+          modes={
+              "'0 3 * * *':'budget'":'budget',
+              "'0 8 * * *':'brand_budget'":'brand_budget',
+              "'30 13 * * *':'comparison'":'comparison',
+          }
+          for needle in modes:
+              assert needle in src,needle
+          step=src.split('- name: Publish to verified Instagram and Facebook through official Meta Graph API',1)[1]
+          gate='python automation/verify_price_before_meta_publish_v1.py'
+          target='python automation/meta_graph_publish_v1.py'
+          assert gate in step and target in step and step.index(gate)<step.index(target)
+          for text in (
+              'today_ist', '"2026-10-20"', '"2026-10-26"',
+              'export TF_META_POST_NETWORKS=facebook',
+              'export TF_META_POST_NETWORKS=instagram,facebook',
+              'INSTAGRAM_METRICOOL_EXISTING_QUEUE=PRESERVED',
+              "TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '3'",
+              "github.event_name == 'schedule'",
+          ):
+              assert text in src,text
+          assert 'TF_AUTO_POST_ENABLED' in src
+          print('BRAND_BUDGET_COMPARISON_CRON_SLOTS_PRESERVED')
+          print('FACEBOOK_FIRST_FROM_OCT20_INSTAGRAM_FROM_OCT26')
+          print('PRICE_RECHECK_BEFORE_META_WRITE')
+          PY
