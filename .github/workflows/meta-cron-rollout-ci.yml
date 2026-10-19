@@ -40,22 +40,24 @@ jobs:
           flow_path=Path('.github/workflows/auto-instagram-campaigns.yml')
           data=yaml.load(flow_path.read_text('utf8'),Loader=yaml.BaseLoader)
           assert data['on']['schedule']==[
-              {'cron':'0 3 * * *'},{'cron':'0 8 * * *'},{'cron':'30 13 * * *'}]
+              {'cron':'0 3 * * *'},{'cron':'0 5 * * *'},
+              {'cron':'0 8 * * *'},{'cron':'30 10 * * *'},
+              {'cron':'30 13 * * *'},{'cron':'30 15 * * *'}]
           job=data['jobs']['render-qa-schedule']
           env=job['env']
           assert "vars.TF_META_DIRECT_PUBLISH_ENABLED" in env['TF_META_DIRECT_PUBLISH_ENABLED']
           assert "'true'" in env['TF_META_DIRECT_PUBLISH_ENABLED']
           assert "'false'" in env['TF_AUTO_POST_ENABLED']
-          assert env['TF_META_MAX_POSTS_PER_DAY_PER_NETWORK']=='3'
+          assert env['TF_META_MAX_POSTS_PER_DAY_PER_NETWORK']=='6'
           assert "'2026-10-26'" in env['TF_META_START_DATE']
           publisher=[s for s in job['steps'] if s.get('name','').startswith('Publish to verified Instagram and Facebook')]
           assert len(publisher)==1
           publish=publisher[0]
           cond=publish['if']
           assert "github.event_name == 'schedule'" in cond
-          assert "github.event.schedule == '0 3 * * *'" in cond
-          assert "github.event.schedule == '30 13 * * *'" in cond
-          assert "github.event.schedule == '0 8 * * *'" in cond
+          for cron in ('0 3 * * *','0 5 * * *','0 8 * * *',
+                       '30 10 * * *','30 13 * * *','30 15 * * *'):
+              assert "github.event.schedule == '"+cron+"'" in cond
           assert "workflow_dispatch" not in cond
           assert "2026-10-20" in publish['run']
           assert "2026-10-26" in publish['run']
@@ -77,7 +79,7 @@ jobs:
           src=Path('automation/meta_readonly_preflight.py').read_text('utf8')
           assert 'publish_verified(' not in src
           assert 'confirm_page_token_type(' in src
-          print('DIRECT_META_THREE_FORMATS_FACEBOOK_ONLY_OCT20_TO25')
+          print('DIRECT_META_SIX_SLOTS_FACEBOOK_ONLY_OCT20_TO25')
           print('DIRECT_META_INSTAGRAM_AND_FACEBOOK_FROM_2026_10_26')
           print('DIRECT_META_FIVE_PRODUCT_LIVE_PRICE_RECHECK_REQUIRED')
           print('DIRECT_META_PUSH_AND_PR_POSTS_DISABLED')

@@ -4,10 +4,13 @@ on:
     branches: [main]
     paths: ['automation/**', '.github/workflows/auto-instagram-campaigns.yml']
   schedule:
-    # UTC; local Asia/Kolkata times are 08:30 / 13:30 / 19:00.
+    # UTC; local Asia/Kolkata: 08:30/10:30 budget, 13:30/16:00 brand, 19:00/21:00 comparison.
     - cron: '0 3 * * *'
+    - cron: '0 5 * * *'
     - cron: '0 8 * * *'
+    - cron: '30 10 * * *'
     - cron: '30 13 * * *'
+    - cron: '30 15 * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -50,8 +53,8 @@ jobs:
       # Proven live Meta IG+FB publication, 2026-10-17; repo variable "false" is emergency OFF switch.
       TF_META_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_META_DIRECT_PUBLISH_ENABLED || 'true' }}
       TF_META_POST_NETWORKS: ${{ vars.TF_META_POST_NETWORKS || 'instagram,facebook' }}
-      # Exactly three approved mode slots/day, no more. Change via reviewed code only.
-      TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '3'
+      # Six reviewed and capped mode slots/day, two each; live Meta limits still apply.
+      TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '6'
       TF_META_START_DATE: ${{ vars.TF_META_START_DATE || '2026-10-26' }}
       TF_META_PAGE_ID: ${{ vars.TF_META_PAGE_ID || '619193294620746' }}
       TF_META_GRAPH_VERSION: ${{ vars.TF_META_GRAPH_VERSION || 'v25.0' }}
@@ -68,7 +71,7 @@ jobs:
       - name: Install image dependency and run tests
         run: |
           python -m pip install --disable-pip-version-check Pillow==11.3.0
-          python -m unittest -v automation.test_auto_campaign_v1 automation.test_live_price_before_publish_v1 automation.test_verify_price_before_meta_publish_v1
+          python -m unittest -v automation.test_auto_campaign_v1 automation.test_20_category_rotation automation.test_live_price_before_publish_v1 automation.test_verify_price_before_meta_publish_v1
           python -m unittest -v test_campaign_link_contract_v1 test_site_top5_ads_v1 test_ads_spec_sanity
       - name: Pick eligible site-ranked campaign deterministically
         id: plan
@@ -87,11 +90,21 @@ jobs:
           import json,os,subprocess,sys
           from datetime import datetime
           from zoneinfo import ZoneInfo
-          cron_modes={'0 3 * * *':'budget','0 8 * * *':'brand_budget','30 13 * * *':'comparison'}
+          cron_modes={
+              '0 3 * * *':('budget',0), '0 5 * * *':('budget',1),
+              '0 8 * * *':('brand_budget',0), '30 10 * * *':('brand_budget',1),
+              '30 13 * * *':('comparison',0), '30 15 * * *':('comparison',1),
+          }
           event=os.getenv('EVENT_TYPE')
-          mode=cron_modes.get(os.getenv('CRON_TRIGGER')) if event=='schedule' else ('budget' if event=='push' else os.getenv('INPUT_MODE'))
+          if event=='schedule':
+              pair=cron_modes.get(os.getenv('CRON_TRIGGER'))
+              if pair is None: raise SystemExit('Unrecognized scheduled cron trigger')
+              mode,slot=pair
+          else:
+              mode='budget' if event=='push' else os.getenv('INPUT_MODE')
+              slot=0
           if mode not in ('budget','brand_budget','comparison'): raise SystemExit('Unrecognized scheduling mode')
-          cmd=[sys.executable,'automation/auto_campaign_v1.py','select','--mode',mode,
+          cmd=[sys.executable,'automation/auto_campaign_v1.py','select','--mode',mode,'--slot',str(slot),
                '--day',datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat(),
                '--output','campaign/plan.json']
           if os.getenv('EVENT_TYPE')!='schedule':
@@ -102,6 +115,7 @@ jobs:
           plan=json.load(open('campaign/plan.json'))
           status=plan['status']
           print('CAMPAIGN_MODE='+mode)
+          print('CAMPAIGN_SLOT='+str(slot))
           print('CAMPAIGN_STATUS='+status)
           with open(os.environ['GITHUB_OUTPUT'],'a') as out:
               out.write('eligible='+('true' if status=='eligible' else 'false')+'\n')
@@ -222,10 +236,10 @@ jobs:
             --preflight-only
 
       - name: Publish to verified Instagram and Facebook through official Meta Graph API
-        # Exactly one candidate for each: budget, brand+budget, Top-5 comparison.
+        # Two candidates per mode/day: budget, brand+budget, Top-5 comparison.
         # Website must return all five same-brand products or brand slot skips.
-        # Existing Oct 17-25 Metricool queue remains untouched.
-        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '0 8 * * *' || github.event.schedule == '30 13 * * *')
+        # Old Oct 20-25 Metricool queue was canceled into drafts; no duplicate posting.
+        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '0 5 * * *' || github.event.schedule == '0 8 * * *' || github.event.schedule == '30 10 * * *' || github.event.schedule == '30 13 * * *' || github.event.schedule == '30 15 * * *')
         env:
           TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -233,8 +247,8 @@ jobs:
           ID: ${{ steps.plan.outputs.campaign_id }}
         run: |
           set -euo pipefail
-          # Existing Metricool queue handles Instagram through Oct 25.
-          # Facebook has no equivalent queue, so publish Facebook ONLY Oct 20-25.
+          # Old Metricool posts through Oct 25 are now drafts, not publishing.
+          # Keep IG direct rollout on Oct 26 and publish Facebook ONLY Oct 20-25.
           # GitHub cron runs can be late; this guard uses actual Asia/Kolkata day.
           today_ist="$(TZ=Asia/Kolkata date +%F)"
           if [[ "$today_ist" < "2026-10-20" ]]; then
@@ -245,7 +259,7 @@ jobs:
             export TF_META_POST_NETWORKS=facebook
             export TF_META_START_DATE=2026-10-20
             echo "META_DIRECT_PUBLISH_TARGET=FACEBOOK_ONLY"
-            echo "INSTAGRAM_METRICOOL_EXISTING_QUEUE=PRESERVED"
+            echo "INSTAGRAM_METRICOOL_OLD_QUEUE=CANCELED_TO_DRAFTS"
           else
             export TF_META_POST_NETWORKS=instagram,facebook
             export TF_META_START_DATE=2026-10-26
@@ -279,5 +293,5 @@ jobs:
         run: |
           echo "CREATIVE_ARTIFACT_UPLOADED=YES"
           echo "METRICOOL_UNATTENDED_PUBLICATION=DISABLED"
-          echo "META_DIRECT_PUBLICATION=FB_ONLY_OCT20_TO25_THEN_IG_FB_FROM_OCT26"
+          echo "META_DIRECT_PUBLICATION=SIX_DAILY_SLOTS_FB_ONLY_OCT20_TO25_THEN_IG_FB_FROM_OCT26"
           echo "SOURCE_WEBSITE_APPS_MODIFIED=NO"

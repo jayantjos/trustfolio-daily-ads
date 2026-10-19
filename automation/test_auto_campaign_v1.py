@@ -56,6 +56,15 @@ class AutoCampaignTests(unittest.TestCase):
         self.assertEqual(x["source_product_ids_by_rank"],["id1","id2","id3","id4","id5"])
         self.assertFalse(x["auto_publish"])
 
+    def test_invalid_slot_fails_closed(self):
+        from automation.auto_campaign_v1 import rotation_candidates
+        policy=json.loads((Path(__file__).resolve().parents[1]/
+                           "automation/campaigns.json").read_text("utf8"))
+        with self.assertRaisesRegex(ValueError,"slot"):
+            rotation_candidates("budget",policy,date(2026,10,26),slot=2)
+        with self.assertRaisesRegex(ValueError,"slot"):
+            rotation_candidates("comparison",policy,date(2026,10,26),slot=-1)
+
     def test_missing_5_brand_products_blocks_post(self):
         policy={"campaigns":{"brand_budget":[{"category":"smartwatches","budget":2000,"brand":"Unknown"}]}}
         x=choose_campaign("brand_budget",policy,day=date(2026,10,16),fetcher=fake_site)

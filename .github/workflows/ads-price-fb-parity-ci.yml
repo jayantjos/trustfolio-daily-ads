@@ -68,15 +68,18 @@ jobs:
           print('LIVE_VS_CATALOG_FALLBACK_COUNTED_SEPARATELY')
           print('NO_WEBSITE_APP_OR_SCRAPER_CHANGE_REQUIRED')
           PY
-      - name: Confirm three daily cron modes and price check BEFORE official Meta publication
+      - name: Confirm six daily cron slots and price check BEFORE official Meta publication
         run: |
           python - <<'PY'
           from pathlib import Path
           src=Path('.github/workflows/auto-instagram-campaigns.yml').read_text('utf8')
           modes={
-              "'0 3 * * *':'budget'":'budget',
-              "'0 8 * * *':'brand_budget'":'brand_budget',
-              "'30 13 * * *':'comparison'":'comparison',
+              "'0 3 * * *':('budget',0)":'budget_first',
+              "'0 5 * * *':('budget',1)":'budget_second',
+              "'0 8 * * *':('brand_budget',0)":'brand_first',
+              "'30 10 * * *':('brand_budget',1)":'brand_second',
+              "'30 13 * * *':('comparison',0)":'comparison_first',
+              "'30 15 * * *':('comparison',1)":'comparison_second',
           }
           for needle in modes:
               assert needle in src,needle
@@ -88,8 +91,8 @@ jobs:
               'today_ist', '"2026-10-20"', '"2026-10-26"',
               'export TF_META_POST_NETWORKS=facebook',
               'export TF_META_POST_NETWORKS=instagram,facebook',
-              'INSTAGRAM_METRICOOL_EXISTING_QUEUE=PRESERVED',
-              "TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '3'",
+              'INSTAGRAM_METRICOOL_OLD_QUEUE=CANCELED_TO_DRAFTS',
+              "TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '6'",
               "github.event_name == 'schedule'",
           ):
               assert text in src,text
