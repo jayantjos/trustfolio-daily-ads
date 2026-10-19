@@ -32,18 +32,19 @@ class TwentyCategoryRotationTests(unittest.TestCase):
             self.assertTrue(p["site_slug"].replace("-","").isalnum())
             self.assertGreaterEqual(len(p["brands"]),2)
 
-    def test_every_category_selected_over_twenty_consecutive_days(self):
+    def test_all_twenty_categories_covered_across_month_boundary(self):
+        # October 31 and November 1 are both odd dates. A 23-day window
+        # ensures ten appearances from each date-parity cohort.
         start=date(2026,10,17)
         all_keys={x["site_slug"] for x in POLICY["rotation"]["categories"]}
         for mode in ("budget","brand_budget","comparison"):
             selected=[]
-            for n in range(20):
+            for n in range(23):
                 target=start+timedelta(days=n)
                 candidate=rotation_candidates(mode,POLICY,target)[0]
                 self.assertEqual(bool(candidate["brand"]),mode=="brand_budget")
                 selected.append(candidate["category"])
             self.assertEqual(set(selected),all_keys,mode)
-            self.assertEqual(len(set(selected)),20)
 
     def test_same_day_categories_differ_across_three_campaign_modes(self):
         for day in (date(2026,10,17),date(2026,10,18),date(2026,11,1)):
@@ -53,11 +54,51 @@ class TwentyCategoryRotationTests(unittest.TestCase):
 
     def test_budget_tier_rotates_each_category_cycle(self):
         start=date(2026,10,17)
-        for mode in ("budget","comparison"):
-            old=rotation_candidates(mode,POLICY,start)[0]
-            nxt=rotation_candidates(mode,POLICY,start+timedelta(days=20))[0]
-            self.assertEqual(old["category"],nxt["category"])
-            self.assertNotEqual(old["budget"],nxt["budget"])
+        for mode in ("budget","brand_budget","comparison"):
+            first=rotation_candidates(mode,POLICY,start)[0]
+            revisits=[rotation_candidates(mode,POLICY,start+timedelta(days=n))[0]
+                      for n in range(1,26)]
+            same=next((x for x in revisits if x["category"]==first["category"]),None)
+            self.assertIsNotNone(same,mode)
+            self.assertNotEqual(first["budget"],same["budget"],mode)
+
+    def test_calendar_odd_even_category_and_budget_parity(self):
+        categories=POLICY["rotation"]["categories"]
+        by_slug={x["site_slug"]:i for i,x in enumerate(categories)}
+        start=date(2026,10,19)
+        for mode in ("budget","brand_budget","comparison"):
+            observed={category["site_slug"]:set() for category in categories}
+            for offset in range(85):
+                target=start+timedelta(days=offset)
+                expected_index_parity=0 if target.day%2 else 1
+                candidates=rotation_candidates(mode,POLICY,target)
+                # Even when the first choice fails, no retry can cross
+                # into the opposite category cohort.
+                self.assertTrue(candidates)
+                for choice in candidates:
+                    i=by_slug[choice["category"]]
+                    self.assertEqual(i%2,expected_index_parity,(mode,target,choice))
+                primary=candidates[0]
+                observed[primary["category"]].add(primary["budget"])
+            # Every category visits all three price tiers in later cycles.
+            for category in categories:
+                self.assertEqual(observed[category["site_slug"]],set(category["budgets"]),
+                                 (mode,category["site_slug"]))
+
+    def test_fallback_category_preserves_odd_even_parity(self):
+        by_slug={x["site_slug"]:i for i,x in
+                 enumerate(POLICY["rotation"]["categories"])}
+        for day in (date(2026,10,31),date(2026,11,1),date(2026,11,2)):
+            for mode in ("budget","brand_budget","comparison"):
+                first=rotation_candidates(mode,POLICY,day)[0]["category"]
+                def site(category,budget,brand):
+                    if category==first:
+                        raise ValueError("Current category does not have five eligible items")
+                    return live_mock(category,budget,brand)
+                selected=choose_campaign(mode,POLICY,day=day,fetcher=site)
+                self.assertEqual(selected["status"],"eligible")
+                self.assertNotEqual(selected["category"],first)
+                self.assertEqual(by_slug[selected["category"]]%2,0 if day.day%2 else 1)
 
     def test_ineligible_current_budget_falls_back_safely(self):
         today=date(2026,10,17)
