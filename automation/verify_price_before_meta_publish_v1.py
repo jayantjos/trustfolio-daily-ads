@@ -48,7 +48,7 @@ def verify_fresh_snapshot(plan, report, *, fetcher=build_site_ads_payload,
         raise PriceAuditBlocked("Image did not complete its pre-render live-price check")
     if report.get("campaign_category") != plan.get("category"):
         raise PriceAuditBlocked("Rendered category does not match selected campaign")
-    if report.get("campaign_brand") not in (plan.get("brand") or "", None):
+    if (report.get("campaign_brand") or "") != (plan.get("brand") or ""):
         raise PriceAuditBlocked("Rendered brand does not match selected campaign")
     if report.get("campaign_mode") != plan.get("mode"):
         raise PriceAuditBlocked("Rendered ad mode does not match selected campaign")
