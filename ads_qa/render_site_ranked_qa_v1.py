@@ -22,6 +22,7 @@ from ad_link_manifest_v1 import build_manifest as link_manifest
 from creative_generator_v1 import build_manifest as visual_manifest
 from build_infographic_payload_v1 import build_payload
 from master_template_renderer_html_v4 import render as render_final
+from ads_qa.price_rank_parity_v1 import verify_ranked_price_pipeline
 
 ADS = Path.home() / "new_scraper" / "ads"
 
@@ -65,6 +66,12 @@ def run(category, budget, brand, output_dir, mode="budget"):
     if len(generated["ads"]) != 1:
         raise ValueError("Creative generator failed to preserve site-ranked campaign")
     info = build_payload(generated["ads"][0])
+    # The website already performed the original Top-5 selection and the
+    # website-matched live/catalog price overlay. Never change rank or price
+    # while turning those values into the approved 3D ad visual.
+    checked_prices = verify_ranked_price_pipeline(
+        input_payload["ads"][0], ad, generated["ads"][0], info
+    )
     if info["site_ranking_status"] != "verified":
         raise ValueError("Infographic payload lost website ranking verification")
     visual_ids = [p.get("source_product_id") for p in info["products"]]
@@ -103,7 +110,11 @@ def run(category, budget, brand, output_dir, mode="budget"):
         "price_sources_by_rank": [p.get("price_source") for p in ad["products"]],
         "live_statuses_by_rank": [p.get("live_price_status") for p in ad["products"]],
         "original_catalog_prices_by_rank": [p.get("stored_price_inr") for p in ad["products"]],
-        "displayed_prices_by_rank": [p.get("price_inr") for p in ad["products"]],
+        "displayed_prices_by_rank": checked_prices["displayed_prices_by_rank"],
+        "visual_prices_by_rank": checked_prices["visual_prices_by_rank"],
+        "price_parity_verified": True,
+        "live_api_priced_products": checked_prices["live_api_priced_products"],
+        "catalog_fallback_products": checked_prices["catalog_fallback_products"],
         "source_observed_at": input_payload["generated_at"],
         "png": target.name,
         "dimensions": [1024,1536],
@@ -119,6 +130,9 @@ def run(category, budget, brand, output_dir, mode="budget"):
     print("LIVE_PRICE_REFRESH_COMPLETED=true")
     print("DISPLAYED_PRICES=" + ",".join(str(p.get("price_inr")) for p in ad["products"]))
     print("PRICE_SOURCES=" + ",".join(str(p.get("price_source")) for p in ad["products"]))
+    print("VISUAL_PRICE_RANK_PARITY_VERIFIED=true")
+    print("LIVE_API_PRICES=" + str(checked_prices["live_api_priced_products"]))
+    print("CATALOG_FALLBACK_PRICES=" + str(checked_prices["catalog_fallback_products"]))
     print("PRODUCT_ID_ORDER="+",".join(ranked_ids))
     print("RENDERED_IMAGE="+str(target))
     print("LANDING_URL="+ad["landing_url"])
