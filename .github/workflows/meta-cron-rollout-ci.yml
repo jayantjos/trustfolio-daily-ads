@@ -7,8 +7,6 @@ on:
       - '.github/workflows/meta-cron-rollout-ci.yml'
       - 'automation/validate_live_price_before_publish_v1.py'
       - 'automation/test_live_price_before_publish_v1.py'
-      - 'automation/validate_live_price_before_publish_v1.py'
-      - 'automation/test_live_price_before_publish_v1.py'
   push:
     branches: [feature/activate-meta-direct-daily-from-20261026]
     paths:
