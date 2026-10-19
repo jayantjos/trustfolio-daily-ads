@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 import json
 from math import isfinite
 from pathlib import Path
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 from site_top5_ads_v1 import build_site_ads_payload
 
