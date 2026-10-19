@@ -136,27 +136,50 @@ class TwentyCategoryRotationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"ad type"):
             check_report(plan,report)
 
-    def test_three_verified_modes_each_day_have_distinct_cron_slots(self):
+    def test_six_distinct_mode_slot_primary_categories(self):
+        for days in range(85):
+            day=date(2026,10,19)+timedelta(days=days)
+            picks=[rotation_candidates(mode,POLICY,day,slot=slot)[0]
+                   for mode in ("budget","brand_budget","comparison") for slot in (0,1)]
+            self.assertEqual(len(picks),6)
+            self.assertEqual(len({p["category"] for p in picks}),6,day)
+            self.assertTrue(all(POLICY["rotation"]["categories"][
+                next(i for i,c in enumerate(POLICY["rotation"]["categories"])
+                     if c["site_slug"]==p["category"])]["budgets"].count(p["budget"])==1
+                for p in picks))
+            self.assertEqual(len({p["category"] for p in picks}),6)
+
+    def test_second_slot_uses_distinct_category(self):
+        day=date(2026,10,26)
+        for mode in ("budget","brand_budget","comparison"):
+            first=rotation_candidates(mode,POLICY,day,slot=0)[0]
+            second=rotation_candidates(mode,POLICY,day,slot=1)[0]
+            self.assertNotEqual(first["category"],second["category"])
+            self.assertEqual(bool(first["brand"]),mode=="brand_budget")
+            self.assertEqual(bool(second["brand"]),mode=="brand_budget")
+            selected=choose_campaign(mode,POLICY,day=day,slot=1,fetcher=live_mock)
+            self.assertEqual(selected["status"],"eligible")
+            self.assertEqual(selected["category"],second["category"])
+            self.assertEqual(selected["slot"],1)
+
+    def test_six_daily_cron_slots_and_live_price_guard(self):
         workflow=(ROOT/".github/workflows/auto-instagram-campaigns.yml").read_text("utf8")
-        self.assertIn("TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '3'",workflow)
+        self.assertIn("TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '6'",workflow)
         self.assertIn("github.event_name == 'schedule'",workflow)
-        # The brand-budget middle slot must be allowed to publish from
-        # Oct 26 if five matching same-brand ranked products exist.
-        self.assertIn("github.event.schedule == '0 8 * * *'",workflow)
-        self.assertIn("github.event.schedule == '0 3 * * *'",workflow)
-        self.assertIn("github.event.schedule == '30 13 * * *'",workflow)
+        self.assertIn("python automation/verify_price_before_meta_publish_v1.py",workflow)
         self.assertIn("2026-10-26",workflow)
         self.assertIn("TF_AUTO_POST_ENABLED",workflow)
-        self.assertEqual(tuple(POLICY["rotation"]["cadence_ist"].values()),
-                         ("08:30","13:30","19:00"))
-
-    def test_github_cron_forwards_mode_to_ads_vps_renderer(self):
-        source=(ROOT/".github/workflows/auto-instagram-campaigns.yml").read_text("utf8")
-        self.assertIn("mode=plan['mode']",source)
-        self.assertIn("TF_AUTO_POST_ENABLED",source)
-        self.assertIn("cron: '0 3 * * *'",source)
-        self.assertIn("cron: '0 8 * * *'",source)
-        self.assertIn("cron: '30 13 * * *'",source)
+        cron=['0 3 * * *','0 5 * * *','0 8 * * *',
+              '30 10 * * *','30 13 * * *','30 15 * * *']
+        for item in cron:
+            self.assertIn("cron: '"+item+"'",workflow)
+            self.assertIn("github.event.schedule == '"+item+"'",workflow)
+        self.assertIn("'--slot',str(slot)",workflow)
+        self.assertIn("mode=plan['mode']",workflow)
+        self.assertEqual(POLICY["rotation"]["cadence_ist"],{
+            "budget":["08:30","10:30"],
+            "brand_budget":["13:30","16:00"],
+            "comparison":["19:00","21:00"]})
 
 
 if __name__=="__main__":
