@@ -22,6 +22,7 @@ def fixture():
     report = {
         "source": "live_trustfolio_website_api",
         "live_price_refresh_completed": True,
+        "live_price_api": "https://api.trustfolio.in/api/live-prices",
         "campaign_category": "induction-cooktop",
         "campaign_budget_inr": 5000,
         "campaign_brand": None,
@@ -90,6 +91,25 @@ class PriceParityTests(unittest.TestCase):
         r["price_sources_by_rank"][1] = "website_live_price_api"
         with self.assertRaisesRegex(PriceAuditBlocked, "without an OK"):
             verify_fresh_snapshot(p, r, fetcher=Mock(return_value=data), now=NOW)
+
+    def test_wrong_live_price_endpoint_refused_before_api_request(self):
+        p,r,data=fixture()
+        r["live_price_api"]="https://unverified.example/live-prices"
+        fetcher=Mock(return_value=data)
+        with self.assertRaisesRegex(PriceAuditBlocked,"original TrustFolio"):
+            verify_fresh_snapshot(p,r,fetcher=fetcher,now=NOW)
+        fetcher.assert_not_called()
+
+    def test_explicit_zero_live_prices_are_catalog_fallback_not_faked_live(self):
+        p,r,data=fixture()
+        r["price_sources_by_rank"]=["website_catalog"]*5
+        r["live_statuses_by_rank"]=[None]*5
+        for product in data["ads"][0]["products"]:
+            product["price_source"]="website_catalog"
+            product["live_price_status"]=None
+        result=verify_fresh_snapshot(p,r,fetcher=Mock(return_value=data),now=NOW)
+        self.assertEqual(result["live_prices"],0)
+        self.assertEqual(result["catalog_fallback_prices"],5)
 
     def test_missing_or_stale_or_unavailable_live_price_refuses_to_publish(self):
         p, r, data = fixture()
