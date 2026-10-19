@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import re
+from calendar import monthrange
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, urlencode
@@ -27,12 +28,36 @@ def campaign_id(day, mode, category, budget, brand):
     return "tfauto-" + hashlib.sha256(value.encode()).hexdigest()[:18]
 
 
-def rotation_candidates(mode, policy, day):
-    """Deterministic 20-category queue, budget ladder and verified-brand trials.
+def _same_parity_days_before(day):
+    """Count preceding dates with the same odd/even day-of-month since 2000.
 
-    Each mode starts at a different category offset so Instagram does not
-    repeat the same category three times per day. Each full category cycle
-    advances the budget tier. Missing public Top-5 results are skipped.
+    Count by Gregorian month, not ordinal//2: October 31 and November 1
+    are both odd dates. This keeps the odd and even category queues separate
+    across month and year boundaries without silently skipping a category.
+    """
+    if day.year < 2000:
+        raise ValueError("Campaign calendar starts in year 2000")
+    odd = day.day % 2 == 1
+    count = (day.day - 1) // 2
+    for year in range(2000, day.year):
+        for month in range(1, 13):
+            days = monthrange(year, month)[1]
+            count += (days + 1) // 2 if odd else days // 2
+    for month in range(1, day.month):
+        days = monthrange(day.year, month)[1]
+        count += (days + 1) // 2 if odd else days // 2
+    return count
+
+
+def rotation_candidates(mode, policy, day):
+    """Odd/even calendar-date category cohorts and rotating budget tiers.
+
+    Odd dates select one of ten categories at indices 0,2,...,18; even dates
+    select indices 1,3,...,19. Each ad format has a different category offset.
+    A category's primary budget advances every ten same-parity dates (one
+    complete cohort cycle); even dates begin a different tier from odd dates.
+    All category retries stay in their parity cohort. Missing real Top-5
+    website data must be skipped, never fabricated.
     """
     rotation = policy.get("rotation") or {}
     categories = rotation.get("categories") or []
@@ -41,8 +66,12 @@ def rotation_candidates(mode, policy, day):
     if len(categories) != 20 or len({x["key"] for x in categories}) != 20:
         raise ValueError("Daily rotation requires 20 unique canonical categories")
     offsets = rotation.get("mode_category_offsets") or {}
-    index = (day.toordinal() + int(offsets.get(mode, 0))) % len(categories)
-    cycle = day.toordinal() // len(categories)
+    cohort_size = len(categories) // 2
+    same_parity_slot = _same_parity_days_before(day)
+    # Odd days use even indices (0,2,...); even days use odd indices (1,3,...).
+    parity_offset = 0 if day.day % 2 else 1
+    index = 2 * ((same_parity_slot + int(offsets.get(mode, 0))) % cohort_size) + parity_offset
+    cycle = same_parity_slot // cohort_size
     limit = int(rotation.get("max_categories_checked_per_slot", 5))
     if not (1 <= limit <= 20):
         raise ValueError("Invalid category retry limit")
@@ -51,14 +80,15 @@ def rotation_candidates(mode, policy, day):
         raise ValueError("Invalid brand retry limit")
     candidates = []
     for distance in range(limit):
-        entry = categories[(index + distance) % len(categories)]
+        entry = categories[(index + 2 * distance) % len(categories)]
         category = str(entry["site_slug"]).strip()
         budgets = [int(v) for v in entry["budgets"]]
         if not budgets or len(set(budgets)) != len(budgets) or any(v < 100 for v in budgets):
             raise ValueError("Invalid budget ladder for " + category)
-        # Every 20 calendar days the chosen category advances to its next
-        # price tier; check one alternative tier if website has <5 products.
-        selected = cycle % len(budgets)
+        # Each category revisits after 10 dates of its own parity, with a
+        # new primary price tier. Even dates start one tier ahead of odd.
+        # Check one alternative tier if the first has <5 genuine products.
+        selected = (cycle + parity_offset) % len(budgets)
         amounts = [budgets[(selected + i) % len(budgets)] for i in range(min(2, len(budgets)))]
         if mode == "brand_budget":
             brands = [str(b).strip() for b in entry.get("brands", []) if str(b).strip()]
