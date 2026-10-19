@@ -199,3 +199,59 @@ Preserve all queued Metricool posts dated through October 25; emergency
 STOP is GitHub Actions variable `TF_META_DIRECT_PUBLISH_ENABLED=false`.
 No repository push, PR, or manual workflow dispatch publishes these
 automated campaign jobs.
+
+
+## October 19 correction: live price contract and Facebook-only transition
+
+**Real data before generating EVERY new ad:** the ads pipeline
+`site_top5_ads_v1.py` calls `GET /api/products/top` (site-ranked
+five products) then `POST /api/live-prices` for the same five IDs.
+The website display contract uses the current live price when live
+status is `ok`, and the **catalog price when the retailer's live
+worker is unavailable** (Croma has no live worker). The ad must
+reject missing/deleted/out-of-stock products, all five missing IDs,
+invalid prices, or a price over its advertised budget; it cannot
+claim every printed price is independently confirmed live.
+
+October 19's real render run
+`39221624560` proved live refresh completed with 4
+`website_live_price_api` values and 1 `website_catalog` fallback
+for five ₹5,000 induction-cooktop products.
+A successful refresh CALL is **not** the same as five live retailer
+price confirmations. Instagram posts queued in Metricool before the
+October 18 live-price enhancement **do not retroactively refresh**
+the static JPGs already staged or scheduled.
+
+**NEW fail-closed publication gate:** `automation/
+validate_live_price_before_publish_v1.py` makes both website GET
+and price POST again immediately before the Meta write.
+If a ranked product ID, position, displayed price or price-source
+changes from what was actually printed on the approved image,
+the original JPG is skipped, never silently re-priced or posted stale.
+Run logs report current live API vs catalog counts.
+The image does not dynamically update after it is posted.
+
+**Distribution transition:**
+- Before October 20, no unattended direct posts (already queued IG).
+- October 20–25: verified GitHub cron posts to **Facebook Trustfolio
+  Page only**. The existing Metricool Instagram queued posts continue
+  normally, without double-posting.
+- October 26 onward: verified GitHub cron posts to **Instagram
+  @trustfolio3 AND Facebook Trustfolio Page**.
+- Each of the three existing daily cron modes (budget, brand+budget,
+  Top-5 comparison) may publish at most one per account per slot.
+  Local daily cap is **3 per network**, but API inventory failures,
+  account token issues, quota limits or GitHub cron delays may skip
+  posts. The 3/day cap is not a publication guarantee.
+- Instagram user IDs, Facebook Page ID and one-per-campaign-per-network
+  GitHub reservation ledger remain mandatory. No changes to original
+  website/apps/scraper. Existing Metricool posts remain untouched.
+- Automatic Meta publication can still be disabled immediately via
+  GitHub variable `TF_META_DIRECT_PUBLISH_ENABLED=false`.
+
+The Facebook-only transition is necessary because previously only
+one Facebook Metricool post and one direct Meta API test post had
+actually been verified live; the Instagram batch was scheduled
+exclusively to Instagram. The previous Oct 26 guard was the reason
+generated, live-price-checked Facebook creatives were not published
+earlier.
