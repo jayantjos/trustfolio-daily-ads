@@ -87,7 +87,7 @@ jobs:
           print('PLATFORMS='+','.join(sorted({str(r['platform']) for r in d['products']})))
           print('LIVE_OK='+str(sum(bool(r['live']) and r['live'].get('status')=='ok' for r in d['products'])))
           for r in d['products']:
-              print('MATCH='+json.dumps({k:r[k] for k in ('title','platform','model','stored_price','live')},ensure_ascii=False))
+              print('MATCH='+json.dumps({k:r[k] for k in ('id','title','platform','url','model','stored_price','live')},ensure_ascii=False))
           print('LIVE_ERRORS='+str(d['live_errors']))
           PY
       - name: Upload read-only evidence
