@@ -1,0 +1,100 @@
+
+name: TrustFolio Fire-Boltt Hunter live audit
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/hunter-readonly-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  hunter-lookup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Authenticate to existing ads VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Inspect MongoDB then call existing website live-price API
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY' > hunter-audit.json
+          import json, os, re
+          from pathlib import Path
+          from datetime import datetime, timezone
+          from dotenv import load_dotenv
+          from pymongo import MongoClient
+          from urllib.request import urlopen,Request
+          load_dotenv(Path.home()/'new_scraper'/'.env')
+          uri=os.getenv('MONGODB_URI') or os.getenv('MONGO_URI') or os.getenv('MONGODB_URL')
+          if not uri: raise RuntimeError('Server MongoDB URI not configured')
+          c=MongoClient(uri, serverSelectionTimeoutMS=8000)
+          coll=c[os.getenv('MONGODB_DB','trustfolio')][os.getenv('PRODUCT_COLLECTION','my_products')]
+          q={'$and':[{'category':'smartwatches'},
+               {'$or':[{'title':{'$regex':'hunter','$options':'i'}},{'product_url':{'$regex':'itmb013d9d4af90f'}}]},
+               {'$or':[{'brand':{'$regex':'fire[ -]?boltt','$options':'i'}},{'title':{'$regex':'fire[ -]?boltt','$options':'i'}}]}]}
+          fields={k:1 for k in ['title','brand','platform','category','product_id','id','asin','product_url','price','price_inr','price_ready','availability','updated_at','scraped_at','model','specifications']}
+          rows=[]
+          for p in coll.find(q, fields).limit(100):
+              specs=p.get('specifications') if isinstance(p.get('specifications'),dict) else {}
+              model=next((str(v) for k,v in specs.items() if 'model' in str(k).lower()),'')
+              pid=str(p.get('product_id') or p.get('id') or p.get('asin') or p['_id'])
+              rows.append({'id':pid,'title':p.get('title'),'brand':p.get('brand'),'platform':p.get('platform'),
+                           'url':p.get('product_url'),'stored_price':p.get('price_inr',p.get('price')),
+                           'model':p.get('model') or model,'price_ready':p.get('price_ready'),'availability':p.get('availability'),
+                           'updated_at':str(p.get('updated_at') or p.get('scraped_at') or ''),'live':None})
+          errors=[]
+          for i in range(0,len(rows),5):
+              batch=rows[i:i+5]
+              try:
+                  req=Request('https://api.trustfolio.in/api/live-prices',data=json.dumps({'ids':[r['id'] for r in batch]}).encode(),
+                              headers={'Accept':'application/json','Content-Type':'application/json'},method='POST')
+                  with urlopen(req,timeout=40) as response: body=json.load(response)
+                  if body.get('success') is not True or not isinstance(body.get('data'),list): raise ValueError('Unexpected API response')
+                  by_id={str(x.get('id')):x for x in body['data']}
+                  for r in batch:
+                      item=by_id.get(r['id'],{})
+                      live=item.get('live')
+                      r['live']={k:live.get(k) for k in ('status','price_inr','checked_at','priced_at')} if isinstance(live,dict) else None
+                      r['deleted']=item.get('deleted')
+              except Exception as e:
+                  errors.append(type(e).__name__+': '+str(e)[:120])
+          c.close()
+          print(json.dumps({'checked_at':datetime.now(timezone.utc).isoformat(),
+                            'mongo_matches':len(rows),'truncated':len(rows)==100,'live_errors':errors,'products':rows},
+                           default=str,ensure_ascii=False,indent=2))
+          PY
+          python3 - <<'PY'
+          import json
+          d=json.load(open('hunter-audit.json'))
+          print('MONGO_MATCHES='+str(d['mongo_matches']))
+          print('PLATFORMS='+','.join(sorted({str(r['platform']) for r in d['products']})))
+          print('LIVE_OK='+str(sum(bool(r['live']) and r['live'].get('status')=='ok' for r in d['products'])))
+          for r in d['products']:
+              print('MATCH='+json.dumps({k:r[k] for k in ('title','platform','model','stored_price','live')},ensure_ascii=False))
+          print('LIVE_ERRORS='+str(d['live_errors']))
+          PY
+      - name: Upload read-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fireboltt-hunter-mongodb-live-audit
+          path: hunter-audit.json
+          retention-days: 7
+          if-no-files-found: ignore
