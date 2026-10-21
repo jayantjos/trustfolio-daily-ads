@@ -38,7 +38,7 @@ EXPECTED_PAGE_ID = "619193294620746"
 EXPECTED_IG_USERNAME = "trustfolio3"
 REPO = "jayantjos/trustfolio-daily-ads"
 IST = ZoneInfo("Asia/Kolkata")
-DEFAULT_START_DATE = "2026-10-26"
+DEFAULT_START_DATE = "2026-10-21"
 NETWORKS = ("instagram", "facebook")
 
 
@@ -114,7 +114,7 @@ def load_env(*, env=None):
     day = datetime.now(IST).date()
     start = date.fromisoformat(env.get("TF_META_START_DATE",DEFAULT_START_DATE))
     if day < start:
-        raise PublishingBlocked("Waiting for Metricool's previously scheduled Oct 17-25 campaign queue")
+        raise PublishingBlocked("Direct Meta crossposting starts 2026-10-21")
     raw_networks = (env.get("TF_META_POST_NETWORKS") or "instagram,facebook").split(",")
     networks = tuple(x.strip().lower() for x in raw_networks if x.strip())
     if not networks or len(networks)!=len(set(networks)) or any(x not in NETWORKS for x in networks):
