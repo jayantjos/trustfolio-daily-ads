@@ -32,7 +32,7 @@ jobs:
         run: |
           python -m py_compile automation/validate_live_price_before_publish_v1.py automation/verify_price_before_meta_publish_v1.py
           python -m unittest -v automation.test_live_price_before_publish_v1 automation.test_verify_price_before_meta_publish_v1
-      - name: Assert Oct 20 Facebook-only, Oct 26 crosspost, and zero push/PR publishing
+      - name: Assert Oct 21 crosspost IG+FB, and zero push/PR publishing
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -49,7 +49,7 @@ jobs:
           assert "'true'" in env['TF_META_DIRECT_PUBLISH_ENABLED']
           assert "'false'" in env['TF_AUTO_POST_ENABLED']
           assert env['TF_META_MAX_POSTS_PER_DAY_PER_NETWORK']=='6'
-          assert "'2026-10-26'" in env['TF_META_START_DATE']
+          assert "'2026-10-21'" in env['TF_META_START_DATE']
           publisher=[s for s in job['steps'] if s.get('name','').startswith('Publish to verified Instagram and Facebook')]
           assert len(publisher)==1
           publish=publisher[0]
@@ -59,13 +59,12 @@ jobs:
                        '30 10 * * *','30 13 * * *','30 15 * * *'):
               assert "github.event.schedule == '"+cron+"'" in cond
           assert "workflow_dispatch" not in cond
-          assert "2026-10-20" in publish['run']
-          assert "2026-10-26" in publish['run']
+          assert 'if [[ "$today_ist" < "2026-10-21" ]]' in publish['run']
           assert 'exit 0' in publish['run']
-          assert 'export TF_META_POST_NETWORKS=facebook' in publish['run']
-          assert 'export TF_META_START_DATE=2026-10-20' in publish['run']
           assert 'export TF_META_POST_NETWORKS=instagram,facebook' in publish['run']
-          assert 'export TF_META_START_DATE=2026-10-26' in publish['run']
+          assert 'export TF_META_START_DATE=2026-10-21' in publish['run']
+          assert 'export TF_META_POST_NETWORKS=facebook\n' not in publish['run']
+          assert 'FACEBOOK_ONLY' not in publish['run']
           assert "today_ist" in publish['run']
           assert "automation/verify_price_before_meta_publish_v1.py" in publish['run']
           assert "automation/validate_live_price_before_publish_v1.py" not in publish['run']
@@ -79,8 +78,8 @@ jobs:
           src=Path('automation/meta_readonly_preflight.py').read_text('utf8')
           assert 'publish_verified(' not in src
           assert 'confirm_page_token_type(' in src
-          print('DIRECT_META_SIX_SLOTS_FACEBOOK_ONLY_OCT20_TO25')
-          print('DIRECT_META_INSTAGRAM_AND_FACEBOOK_FROM_2026_10_26')
+          print('DIRECT_META_SIX_SLOTS_IG_AND_FACEBOOK_FROM_OCT21')
+          print('DIRECT_META_INSTAGRAM_AND_FACEBOOK_FROM_2026_10_21')
           print('DIRECT_META_FIVE_PRODUCT_LIVE_PRICE_RECHECK_REQUIRED')
           print('DIRECT_META_PUSH_AND_PR_POSTS_DISABLED')
           print('METRICOOL_UNATTENDED_POSTS_OFF')
