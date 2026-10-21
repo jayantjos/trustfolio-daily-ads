@@ -88,16 +88,17 @@ jobs:
           target='python automation/meta_graph_publish_v1.py'
           assert gate in step and target in step and step.index(gate)<step.index(target)
           for text in (
-              'today_ist', '"2026-10-20"', '"2026-10-26"',
-              'export TF_META_POST_NETWORKS=facebook',
+              'today_ist', '"2026-10-21"',
               'export TF_META_POST_NETWORKS=instagram,facebook',
               'INSTAGRAM_METRICOOL_OLD_QUEUE=CANCELED_TO_DRAFTS',
               "TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '6'",
               "github.event_name == 'schedule'",
           ):
               assert text in src,text
+          assert 'export TF_META_POST_NETWORKS=facebook\n' not in src
+          assert 'FACEBOOK_ONLY' not in src
           assert 'TF_AUTO_POST_ENABLED' in src
           print('BRAND_BUDGET_COMPARISON_CRON_SLOTS_PRESERVED')
-          print('FACEBOOK_FIRST_FROM_OCT20_INSTAGRAM_FROM_OCT26')
+          print('INSTAGRAM_AND_FACEBOOK_FROM_OCT21')
           print('PRICE_RECHECK_BEFORE_META_WRITE')
           PY

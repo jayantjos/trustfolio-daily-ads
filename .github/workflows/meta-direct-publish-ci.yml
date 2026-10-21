@@ -57,7 +57,7 @@ jobs:
           assert 'content_publishing_limit' in code
           assert 'meta-publication-ledger' in code
           assert 'TF_AUTO_POST_ENABLED' in code
-          assert 'DEFAULT_START_DATE = "2026-10-26"' in code
+          assert 'DEFAULT_START_DATE = "2026-10-21"' in code
           readonly=Path('automation/meta_readonly_preflight.py').read_text('utf8')
           assert 'publish_verified(' not in readonly
           assert 'confirm_page_identity(' in readonly

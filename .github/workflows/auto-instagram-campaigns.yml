@@ -55,7 +55,7 @@ jobs:
       TF_META_POST_NETWORKS: ${{ vars.TF_META_POST_NETWORKS || 'instagram,facebook' }}
       # Six reviewed and capped mode slots/day, two each; live Meta limits still apply.
       TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '6'
-      TF_META_START_DATE: ${{ vars.TF_META_START_DATE || '2026-10-26' }}
+      TF_META_START_DATE: ${{ vars.TF_META_START_DATE || '2026-10-21' }}
       TF_META_PAGE_ID: ${{ vars.TF_META_PAGE_ID || '619193294620746' }}
       TF_META_GRAPH_VERSION: ${{ vars.TF_META_GRAPH_VERSION || 'v25.0' }}
       TF_METRICOOL_BLOG_ID: ${{ vars.TF_METRICOOL_BLOG_ID || '7271681' }}
@@ -247,24 +247,19 @@ jobs:
           ID: ${{ steps.plan.outputs.campaign_id }}
         run: |
           set -euo pipefail
-          # Old Metricool posts through Oct 25 are now drafts, not publishing.
-          # Keep IG direct rollout on Oct 26 and publish Facebook ONLY Oct 20-25.
-          # GitHub cron runs can be late; this guard uses actual Asia/Kolkata day.
+          # Previously queued Metricool Instagram posts were converted to drafts;
+          # do not use that stale queue. All six approved cron slots now publish
+          # the same verified JPG to BOTH Meta accounts from Oct 21 onward.
+          # GitHub cron jobs may be delayed: use today's actual IST date.
           today_ist="$(TZ=Asia/Kolkata date +%F)"
-          if [[ "$today_ist" < "2026-10-20" ]]; then
-            echo "META_AUTO_PUBLICATION=WAITING_UNTIL_2026-10-20_IST"
+          if [[ "$today_ist" < "2026-10-21" ]]; then
+            echo "META_AUTO_PUBLICATION=WAITING_UNTIL_2026-10-21_IST"
             exit 0
           fi
-          if [[ "$today_ist" < "2026-10-26" ]]; then
-            export TF_META_POST_NETWORKS=facebook
-            export TF_META_START_DATE=2026-10-20
-            echo "META_DIRECT_PUBLISH_TARGET=FACEBOOK_ONLY"
-            echo "INSTAGRAM_METRICOOL_OLD_QUEUE=CANCELED_TO_DRAFTS"
-          else
-            export TF_META_POST_NETWORKS=instagram,facebook
-            export TF_META_START_DATE=2026-10-26
-            echo "META_DIRECT_PUBLISH_TARGET=INSTAGRAM_AND_FACEBOOK"
-          fi
+          export TF_META_POST_NETWORKS=instagram,facebook
+          export TF_META_START_DATE=2026-10-21
+          echo "META_DIRECT_PUBLISH_TARGET=INSTAGRAM_AND_FACEBOOK"
+          echo "INSTAGRAM_METRICOOL_OLD_QUEUE=CANCELED_TO_DRAFTS"
           # Recheck same product IDs, ranks, real displayed prices and sources
           # immediately before Meta publishing: skip if final JPEG became stale.
           python automation/verify_price_before_meta_publish_v1.py \
@@ -293,5 +288,5 @@ jobs:
         run: |
           echo "CREATIVE_ARTIFACT_UPLOADED=YES"
           echo "METRICOOL_UNATTENDED_PUBLICATION=DISABLED"
-          echo "META_DIRECT_PUBLICATION=SIX_DAILY_SLOTS_FB_ONLY_OCT20_TO25_THEN_IG_FB_FROM_OCT26"
+          echo "META_DIRECT_PUBLICATION=SIX_DAILY_SLOTS_IG_AND_FB_FROM_OCT21"
           echo "SOURCE_WEBSITE_APPS_MODIFIED=NO"

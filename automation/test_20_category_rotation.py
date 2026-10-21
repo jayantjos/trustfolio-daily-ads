@@ -167,7 +167,7 @@ class TwentyCategoryRotationTests(unittest.TestCase):
         self.assertIn("TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '6'",workflow)
         self.assertIn("github.event_name == 'schedule'",workflow)
         self.assertIn("python automation/verify_price_before_meta_publish_v1.py",workflow)
-        self.assertIn("2026-10-26",workflow)
+        self.assertIn("2026-10-21",workflow)
         self.assertIn("TF_AUTO_POST_ENABLED",workflow)
         cron=['0 3 * * *','0 5 * * *','0 8 * * *',
               '30 10 * * *','30 13 * * *','30 15 * * *']
