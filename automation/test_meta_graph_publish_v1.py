@@ -96,12 +96,12 @@ class DirectMetaSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(m.PublishingBlocked,"cannot both"):
             m.load_env(env=e)
 
-    def test_do_not_duplicate_old_october_metricool_queue(self):
+    def test_early_crossposting_date_does_not_reuse_old_metricool_queue(self):
         e=enabled_env()
         e.pop("TF_META_START_DATE")
         with patch.object(m,"datetime") as dt:
             dt.now.return_value.date.return_value=date(2026,10,17)
-            with self.assertRaisesRegex(m.PublishingBlocked,"Waiting for Metricool"):
+            with self.assertRaisesRegex(m.PublishingBlocked,"2026-10-21"):
                 m.load_env(env=e)
 
     def test_account_or_product_identity_invalid_fails_closed(self):
