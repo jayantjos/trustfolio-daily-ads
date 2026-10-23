@@ -1,7 +1,7 @@
 {
   "campaign_id": "tfauto-9bc252e843af179618",
+  "meta_photo_or_post_id": "122211225572911225",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-9bc252e843af179618.jpg",
-  "reserved_at": "2026-10-23T15:18:20.187665+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-10-23T15:18:26.848038+05:30",
+  "status": "api_accepted_published"
 }
