@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   render-qa-schedule:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && github.event.head_commit.message == 'TrustFolio authorized one-shot filtered-link crosspost 2026-10-25'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && github.event.head_commit.message == 'TrustFolio authorized ceiling-fans CTA one-shot 2026-10-25'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -62,15 +62,12 @@ jobs:
           policy=json.loads(Path('automation/campaigns.json').read_text())
           entries={e['site_slug']:e for e in policy['rotation']['categories']}
           candidates=[
-            ('mixer-grinder',6000),('induction-cooktop',5000),
-            ('water-purifier',25000),('tablets',35000),
-            ('microwave-oven',18000),('desktop-computers',65000),
-            ('ceiling-fans',5000),('geyser-water-heater',12000),
-            ('cooler',12000),('air-conditioner',45000),
-            ('speakers',10000),('smart-tvs',40000),
+            ('ceiling-fans',5000),('induction-cooktop',5000),
+            ('geyser-water-heater',12000),('cooler',12000),
+            ('microwave-oven',18000),('tablets',35000),
+            ('speakers',10000),('air-conditioner',45000),
             ('fridge-refrigeration',35000),('washing-machines',35000),
-            ('laptops',75000),('drones',20000),('smartwatches',5000),
-            ('smart-phones',25000)]
+            ('smart-tvs',40000),('laptops',75000)]
           # The GitHub ledger is authoritative for already-published/attempted
           # official Meta posts. Fail closed if its status cannot be read.
           by_day={}
@@ -103,6 +100,12 @@ jobs:
                     if campaign_id(day,mode,category,amount,brand) in existing:
                       return True
             return False
+          # Never repeat this test when a previous successful or ambiguous
+          # attempt has reserved the same candidate in today's audit ledger.
+          today_reserved=by_day[today.isoformat()]
+          if any(campaign_id(today,'budget',cat,amount,'') in today_reserved
+                 for cat,amount in candidates):
+            raise SystemExit('One-shot candidate already reserved today; manual review required')
           eligible=None
           for category,budget in candidates:
             if previously_posted(category):
@@ -238,7 +241,7 @@ jobs:
         # Two candidates per mode/day: budget, brand+budget, Top-5 comparison.
         # Website must return all five same-brand products or brand slot skips.
         # Old Oct 20-25 Metricool queue was canceled into drafts; no duplicate posting.
-        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'push' && github.event.head_commit.message == 'TrustFolio authorized one-shot filtered-link crosspost 2026-10-25'
+        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'push' && github.event.head_commit.message == 'TrustFolio authorized ceiling-fans CTA one-shot 2026-10-25'
         env:
           TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
