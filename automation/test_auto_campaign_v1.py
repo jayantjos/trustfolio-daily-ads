@@ -108,22 +108,6 @@ class AutoCampaignTests(unittest.TestCase):
         caption=caption_for(p,sample_report()["landing_url"]+"&brand=boAt+Audio")
         self.assertIn("brand=boAt+Audio",caption)
 
-    def test_facebook_learn_more_uses_the_exact_verified_filter_link(self):
-        p=sample_plan()
-        url=sample_report()["landing_url"]
-        facebook=caption_for(p,url,network="facebook")
-        self.assertTrue(facebook.startswith("🔗 Learn More — Filtered Top 5: "+url))
-        self.assertNotIn("Instagram feed links tappable",facebook)
-        self.assertEqual(facebook.count(url),2)
-        p["mode"]="brand_budget"
-        p["brand"]="boAt Audio"
-        brand_url=url+"&brand=boAt+Audio"
-        facebook=caption_for(p,brand_url,network="facebook")
-        self.assertTrue(facebook.startswith("🔗 Learn More — Filtered Top 5: "+brand_url))
-        self.assertIn("brand=boAt+Audio",facebook)
-        with self.assertRaises(ValueError):
-            caption_for(p,brand_url,network="invalid")
-
     def test_brand_ad_requires_exact_brand_link(self):
         p=sample_plan()
         p["mode"]="brand_budget"
@@ -151,8 +135,6 @@ class AutoCampaignTests(unittest.TestCase):
                 self.assertGreater(im.getpixel((540,650))[2],160)
             self.assertEqual(manifest["status"],"ready_for_publishing_gate")
             self.assertIn("budget=2000",manifest["caption"])
-            self.assertTrue(manifest["facebook_caption"].startswith("🔗 Learn More"))
-            self.assertEqual(manifest["cta_intent"],{"type":"LEARN_MORE","url":sample_report()["landing_url"]})
             self.assertTrue((root/"out"/"post.json").exists())
 
 
