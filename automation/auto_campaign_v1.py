@@ -193,7 +193,9 @@ def check_report(plan, report):
     return ids
 
 
-def caption_for(plan, landing_url):
+def caption_for(plan, landing_url, *, network="instagram"):
+    if network not in ("instagram", "facebook"):
+        raise ValueError("Unsupported organic posting network")
     category = plan["category"].replace("-", " ").title()
     brand = plan["brand"]
     budget = format(plan["budget"],",")
@@ -211,15 +213,22 @@ def caption_for(plan, landing_url):
     if brand: hub_filters["brand"] = brand
     hub = ("https://media.trustfolio.in/trustfolio-links/index.html?"
            + urlencode(hub_filters))
-    # Instagram captions are not clickable. The brand's bio needs a one-time
-    # profile Links update; do not claim it is active until verified.
-    return (f"✨ {title}\n\n{body}\n\n"
+    # Organic Page photos cannot attach a native LEARN_MORE button via /photos.
+    # Put the *verified per-campaign filter URL* first on Facebook; keep the
+    # existing IG bio guidance because Instagram feed captions are not tappable.
+    facebook_lead = f"🔗 Learn More — Filtered Top 5: {landing_url}\n\n" if network == "facebook" else ""
+    network_hint = (
+        "Instagram feed links tappable nahi hote. Link copy karo; "
+        "bio link activate hone ke baad profile se direct open karo.\n\n"
+        if network == "instagram" else
+        "Tap the Learn More link above for this exact category, budget and brand.\n\n"
+    )
+    return (facebook_lead + f"✨ {title}\n\n{body}\n\n"
             f"🔎 Filtered results: {landing_url}\n"
             f"🔗 Website + app quick links: {hub}\n"
             "📲 Android app: https://play.google.com/store/apps/details?id=com.trustfolio.app\n"
-            "Instagram feed links tappable nahi hote. Link copy karo; "
-            "bio link activate hone ke baad profile se direct open karo.\n\n"
-            "Prices, availability aur ranking badal sakte hain; buy karne se pehle verify karo.\n\n"
+            + network_hint
+            + "Prices, availability aur ranking badal sakte hain; buy karne se pehle verify karo.\n\n"
             + tags)
 
 
@@ -245,6 +254,7 @@ def package_assets(plan, report, original_png, output_dir):
         if verify.size!=(1080,1350):
             raise ValueError("Invalid Instagram image")
     content = caption_for(plan, report["landing_url"])
+    facebook_content = caption_for(plan, report["landing_url"], network="facebook")
     metadata = {
         "campaign_id":plan["campaign_id"],"mode":plan["mode"],
         "date_ist":plan["date_ist"],"category":plan["category"],
@@ -252,6 +262,8 @@ def package_assets(plan, report, original_png, output_dir):
         "network":"instagram","instagram_account":"trustfolio3",
         "ranked_product_ids":ids,"ranking_observed_at":report.get("source_observed_at"),
         "landing_url":report["landing_url"],"caption":content,
+        "facebook_caption":facebook_content,
+        "cta_intent":{"type":"LEARN_MORE","url":report["landing_url"]},
         "source_renderer":report["renderer"],"geometry_errors":[],
         "output_jpg":jpg.name,"size":[1080,1350],
         "status":"ready_for_publishing_gate","publication_status":"not_published",

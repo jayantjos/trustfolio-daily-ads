@@ -122,6 +122,20 @@ class DirectMetaSafetyTests(unittest.TestCase):
         self.assertEqual(m.validate_approved_manifest(qa_manifest()),
                          "tfauto-"+"b"*18)
 
+    def test_learn_more_destination_cannot_be_changed_after_qa(self):
+        good=qa_manifest()
+        good["cta_intent"]={"type":"LEARN_MORE","url":good["landing_url"]}
+        good["facebook_caption"]="🔗 Learn More — Filtered Top 5: "+good["landing_url"]
+        self.assertEqual(m.validate_approved_manifest(good),good["campaign_id"])
+        bad=dict(good)
+        bad["cta_intent"]={"type":"LEARN_MORE","url":"https://www.trustfolio.in/category/laptops/products?budget=90000"}
+        with self.assertRaisesRegex(m.PublishingBlocked,"Learn More destination"):
+            m.validate_approved_manifest(bad)
+        bad=dict(good)
+        bad["facebook_caption"]="🔗 Learn More — Filtered Top 5: https://evil.example.com"
+        with self.assertRaisesRegex(m.PublishingBlocked,"Facebook Learn More"):
+            m.validate_approved_manifest(bad)
+
     def test_access_token_type_must_be_actual_page_not_user(self):
         cfg={"version":"v25.0","page_id":m.EXPECTED_PAGE_ID,"page_token":"secret"}
         with patch.object(m,"_graph",return_value={"id":m.EXPECTED_PAGE_ID,
@@ -224,6 +238,21 @@ class DirectMetaSafetyTests(unittest.TestCase):
                         "caption","instagram","tfauto-"+"c"*18,"a"*40)
         self.assertEqual(calls,["1791/media","1000","1791/media_publish"])
         self.assertEqual(output["media_id"],"2000")
+
+    def test_publishing_selects_facebook_cta_caption_without_changing_ig(self):
+        item=qa_manifest()
+        item["facebook_caption"]="🔗 Learn More — Filtered Top 5: "+item["landing_url"]
+        config={"networks":("instagram","facebook"),"max_posts":2}
+        with patch.object(m,"_check_media"),patch.object(m,"load_env",return_value=config), \
+             patch.object(m,"confirm_page_token_type"), \
+             patch.object(m,"confirm_page_identity",return_value="1791"), \
+             patch.object(m,"check_instagram_quota",return_value={"quota_usage":0,"quota_total":50}), \
+             patch.object(m,"reserve",return_value="sha"), \
+             patch.object(m,"publish_instagram",return_value={"status":"ok"}) as ig, \
+             patch.object(m,"publish_facebook",return_value={"status":"ok"}) as fb:
+            m.publish_verified(item,"https://media.trustfolio.in/ad.jpg","local.jpg")
+            self.assertEqual(ig.call_args.args[3],item["caption"])
+            self.assertEqual(fb.call_args.args[2],item["facebook_caption"])
 
     def test_approved_media_byte_check_before_any_graph_calls(self):
         with patch.object(m,"_check_media",side_effect=m.PublishingBlocked("SHA mismatch")), \
