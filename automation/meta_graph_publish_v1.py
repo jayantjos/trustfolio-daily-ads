@@ -152,20 +152,6 @@ def validate_approved_manifest(manifest):
     caption=manifest.get("caption") or ""
     if not (50<=len(caption)<=2100) or "play.google.com/store/apps/details?id=com.trustfolio.app" not in caption:
         raise PublishingBlocked("No verified caption/app link or exceeds conservative Instagram limit")
-    # CTA intent is metadata, NOT a claim that organic posts have a native CTA.
-    # Never permit a changed/different destination to bypass rendered-ad QA.
-    intent=manifest.get("cta_intent")
-    if intent is not None and (
-        not isinstance(intent,dict) or intent.get("type")!="LEARN_MORE"
-        or intent.get("url")!=manifest.get("landing_url")
-    ):
-        raise PublishingBlocked("Learn More destination differs from approved filters")
-    fb_caption=manifest.get("facebook_caption")
-    if fb_caption is not None and (
-        not isinstance(fb_caption,str) or not fb_caption.startswith("🔗 Learn More")
-        or str(manifest["landing_url"]) not in fb_caption or len(fb_caption)>5000
-    ):
-        raise PublishingBlocked("Facebook Learn More caption lacks approved filtered URL")
     return key
 
 
@@ -371,10 +357,7 @@ def publish_verified(manifest,media_url,local_jpg,*,env=None):
             results.append(publish_instagram(cfg,igid,media_url,manifest["caption"],
                                              network,key,sha))
         elif network=="facebook":
-            # Facebook Page photo retains the approved image. Its first caption
-            # line is a clickable verified filter URL, not a paid-ad CTA button.
-            facebook_caption=manifest.get("facebook_caption") or manifest["caption"]
-            results.append(publish_facebook(cfg,media_url,facebook_caption,
+            results.append(publish_facebook(cfg,media_url,manifest["caption"],
                                             network,key,sha))
     return results
 
