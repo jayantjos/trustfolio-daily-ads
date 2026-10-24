@@ -4,6 +4,11 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/one-shot-filtered-learn-more-test-20261025.yml'
+  pull_request:
+    types: [opened]
+    branches: [main]
+    paths:
+      - '.github/workflows/one-shot-filtered-learn-more-test-20261025.yml'
 
 permissions:
   contents: write
@@ -13,7 +18,7 @@ concurrency:
 
 jobs:
   render-qa-schedule:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && github.event.head_commit.message == 'TrustFolio authorized one-shot filtered-link crosspost 2026-10-25'
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push' && github.event.head_commit.message == 'TrustFolio authorized one-shot filtered-link crosspost 2026-10-25') || (github.event_name == 'pull_request' && github.event.action == 'opened' && github.event.pull_request.head.ref == 'one-shot-meta-post-test-20261025' && github.event.pull_request.base.ref == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -91,6 +96,12 @@ jobs:
                 r'(?:instagram|facebook)-(tfauto-[a-f0-9]{18})[.]json',
                 str(item.get('name',''))))}
             cursor+=timedelta(days=1)
+          # A competing earlier push job may have already published this test.
+          # The shared concurrency lock serializes runs; never publish twice.
+          current=by_day[today.isoformat()]
+          if any(campaign_id(today,'budget',cat,amount,'') in current
+                 for cat,amount in candidates):
+            raise SystemExit('One-shot candidate already reserved today; no second post')
           def previously_posted(category):
             e=entries[category]
             for day,existing in by_day.items():
@@ -238,7 +249,7 @@ jobs:
         # Two candidates per mode/day: budget, brand+budget, Top-5 comparison.
         # Website must return all five same-brand products or brand slot skips.
         # Old Oct 20-25 Metricool queue was canceled into drafts; no duplicate posting.
-        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'push' && github.event.head_commit.message == 'TrustFolio authorized one-shot filtered-link crosspost 2026-10-25'
+        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && ((github.event_name == 'push' && github.event.head_commit.message == 'TrustFolio authorized one-shot filtered-link crosspost 2026-10-25') || (github.event_name == 'pull_request' && github.event.action == 'opened' && github.event.pull_request.head.ref == 'one-shot-meta-post-test-20261025' && github.event.pull_request.base.ref == 'main'))
         env:
           TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
