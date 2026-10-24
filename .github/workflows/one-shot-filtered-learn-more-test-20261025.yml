@@ -88,7 +88,7 @@ jobs:
               raise RuntimeError('Malformed publication ledger')
             by_day[day]={match.group(1) for item in result
               if (match:=re.fullmatch(
-                r'(?:instagram|facebook)-(tfauto-[a-f0-9]{18})\\.json',
+                r'(?:instagram|facebook)-(tfauto-[a-f0-9]{18})[.]json',
                 str(item.get('name',''))))}
             cursor+=timedelta(days=1)
           def previously_posted(category):
@@ -116,14 +116,14 @@ jobs:
             print('SKIP_NO_VERIFIED_TOP_FIVE='+category)
           if eligible is None:
             raise SystemExit('No new category with five live-ranked products; no social post attempted')
-          Path('campaign/plan.json').write_text(json.dumps(eligible,indent=2)+'\\n')
+          Path('campaign/plan.json').write_text(json.dumps(eligible,indent=2)+'\n')
           print('SELECTED_NEW_CATEGORY='+eligible['category'])
           print('SELECTED_BUDGET_INR='+str(eligible['budget']))
           print('SELECTED_CAMPAIGN_ID='+eligible['campaign_id'])
           with open(os.environ['GITHUB_OUTPUT'],'a') as out:
-            out.write('eligible=true\\n')
-            out.write('campaign_id='+eligible['campaign_id']+'\\n')
-            out.write('publish=false\\n')
+            out.write('eligible=true\n')
+            out.write('campaign_id='+eligible['campaign_id']+'\n')
+            out.write('publish=false\n')
           PY
 
       - name: Authenticate against exact authorized VPS (ads folder only)
