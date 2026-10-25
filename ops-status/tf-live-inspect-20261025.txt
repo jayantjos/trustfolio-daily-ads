@@ -1,0 +1,147 @@
+FILE services/LivePriceService.js COUNT 162
+LINE 3 * (worker-trustfolio-fetch-cloudflare). Amazon by ASIN, Flipkart by product link; Croma has no live price.
+LINE 5 const mongoose = require('mongoose');
+LINE 9 REDACTED
+LINE 16 /** What the Worker should fetch for a listing; null = no live price (Croma, missing link). */
+LINE 47 body: JSON.stringify({ items: [item], useCache: true }),
+LINE 60 const priced = (result.status === 'ok' || result.status === 'out_of_stock') && result.priceNum > 0;
+LINE 65 price_inr: priced ? result.priceNum : prev.price_inr ?? null,
+LINE 73 * Returns live price info for the given listing ids. Listings priced within FRESH_MS are served
+LINE 74 * from Mongo; the rest are fetched from the Worker in parallel and saved under `live`.
+LINE 78 .filter((id) => mongoose.Types.ObjectId.isValid(id))
+LINE 80 .map((id) => new mongoose.Types.ObjectId(id));
+LINE 84 const col = mongoose.connection.collection('my_products');
+LINE 91 platform_product_id: 1, price_inr: 1, live: 1,
+LINE 117 // Out of stock listings are removed from my_products. Only a confirmed out_of_stock result counts;
+LINE 119 const outOfStock = fetched.filter((d) => d.live.status === 'out_of_stock');
+LINE 125 await mongoose.connection.collection('my_products_deleted').bulkWrite(
+LINE 133 deleted_reason: 'out_of_stock',
+LINE 140 await col.deleteMany({ _id: { $in: full.map((doc) => doc._id) } });
+LINE 147 kept.map((d) => ({ updateOne: { filter: { _id: d._id }, update: { $set: { live: d.live } } } })),
+LINE 156 stored_price_inr: d.price_inr ?? null,
+FILE services/CategoryService.js COUNT 580
+LINE 10 const { buildCategoryFilter } = require('../utils/categoryMongoFilter');
+LINE 48 $or: [{ isActive: true }, { isActive: { $exists: false } }, { isActive: null }],
+LINE 70 return Category.findById(id);
+LINE 107 // Use native collection so MongoDB gets the full $or, including product_category and category_slug.
+LINE 108 // Mongoose 8+ strictQuery strips fields not in the schema and can return zero results for valid data.
+LINE 110 isActive: { $ne: false },
+LINE 138 updateOne: {
+LINE 192 // Allow updating by either Mongo _id or slug to be more tolerant of admin UI usage
+LINE 193 let existing = await Category.findById(idOrSlug);
+LINE 217 return Category.findByIdAndUpdate(existing._id, updated, { new: true });
+LINE 221 const category = await Category.findById(id);
+LINE 223 await Category.findByIdAndDelete(id);
+LINE 228 const category = await Category.findById(id);
+LINE 232 return category.save();
+LINE 240 return category.save();
+LINE 243 async function updateCategoryPriceRange(categorySlug) {
+LINE 252 $or: [{ isActive: true }, { isActive: { $exists: false } }, { isActive: null }],
+LINE 268 currentPriceValue: 1,
+LINE 271 price_inr: 1,
+LINE 284 if (Number.isFinite(p.currentPriceValue) && p.currentPriceValue > 0) {
+LINE 285 price = p.currentPriceValue;
+LINE 288 } else if (Number.isFinite(p.price_inr) && p.price_inr > 0) {
+LINE 289 price = p.price_inr;
+LINE 295 || extractPriceFromString(String(p.price_inr || ''));
+LINE 312 category.price_ranges = [
+LINE 321 return category.save();
+LINE 324 async function updateAllCategoryPriceRanges() {
+LINE 329 const updated = await updateCategoryPriceRange(cat.slug);
+LINE 535 await existing.save();
+LINE 543 const priceRanges = Array.isArray(category.price_ranges) ? category.price_ranges : [];
+LINE 574 updateCategoryPriceRange,
+LINE 575 updateAllCategoryPriceRanges,
+FILE controllers/ProductController.js COUNT 867
+LINE 1 const mongoose = require('mongoose');
+LINE 11 const { escapeRegex, buildCategoryFilter, buildExactCategoryFilter } = require('../utils/categoryMongoFilter');
+LINE 23 function resolveEffectiveCategoryPriceRange(normalizedCategory, guardedProducts, min_price, max_price) {
+LINE 48 return mongoose.connection.readyState === 1;
+LINE 53 { isActive: true },
+LINE 54 { isActive: { $exists: false } },
+LINE 55 { isActive: null },
+LINE 61 currentPriceValue: 1,
+LINE 65 price_inr: 1,
+LINE 79 const livePriceBoundsCache = new Map();
+LINE 81 // TOP_PRODUCTS_RESPONSE_CACHE_V1
+LINE 82 // Mobile app may repeat same category/budget request; cache short-lived final response.
+LINE 83 const topProductsResponseCache = new Map();
+LINE 85 function topProductsResponseCacheTtlMs() {
+LINE 86 REDACTED
+LINE 90 /** Bump when bounds logic changes so TTL cache cannot return pre-change min/max. */
+LINE 91 const PRICE_BOUNDS_CACHE_REVISION = 'cat-guard-v2';
+LINE 93 function livePriceBoundsCacheTtlMs() {
+LINE 94 REDACTED
+LINE 155 const hasIsActiveParam = req.query.is_active !== undefined;
+LINE 156 const is_active = hasIsActiveParam ? req.query.is_active === 'true' : null;
+LINE 160 if (is_active !== null) filter.isActive = is_active;
+LINE 185 const range = resolveEffectiveCategoryPriceRange(
+LINE 235 // apply pagination in MongoDB instead of loading the full category in Node.js.
+LINE 244 const range = resolveEffectiveCategoryPriceRange(
+LINE 261 const range = resolveEffectiveCategoryPriceRange(
+LINE 307 $or: [{ isActive: true }, { isActive: { $exists: false } }, { isActive: null }],
+LINE 315 $or: [{ isActive: true }, { isActive: { $exists: false } }, { isActive: null }],
+LINE 379 if (mongoose.Types.ObjectId.isValid(asinInput)) {
+LINE 380 or.push({ _id: new mongoose.Types.ObjectId(asinInput) });
+LINE 397 const cacheKey = category
+LINE 398 ? `${category.toLowerCase()}:${PRICE_BOUNDS_CACHE_REVISION}`
+LINE 399 : `__all__:${PRICE_BOUNDS_CACHE_REVISION}`;
+LINE 400 const ttl = livePriceBoundsCacheTtlMs();
+LINE 402 const hit = livePriceBoundsCache.get(cacheKey);
+LINE 421 livePriceBoundsCache.set(cacheKey, { at: Date.now(), value });
+LINE 428 res.set('Cache-Control', 'no-store');
+LINE 434 apiResponse(true, 'Database not connected. No live price bounds available.', {
+LINE 457 }).select('slug category_slug name category min_price max_price price_ranges').lean();
+LINE 472 cached: true,
+LINE 483 // No live prices; fall back to category metadata if available
+LINE 485 const rangeEnds = Array.isArray(categoryDoc.price_ranges)
+LINE 486 ? categoryDoc.price_ranges
+LINE 540 // /products/top also needs catalogPriceRange; use saved category metadata first.
+LINE 631 const topCacheKey = `cat-guard-live-budget-v1|${normalizedCategory}|${Math.floor(Number(budget))}|${limit}|${brandKey}`;
+LINE 632 const topCacheHit = topProductsResponseCache.get(topCacheKey);
+LINE 633 if (topCacheHit && Date.now() - topCacheHit.at < Math.min(topProductsResponseCacheTtlMs(), 30000)) {
+LINE 634 return res.json(topCacheHit.value);
+LINE 641 apiResponse(false, 'Brand is not available for this category. Select a brand from the list.')
+LINE 662 const pr = Number(p.price_inr);
+LINE 776 topProductsResponseCache.set(topCacheKey, { at: Date.now(), value: responseBody });
+LINE 790 if (!mongoose.Types.ObjectId.isValid(id)) {
+LINE 794 const product = await MyProduct.findById(id).lean();
+LINE 799 await MyProduct.deleteOne({ _id: id });
+LINE 802 await Product.deleteMany({ asin: product.asin });
+LINE 818 if (!mongoose.Types.ObjectId.isValid(id)) {
+LINE 822 const product = await MyProduct.findById(id);
+LINE 827 const currentActive = product.isActive !== false;
+LINE 830 product.isActive = nextActive;
+LINE 833 await product.save();
+LINE 836 await Product.updateMany(
+LINE 851 isActive: nextActive,
+FILE routes/index.js COUNT 140
+LINE 38 // Admin (requireDb = return 503 immediately if MongoDB not connected)
+LINE 51 router.post('/live-prices', LivePriceController.getLivePrices);
+LINE 60 router.post('/categories/update-all-price-ranges', CategoryController.updateAllCategoryPriceRanges);
+LINE 61 router.post('/categories/:slug/update-price-range', CategoryController.updateCategoryPriceRange);
+LINE 68 router.post('/admin/categories/apply-default-price-ranges', AdminAuthController.requireDb, CategoryController.applyDefaultPriceRanges);
+FILE server.js COUNT 34
+LINE 3 const connectDB = require('./config/mongo');
+LINE 11 // Start server first so backend is always up; MongoDB connects in background
+LINE 18 console.log('MongoDB ready. Admin and API can use the database.');
+LINE 33 console.warn('MongoDB not connected. Start MongoDB or set MONGODB_URI in .env. Error:', err.message);
+FILE app.js COUNT 31
+FILE utils/resolveProductPrice.js COUNT 15
+LINE 5 * Use only MongoDB my_products.price.
+LINE 6 * Do not prefer stale mirror/legacy fields like price_inr, currentPriceValue,
+FILE entities/MyProduct.js COUNT 184
+LINE 1 const mongoose = require('mongoose');
+LINE 6 const myProductSchema = new mongoose.Schema({
+LINE 11 /** Python scraper and legacy uploads may set these; must exist on schema for queries (Mongoose strictQuery). */
+LINE 17 currentPriceValue: { type: Number, min: 0 },
+LINE 19 price_inr: { type: Number, min: 0 },
+LINE 130 isActive: { type: Boolean, default: true },
+LINE 144 // TTL anchor – cleaned by MongoDB + fallback job
+LINE 163 // Ensure findOneAndUpdate-based upserts refresh lastSeenAt / expiresAt
+LINE 164 myProductSchema.pre('findOneAndUpdate', function (next) {
+LINE 177 // TTL index – MongoDB will automatically delete expired docs
+LINE 179 myProductSchema.index({ isActive: 1, category: 1, scrapedAt: -1 });
+LINE 180 myProductSchema.index({ category: 1, isActive: 1, currentPriceValue: 1 });
+LINE 184 module.exports = mongoose.model('MyProduct', myProductSchema, 'my_products');
+END_INSPECTION
