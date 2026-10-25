@@ -1,0 +1,108 @@
+name: Inspect TrustFolio product price boundaries - 2026-10-25
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/trustfolio-price-range-diagnose-20261025.yml'
+permissions:
+  contents: write
+jobs:
+  read-only-inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Authenticate approved VPS
+        env:
+          TF_KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          TF_HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          TF_HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          TF_USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$TF_HOST" = '200.234.47.87'
+          test "$TF_USER" = 'scraperuser'
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          test "$TF_HOSTKEY" = "$expected"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$TF_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$TF_HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Read only code/process discovery; no credentials or env values
+        env:
+          TF_HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          TF_USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 "$TF_USER@$TF_HOST" 'bash -s' > price-range-diagnostic.txt 2>&1 <<'REMOTE'
+          set -euo pipefail
+          export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+          if ! command -v pm2 >/dev/null 2>&1 && test -f "$HOME/.nvm/nvm.sh"; then . "$HOME/.nvm/nvm.sh"; nvm use default >/dev/null 2>&1 || true; fi
+          pm2 jlist | python3 -c '
+          import json,sys,os,re,pathlib,subprocess
+          p=json.load(sys.stdin)
+          roots=set()
+          for app in p:
+              n=app.get("name","")
+              if not n.startswith("trustfolio"):continue
+              e=app.get("pm2_env") or {}
+              cwd=e.get("pm_cwd") or ""
+              target=e.get("pm_exec_path") or ""
+              print("APP",n,"STATE",e.get("status"),"CWD",cwd,"SCRIPT",target)
+              if cwd:roots.add(cwd)
+          pat=re.compile(r"minPrice|maxPrice|minimumPrice|maximumPrice|priceRange|price_range|price_min|price_max|price_inr|priceINR|distinct\(|aggregate\(|watch\(|changeStream|category.*price|price.*category|cache.*(price|categor)",re.I)
+          exclude={"node_modules",".git",".next","dist","build","coverage","venv",".venv","out","public","static","assets","logs",".cache","tmp"}
+          exts={".js",".ts",".tsx",".mjs",".cjs",".json",".py"}
+          for root in sorted(roots):
+              print("PROJECT_ROOT",root)
+              r=pathlib.Path(root)
+              githead=r/".git"/"HEAD"
+              if githead.exists():print("GIT_HEAD",githead.read_text().strip()[:150])
+              for package in [r/"package.json",r/"backend"/"package.json",r/"frontend"/"package.json"]:
+                  if package.exists():
+                      try:
+                          j=json.loads(package.read_text())
+                          print("PKG",str(package),"NAME",j.get("name"),"SCRIPTS",json.dumps(j.get("scripts",{}))[:1000])
+                      except Exception: pass
+              matched=0
+              seen=0
+              for base,dirs,files in os.walk(root):
+                  depth=pathlib.Path(base).relative_to(r).parts
+                  dirs[:]=[d for d in dirs if d not in exclude and not d.startswith(".") and len(depth)<5]
+                  for fname in files:
+                      path=pathlib.Path(base)/fname
+                      if path.suffix not in exts or path.name.startswith(".") or path.stat().st_size>250000:continue
+                      seen+=1
+                      try:lines=path.read_text("utf-8").splitlines()
+                      except Exception:continue
+                      hits=[(i+1,line.strip()) for i,line in enumerate(lines) if pat.search(line)]
+                      if hits:
+                          matched+=1
+                          print("MATCH_FILE",str(path.relative_to(r)),"LINES",len(lines),"HITS",len(hits))
+                          for i,line in hits[:12]:
+                              # sanitize potential source secret literals/URL parameters, limit output
+                              if re.search(r"mongodb(\+srv)?://|api[_-]?key|secret|token|password|authorization|process\.env",line,re.I):
+                                  print("LINE",i,"[sensitive source line omitted]")
+                              else:print("LINE",i,line[:250])
+                      if matched>=65:break
+                  if matched>=65:break
+              print("SOURCE_FILES_SCANNED",seen,"MATCHED",matched)
+          '
+          REMOTE
+      - name: Save sanitized diagnostic to repository for review
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if test ! -f price-range-diagnostic.txt; then echo 'DIAGNOSTIC_FAILED_BEFORE_SSH' > price-range-diagnostic.txt; fi
+          wc -c price-range-diagnostic.txt
+          base64_content="$(base64 -w0 price-range-diagnostic.txt)"
+          jq -n --arg message 'ops: capture short-lived read-only price range diagnostic' --arg content "$base64_content" '{message:$message,content:$content}' > /tmp/diagnostic.json
+          curl --fail-with-body -sS -X PUT \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            --data-binary @/tmp/diagnostic.json \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/ops-status/trustfolio-price-range-diagnostic-20261025.txt" >/dev/null
