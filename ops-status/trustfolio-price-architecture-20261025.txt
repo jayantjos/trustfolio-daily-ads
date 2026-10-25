@@ -1,0 +1,29 @@
+FILE node-backend/services/CategoryService.js LINES 580
+SYMBOL updateAllCategoryPriceRanges COUNT 2 LINES 324,575
+SYMBOL updateCategoryPriceRange COUNT 3 LINES 243,329,574
+SYMBOL price_ranges COUNT 32 LINES 163,163,170,204,204,211,312,345,356,367
+SYMBOL currentPriceValue COUNT 4 LINES 268,284,284,285
+SYMBOL price_inr COUNT 5 LINES 271,288,288,289,295
+FILE node-backend/controllers/ProductController.js LINES 867
+SYMBOL fetchLivePriceBoundsInner COUNT 3 LINES 395,477,573
+SYMBOL cache COUNT 2 LINES 82,90
+SYMBOL price_ranges COUNT 3 LINES 457,485,486
+SYMBOL currentPriceValue COUNT 1 LINES 61
+SYMBOL price_inr COUNT 2 LINES 65,662
+SYMBOL resolveProductPrice COUNT 6 LINES 8,8,194,252,269,275
+FILE node-backend/services/LivePriceService.js LINES 162
+SYMBOL price_inr COUNT 4 LINES 65,65,91,156
+FILE node-backend/server.js LINES 34
+FILE trustfolio-main/src/app/page.tsx LINES 580
+SYMBOL getCachedCategories COUNT 3 LINES 11,48,75
+SYMBOL saveCachedCategories COUNT 3 LINES 11,100,107
+SYMBOL localStorage COUNT 1 LINES 103
+SYMBOL setInterval COUNT 1 LINES 154
+FILE trustfolio-main/src/services/api.service.ts LINES 499
+SYMBOL price_ranges COUNT 7 LINES 15,141,141,142,147,151,158
+FILE trustfolio-main/src/utils/app_utils.ts LINES 49
+SYMBOL getCachedCategories COUNT 1 LINES 37
+SYMBOL saveCachedCategories COUNT 1 LINES 31
+SYMBOL localStorage COUNT 5 LINES 7,14,21,34,41
+FILE trustfolio-main/src/app/category/[slug]/page.tsx LINES 292
+SYMBOL price_ranges COUNT 1 LINES 27
