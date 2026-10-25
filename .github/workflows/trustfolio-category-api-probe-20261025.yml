@@ -1,0 +1,72 @@
+name: TrustFolio category API local probe
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/trustfolio-category-api-probe-20261025.yml']
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: SSH
+        env:
+          K: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          KH: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$H" = '200.234.47.87'; test "$U" = 'scraperuser'
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$K" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KH" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Read-only localhost probes and code metadata
+        env:
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$U@$H" 'bash -s' > category-api-probe.txt 2>&1 <<'REMOTE'
+          set -euo pipefail
+          export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+          if ! command -v pm2 >/dev/null 2>&1 && test -f "$HOME/.nvm/nvm.sh"; then . "$HOME/.nvm/nvm.sh"; nvm use default >/dev/null 2>&1 || true; fi
+          pm2 jlist | python3 -c '
+          import sys,json
+          a=json.load(sys.stdin)
+          for p in a:
+            if p.get("name") != "trustfolio-backend":continue
+            e=p.get("pm2_env") or {}
+            port=e.get("PORT") or e.get("env",{}).get("PORT")
+            print("BACKEND_PID",p.get("pid"),"PORT",port if str(port or "").isdigit() else "not_present","STATE",e.get("status"))
+          '
+          ss -lntp | grep -E ':(3000|3013|8081|8787|5000|4000) ' | sed -E 's/users:.*/process-present/' | head -15 || true
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path.home()/'apps/trustfolio/node-backend'
+          for name in ['server.js','routes/index.js','services/CategoryService.js']:
+            t=(p/name).read_text().splitlines()
+            print("FILE",name)
+            for k,line in enumerate(t,1):
+              if name=='server.js' and ('listen(' in line or 'routes' in line or 'PORT' in line):print("SERVER_MARKER_LINE",k)
+              if name=='routes/index.js' and ('update-all-price-ranges' in line or 'module.exports' in line):print("ROUTE_MARKER_LINE",k)
+              if name=='services/CategoryService.js' and 320<=k<=345 and any(x in line for x in ['updateAll','updateCategory','find(', 'for (', 'Promise','return','throw']):print("REFRESH_MARKER_LINE",k,"TYPE",line.strip().split('(')[0][:75])
+          PY
+          for port in 8081 8787 3000 3013; do
+            for url in "/api/categories" "/categories"; do
+              code="$(curl -sS -o /dev/null --max-time 4 -w '%{http_code}' "http://127.0.0.1:$port$url" 2>/dev/null || echo 'FAIL')"
+              echo "GET localhost:$port$url HTTP=$code"
+            done
+          done
+          REMOTE
+      - name: Save local probe
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          test -f category-api-probe.txt || echo PROBE_FAILED > category-api-probe.txt
+          b="$(base64 -w0 category-api-probe.txt)"
+          jq -n --arg message 'ops: temporary local category API probe' --arg content "$b" '{message:$message,content:$content}' >/tmp/post.json
+          curl --fail-with-body -sS -X PUT -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' --data-binary @/tmp/post.json "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/ops-status/trustfolio-category-api-probe-20261025.txt" > /dev/null
