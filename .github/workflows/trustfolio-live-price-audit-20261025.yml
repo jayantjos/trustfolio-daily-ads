@@ -1,0 +1,94 @@
+name: TrustFolio live price platform and deletion read-only audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/trustfolio-live-price-audit-20261025.yml'
+permissions:
+  contents: write
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Configure SSH for known VPS
+        env:
+          K: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          KH: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$H" = "200.234.47.87"
+          test "$U" = "scraperuser"
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          test "$KH" = "$expected"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$K" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KH" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Inspect backend and query sanitized MongoDB aggregates without worker requests
+        env:
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$U@$H" 'bash -s' > audit-result.txt 2>&1 <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          node <<'JS'
+          require('dotenv').config();
+          const mongoose=require('mongoose');
+          const connectDB=require('./config/mongo');
+          const fs=require('fs');
+          function safe(label,value){console.log(label+'='+JSON.stringify(value));}
+          (async()=>{
+            await connectDB();
+            const db=mongoose.connection.db;
+            const live=db.collection('my_products');
+            const deleted=db.collection('my_products_deleted');
+            safe('ACTIVE_TOTAL',await live.estimatedDocumentCount());
+            safe('DELETED_TOTAL',await deleted.estimatedDocumentCount());
+            const platforms=await live.aggregate([{$group:{_id:{$toLower:{$ifNull:['$platform','unknown']}},count:{$sum:1}}},{$sort:{count:-1}},{$limit:30}],{maxTimeMS:20000}).toArray();
+            safe('ACTIVE_PLATFORMS',platforms);
+            const deletedPlatforms=await deleted.aggregate([{$group:{_id:{platform:{$toLower:{$ifNull:['$platform','unknown']}},reason:{$ifNull:['$deleted_reason','unknown']}},count:{$sum:1},last:{$max:'$deleted_at'}}},{$sort:{count:-1}},{$limit:30}],{maxTimeMS:20000}).toArray();
+            safe('ARCHIVE_REASON_BY_PLATFORM',deletedPlatforms);
+            const last24=new Date(Date.now()-86400000);
+            const last7=new Date(Date.now()-7*86400000);
+            const status=await live.aggregate([{$group:{_id:{platform:{$toLower:{$ifNull:['$platform','unknown']}},status:{$ifNull:['$live.status','never_checked']}},count:{$sum:1},last:{$max:'$live.checked_at'},recent24h:{$sum:{$cond:[{$gte:['$live.checked_at',last24]},1,0]}},recent7d:{$sum:{$cond:[{$gte:['$live.checked_at',last7]},1,0]}}}},{$sort:{count:-1}},{$limit:60}],{maxTimeMS:25000}).toArray();
+            safe('LIVE_STATUS_PLATFORM',status);
+            const archive24=await deleted.countDocuments({deleted_at:{$gte:last24}});
+            const archive7=await deleted.countDocuments({deleted_at:{$gte:last7}});
+            safe('ARCHIVED_LAST_24H',archive24);safe('ARCHIVED_LAST_7D',archive7);
+            const sample=await deleted.find({}, {projection:{_id:1,deleted_at:1,deleted_reason:1,platform:1,live:1}}).sort({deleted_at:-1}).limit(15).toArray();
+            let trulyMissing=0;
+            for(const x of sample){const exists=await live.findOne({_id:x._id},{projection:{_id:1}});if(!exists)trulyMissing++;}
+            safe('RECENT_ARCHIVE_SAMPLE_SIZE',sample.length);
+            safe('RECENT_ARCHIVE_NOT_ACTIVE',trulyMissing);
+            safe('RECENT_ARCHIVE_REASONS',sample.map(x=>({platform:x.platform||'unknown',reason:x.deleted_reason||null,status:x.live?.status||null,at:x.deleted_at||null})));
+            const files=['services/LivePriceService.js','controllers/LivePriceController.js','routes/index.js','scripts/trustfolio-category-price-watcher.js'];
+            for(const file of files){
+              const s=fs.readFileSync(file,'utf8');
+              const lines=s.split('\n');
+              safe('CODE_FILE_'+file,{lines:lines.length,sha256:require('crypto').createHash('sha256').update(s).digest('hex').slice(0,16)});
+              const needles=file==='services/LivePriceService.js'?['function workerItem','function fetchLive','function isConfirmedUnavailable','function toLive','async function getLivePrices','const due','outOfStock','deleteMany','bulkWrite','fields.price','WORKER_URL','FRESH_MS']:file.includes('watcher')?['sourcePrice','relevant','updateAllCategoryPriceRanges','updateCategoryPriceRange','CHANGE_STREAM_ACTIVE']:['getLivePrices','/live-prices'];
+              for(const term of needles){const nums=lines.map((x,i)=>x.includes(term)?i+1:null).filter(Boolean).slice(0,12);if(nums.length)safe('SOURCE_REF_'+term,{file,lines:nums});}
+            }
+            await mongoose.disconnect();
+            console.log('READ_ONLY_AUDIT_COMPLETED=YES');
+          })().catch(e=>{console.error('AUDIT_ERROR='+e.name);process.exitCode=1});
+          JS
+          echo 'PROCESS_STATES:'
+          pm2 jlist | python3 -c 'import sys,json; a=json.load(sys.stdin); [print("PM2 "+p.get("name","")+" "+str(p.get("pm2_env",{}).get("status"))) for p in a if p.get("name","").startswith("trustfolio")]'
+          REMOTE
+      - name: Publish temporary sanitized verification report
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if test ! -f audit-result.txt; then echo 'AUDIT_FAILED_TO_RUN' > audit-result.txt; fi
+          wc -c audit-result.txt
+          b="$(base64 -w0 audit-result.txt)"
+          jq -n --arg message 'ops: temporary live price audit' --arg content "$b" '{message:$message,content:$content}' > /tmp/status.json
+          curl --fail-with-body -sS -X PUT -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $GH_TOKEN" --data-binary @/tmp/status.json "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/ops-status/trustfolio-live-price-audit-20261025.txt" >/dev/null
