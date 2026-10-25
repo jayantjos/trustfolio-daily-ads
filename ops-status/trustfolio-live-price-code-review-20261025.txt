@@ -1,0 +1,262 @@
+FILE services/LivePriceService.js
+SECTION 1 41
+1 /**
+2  * Live store prices for my_products listings, fetched through the Cloudflare price Worker
+3  * (worker-trustfolio-fetch-cloudflare). Amazon by ASIN, Flipkart by product link; Croma has no live price.
+4  */
+5 const mongoose = require('mongoose');
+6 
+7 const WORKER_URL = (process.env.PRICE_WORKER_URL || '').replace(/\/+$/, '');
+8 const WORKER_KEY = process.env.PRICE_WORKER_KEY || '';
+9 const FRESH_MS = parseInt(process.env.LIVE_PRICE_FRESH_MS || '60000', 10); // a listing is fetched at most once per window
+10 const WORKER_TIMEOUT_MS = 6000;
+11 const MAX_IDS = 30;
+12 
+13 /** listing id -> pending fetch, shared by concurrent page views */
+14 const inflight = new Map();
+15 
+16 /** What the Worker should fetch for a listing; null = no live price (Croma, missing link). */
+17 function workerItem(doc) {
+18   const platform = String(doc.platform || '').toLowerCase();
+19   const url = String(doc.original_product_url || doc.clean_url || doc.url || doc.productUrl || '');
+20   const id = String(doc.platform_product_id || doc.asin || '');
+21 
+22   if (platform.includes('amazon')) {
+23     if (/^B0[A-Z0-9]{8}$/i.test(id)) return id.toUpperCase();
+24     const m = url.match(/\/(?:dp|gp\/product)\/(B0[A-Z0-9]{8})/i);
+25     return m ? m[1].toUpperCase() : null;
+26   }
+27 
+28   if (platform.includes('flipkart')) {
+29     if (!/flipkart\.com\/.+\/p\/itm/i.test(url)) return null;
+30     // One itm page covers several variants; the pid picks the exact one.
+31     if (!/[?&]pid=/i.test(url) && /^[A-Z]{3}[A-Z0-9]{13}$/.test(id) && !id.startsWith('ITM')) {
+32       return url + (url.includes('?') ? '&' : '?') + 'pid=' + id;
+33     }
+34     return url;
+35   }
+36 
+37   return null;
+38 }
+39 
+40 async function fetchLive(item) {
+41   const headers = { 'content-type': 'application/json' };
+SECTION 59 95
+59 function isConfirmedUnavailable(live) {
+60   if (!live || !live.status) return false;
+61   const status = String(live.status).toLowerCase().trim().replace(/[\s-]+/g, '_');
+62   // Network/HTTP failures are not proof of a permanently unavailable product.
+63   if (status === 'error' || status === 'timeout' || status === 'blocked') return false;
+64   if (['out_of_stock', 'sold_out', 'discontinued', 'permanently_unavailable'].includes(status)) return true;
+65   const availability = String(live.availability || '').toLowerCase();
+66   if (/discontinued|sold\s*out|out\s*of\s*stock|no\s*longer\s*available/.test(availability)) return true;
+67   // An ambiguous N/A, unavailable or missing listing must persist across TWO fresh checks.
+68   return (['not_available', 'unavailable', 'n/a', 'na', 'not_found'].includes(status)
+69     || /(^n\/a$|not\s*available|unavailable)/.test(availability))
+70     && (Number(live.unavailable_checks) || 0) >= 2;
+71 }
+72 
+73 function toLive(result, prev = {}) {
+74   const priced = (result.status === 'ok' || result.status === 'out_of_stock') && result.priceNum > 0;
+75   const s = String(result.status || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+76   const availabilityLabel = String(result.availability || '').toLowerCase();
+77   const unavailable = ['out_of_stock', 'sold_out', 'discontinued', 'permanently_unavailable',
+78     'not_available', 'unavailable', 'n/a', 'na', 'not_found'].includes(s)
+79     || /(^n\/a$|not\s*available|unavailable|sold\s*out|discontinued)/.test(availabilityLabel);
+80   return {
+81     status: result.status,
+82     checked_at: new Date(),
+83     // On blocks and timeouts keep the last good price so the page still shows one.
+84     price_inr: priced ? result.priceNum : prev.price_inr ?? null,
+85     priced_at: priced ? new Date() : prev.priced_at ?? null,
+86     in_stock: result.status === 'ok',
+87     availability: result.availability ?? null,
+88     unavailable_checks: unavailable ? (Number(prev.unavailable_checks) || 0) + 1 : 0,
+89   };
+90 }
+91 
+92 /**
+93  * Returns live price info for the given listing ids. Listings priced within FRESH_MS are served
+94  * from Mongo; the rest are fetched from the Worker in parallel and saved under `live`.
+95  */
+SECTION 116 197
+116 
+117   const now = Date.now();
+118   const due = WORKER_URL
+119     ? docs.filter((d) => {
+120       const checked = d.live && d.live.checked_at ? new Date(d.live.checked_at).getTime() : 0;
+121       return workerItem(d) && now - checked > FRESH_MS;
+122     })
+123     : [];
+124 
+125   const fetched = await Promise.all(
+126     due.map(async (d) => {
+127       const key = String(d._id);
+128       if (!inflight.has(key)) {
+129         const job = fetchLive(workerItem(d)).catch((e) => ({ status: 'error', error: e.message }));
+130         inflight.set(key, job.finally(() => inflight.delete(key)));
+131       }
+132       d.live = toLive(await inflight.get(key), d.live || {});
+133       return d;
+134     })
+135   );
+136 
+137   // Out of stock listings are removed from my_products. Only a confirmed out_of_stock result counts;
+138   // blocks, timeouts and errors never delete. A copy goes to my_products_deleted so a delete can be undone.
+139   const outOfStock = fetched.filter((d) => isConfirmedUnavailable(d.live));
+140   const deletedIds = new Set(outOfStock.map((d) => String(d._id)));
+141   if (outOfStock.length) {
+142     const full = await col.find({ _id: { $in: outOfStock.map((d) => d._id) } }).toArray();
+143     const deletedAt = new Date();
+144     if (full.length) {
+145       await mongoose.connection.collection('my_products_deleted').bulkWrite(
+146         full.map((doc) => ({
+147           replaceOne: {
+148             filter: { _id: doc._id },
+149             replacement: {
+150               ...doc,
+151               live: outOfStock.find((d) => d._id.equals(doc._id)).live,
+152               deleted_at: deletedAt,
+153               deleted_reason: String(outOfStock.find((d) => d._id.equals(doc._id)).live.status || 'unavailable'),
+154             },
+155             upsert: true,
+156           },
+157         })),
+158         { ordered: false }
+159       );
+160       await col.deleteMany({ _id: { $in: full.map((doc) => doc._id) } });
+161     }
+162   }
+163 
+164   const kept = fetched.filter((d) => !deletedIds.has(String(d._id)));
+165   if (kept.length) {
+166     await col.bulkWrite(
+167       kept.map((d) => {
+168         const fields = { live: d.live };
+169         // Persist actual successful live prices to MongoDB canonical catalog price.
+170         if (d.live.status === 'ok' && Number.isFinite(Number(d.live.price_inr))
+171             && Number(d.live.price_inr) > 0) {
+172           const price = Number(d.live.price_inr);
+173           fields.price = String(price);
+174           fields.price_inr = price;
+175           fields.currentPriceValue = price;
+176         }
+177         return { updateOne: { filter: { _id: d._id }, update: { $set: fields } } };
+178       }),
+179       { ordered: false }
+180     );
+181   }
+182 
+183   if (fetched.length) {
+184     // Clear in-process cache immediately after actual live-price writes.
+185     require('../controllers/ProductController').invalidatePriceCaches();
+186   }
+187 
+188   return docs.map((d) => ({
+189     id: String(d._id),
+190     platform: d.platform || null,
+191     supported: Boolean(workerItem(d)),
+192     stored_price_inr: d.price_inr ?? null,
+193     live: d.live || null,
+194     deleted: deletedIds.has(String(d._id)),
+195   }));
+196 }
+197 
+FILE scripts/trustfolio-category-price-watcher.js
+SECTION 70 113
+70       || Object.prototype.hasOwnProperty.call(fields, 'live')) {
+71     const live = change.fullDocument?.live;
+72     if (live?.status === 'ok') return live.price_inr;
+73   }
+74   return undefined;
+75 }
+76 
+77 function relevant(change) {
+78   if (change.operationType !== 'update') return true;
+79   const fields = [
+80     ...Object.keys(change.updateDescription?.updatedFields || {}),
+81     ...(change.updateDescription?.removedFields || [])
+82   ];
+83   return fields.some(f => /^(price|price_inr|currentPrice|current_price|live|isActive|category|product_category|category_slug)/.test(f));
+84 }
+85 
+86 async function onProductChange(change) {
+87   if (!relevant(change) || stopped) return;
+88   const fields = change.updateDescription?.updatedFields || {};
+89   const removed = change.updateDescription?.removedFields || [];
+90   const categoryChanged = Object.keys(fields).some(k => /^(category|category_slug|product_category)$/.test(k))
+91     || removed.some(k => /^(category|category_slug|product_category)$/.test(k));
+92   const doc = change.fullDocument;
+93   const slug = doc?.category_slug || doc?.category || doc?.product_category;
+94   if (change.operationType === 'delete' || categoryChanged || !slug) {
+95     enqueue(FULL); // old category may be unknown after deletion/reclassification
+96   } else {
+97     enqueue(slug);
+98   }
+99 
+100   // Direct MongoDB updates to price_inr or currentPriceValue must not leave
+101   // canonical 'price' stale. This does not perform an external live-price fetch.
+102   const raw = sourcePrice(change);
+103   if (raw === undefined || !change.documentKey?._id || !doc) return;
+104   const value = extractPriceFromString(raw);
+105   const col = mongoose.connection.collection('my_products');
+106   if (Number.isFinite(value) && value > 0) {
+107     const normalized = String(Math.round(value * 100) / 100);
+108     const updates = {};
+109     if (String(doc.price ?? '') !== normalized) updates.price = normalized;
+110     if (Number(doc.price_inr) !== Number(normalized)) updates.price_inr = Number(normalized);
+111     if (Object.keys(updates).length) {
+112       await col.updateOne({ _id: change.documentKey._id }, { $set: updates });
+113       log('CANONICAL_PRICE_SYNC', 'fields=' + Object.keys(updates).join(','));
+SECTION 120 170
+120     );
+121     log('CANONICAL_PRICE_INVALIDATED');
+122   }
+123 }
+124 
+125 function retryStream() {
+126   if (reconnect || stopped) return;
+127   streamOnline = false;
+128   reconnect = setTimeout(() => {
+129     reconnect = null;
+130     void startStream();
+131   }, 10000);
+132 }
+133 
+134 async function startStream() {
+135   if (stopped) return;
+136   try {
+137     if (mongoose.connection.readyState !== 1) await connectDB();
+138     if (stream) await stream.close().catch(() => {});
+139     stream = mongoose.connection.collection('my_products').watch(
+140       [{ $match: { operationType: { $in: ['insert', 'update', 'replace', 'delete'] } } }],
+141       { fullDocument: 'updateLookup', maxAwaitTimeMS: 2000 }
+142     );
+143     stream.on('change', event => {
+144       void onProductChange(event).catch(e => { log('CHANGE_HANDLER_ERROR', e.name); enqueue(FULL); });
+145     });
+146     stream.on('error', e => { log('CHANGE_STREAM_ERROR', e.name); retryStream(); });
+147     stream.on('close', () => { log('CHANGE_STREAM_CLOSED'); retryStream(); });
+148     streamOnline = true;
+149     log('CHANGE_STREAM_ACTIVE', 'my_products');
+150     enqueue(FULL); // reconcile changes missed during any outage
+151   } catch (e) {
+152     log('CHANGE_STREAM_START_ERROR', e.name);
+153     retryStream();
+154   }
+155 }
+156 
+157 async function main() {
+158   await connectDB();
+159   log('PRICE_SYNC_CONNECTED');
+160   await startStream();
+161   setInterval(() => enqueue(FULL), 15 * 60 * 1000).unref();
+162   // When stream is down, poll at 5-minute intervals instead.
+163   setInterval(() => { if (!streamOnline) enqueue(FULL); }, 5 * 60 * 1000).unref();
+164 }
+165 for (const signal of ['SIGINT', 'SIGTERM']) {
+166   process.on(signal, () => {
+167     stopped = true;
+168     if (timer) clearTimeout(timer);
+169     if (reconnect) clearTimeout(reconnect);
+170     void (async () => {
