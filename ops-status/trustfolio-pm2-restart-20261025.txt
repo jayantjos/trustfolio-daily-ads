@@ -1,0 +1,49 @@
+PRE_RESTART_PM2_LIST:
+┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 2  │ trustfolio-admin      │ default     │ 15.5.9  │ fork    │ 33509    │ 4D     │ 2    │ online    │ 0%       │ 200.1mb  │ scraper… │ disabled │
+│ 0  │ trustfolio-backend    │ default     │ 0.1.0   │ fork    │ 33494    │ 4D     │ 5    │ online    │ 0%       │ 121.7mb  │ scraper… │ disabled │
+│ 1  │ trustfolio-web        │ default     │ 15.4.11 │ fork    │ 33495    │ 4D     │ 2    │ online    │ 0%       │ 372.3mb  │ scraper… │ disabled │
+└────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+host metrics | cpu: 0.9% | ram usage: 25.9% | eth0: ⇓ 0.001mb/s ⇑ 0mb/s | disk: ⇓ 0mb/s ⇑ 0.004mb/s
+TARGETS_FOUND=trustfolio-backend,trustfolio-web
+RESTARTING=trustfolio-backend
+Use --update-env to update environment variables
+[PM2] Applying action restartProcessId on app [trustfolio-backend](ids: [ 0 ])
+[PM2] [trustfolio-backend](0) ✓
+┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 2  │ trustfolio-admin      │ default     │ 15.5.9  │ fork    │ 33509    │ 4D     │ 2    │ online    │ 6.3%     │ 200.1mb  │ scraper… │ disabled │
+│ 0  │ trustfolio-backend    │ default     │ 0.1.0   │ fork    │ 79189    │ 0s     │ 6    │ online    │ 0%       │ 25.6mb   │ scraper… │ disabled │
+│ 1  │ trustfolio-web        │ default     │ 15.4.11 │ fork    │ 33495    │ 4D     │ 2    │ online    │ 0%       │ 372.3mb  │ scraper… │ disabled │
+└────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+host metrics | cpu: 0.9% | ram usage: 25.9% | eth0: ⇓ 0.001mb/s ⇑ 0mb/s | disk: ⇓ 0mb/s ⇑ 0.004mb/s
+RESTARTING=trustfolio-web
+Use --update-env to update environment variables
+[PM2] Applying action restartProcessId on app [trustfolio-web](ids: [ 1 ])
+[PM2] [trustfolio-web](1) ✓
+┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 2  │ trustfolio-admin      │ default     │ 15.5.9  │ fork    │ 33509    │ 4D     │ 2    │ online    │ 0%       │ 199.7mb  │ scraper… │ disabled │
+│ 0  │ trustfolio-backend    │ default     │ 0.1.0   │ fork    │ 79189    │ 1s     │ 6    │ online    │ 66.1%    │ 73.6mb   │ scraper… │ disabled │
+│ 1  │ trustfolio-web        │ default     │ 15.4.11 │ fork    │ 79208    │ 0s     │ 3    │ online    │ 0%       │ 21.8mb   │ scraper… │ disabled │
+└────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+host metrics | cpu: 0.9% | ram usage: 25.9% | eth0: ⇓ 0.001mb/s ⇑ 0mb/s | disk: ⇓ 0mb/s ⇑ 0.004mb/s
+POST_RESTART_PM2_LIST:
+┌────┬───────────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name                  │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 2  │ trustfolio-admin      │ default     │ 15.5.9  │ fork    │ 33509    │ 4D     │ 2    │ online    │ 0%       │ 200.1mb  │ scraper… │ disabled │
+│ 0  │ trustfolio-backend    │ default     │ 0.1.0   │ fork    │ 79189    │ 6s     │ 6    │ online    │ 0%       │ 97.9mb   │ scraper… │ disabled │
+│ 1  │ trustfolio-web        │ default     │ 15.4.11 │ fork    │ 79208    │ 5s     │ 3    │ online    │ 0%       │ 135.5mb  │ scraper… │ disabled │
+└────┴───────────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+host metrics | cpu: 0.9% | ram usage: 25.9% | eth0: ⇓ 0.001mb/s ⇑ 0mb/s | disk: ⇓ 0mb/s ⇑ 0.004mb/s
+VERIFIED_trustfolio-backend=online
+VERIFIED_trustfolio-web=online
+RESTART_AND_PM2_VERIFICATION=SUCCESS
+WORKFLOW_RESTART_OUTCOME=SUCCESS
+
+GITHUB_RUN_ID=40147701972
