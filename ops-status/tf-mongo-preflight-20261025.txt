@@ -1,0 +1,13 @@
+MongoDB connected: ac-5gve0wf-shard-00-01.igse45s.mongodb.net (db: trustfolio)
+MONGO_CONNECTED=YES
+MONGO_REPLICASET=true
+MONGO_MONGOS=false
+SAMPLE_price_TYPE=string
+SAMPLE_price_inr_TYPE=number
+SAMPLE_currentPriceValue_TYPE=undefined
+SAMPLE_live_TYPE=undefined
+SAMPLE_category_TYPE=string
+SAMPLE_category_slug_TYPE=string
+SAMPLE_LIVE_STATUS=none
+CHANGE_STREAM=AVAILABLE
+END_PREFLIGHT
