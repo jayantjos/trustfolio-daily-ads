@@ -1,0 +1,93 @@
+name: TrustFolio PM2 one-time restart - 2026-10-25
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/trustfolio-pm2-restart-once-20261025.yml'
+permissions:
+  contents: write
+jobs:
+  restart-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Configure SSH for known TrustFolio VPS
+        env:
+          TF_KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          TF_HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          TF_HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          TF_USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$TF_HOST" = '200.234.47.87'
+          test "$TF_USER" = 'scraperuser'
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          test "$TF_HOSTKEY" = "$expected"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$TF_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$TF_HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Restart only backend and web, then verify PM2
+        id: pm2
+        continue-on-error: true
+        env:
+          TF_HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          TF_USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -uo pipefail
+          if ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 "$TF_USER@$TF_HOST" 'bash -s' > pm2-restart-output.txt 2>&1 <<'REMOTE'
+          set -euo pipefail
+          export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+          if ! command -v pm2 >/dev/null 2>&1 && test -f "$HOME/.nvm/nvm.sh"; then
+            . "$HOME/.nvm/nvm.sh"
+            nvm use default >/dev/null 2>&1 || true
+          fi
+          if ! command -v pm2 >/dev/null 2>&1; then
+            echo "ERROR=PM2_NOT_IN_SSH_USER_PATH"
+            exit 20
+          fi
+          echo "PRE_RESTART_PM2_LIST:"
+          pm2 list
+          pm2 jlist | python3 -c 'import json,sys; a=json.load(sys.stdin); names={p.get("name") for p in a}; required={"trustfolio-backend","trustfolio-web"}; print("TARGETS_FOUND="+",".join(sorted(required & names))); sys.exit(0 if required<=names else 21)'
+          echo "RESTARTING=trustfolio-backend"
+          pm2 restart trustfolio-backend
+          echo "RESTARTING=trustfolio-web"
+          pm2 restart trustfolio-web
+          sleep 5
+          echo "POST_RESTART_PM2_LIST:"
+          pm2 list
+          pm2 jlist | python3 -c 'import json,sys; a=json.load(sys.stdin); states={p.get("name"):p.get("pm2_env",{}).get("status") for p in a}; wanted=("trustfolio-backend","trustfolio-web"); [print("VERIFIED_"+n+"="+str(states.get(n))) for n in wanted]; sys.exit(0 if all(states.get(n)=="online" for n in wanted) else 22)'
+          echo 'RESTART_AND_PM2_VERIFICATION=SUCCESS'
+          REMOTE
+          then
+            echo 'WORKFLOW_RESTART_OUTCOME=SUCCESS' >> pm2-restart-output.txt
+          else
+            code=$?
+            echo "WORKFLOW_RESTART_OUTCOME=FAILED;SSH_OR_REMOTE_EXIT=$code" >> pm2-restart-output.txt
+            exit "$code"
+          fi
+      - name: Save temporary verification report to GitHub
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if test ! -f pm2-restart-output.txt; then
+            printf 'WORKFLOW_RESTART_OUTCOME=FAILED;SSH_SETUP_OR_RUN_NOT_COMPLETED\n' > pm2-restart-output.txt
+          fi
+          printf '\nGITHUB_RUN_ID=%s\n' "$GITHUB_RUN_ID" >> pm2-restart-output.txt
+          cat pm2-restart-output.txt
+          base64_content="$(base64 -w0 pm2-restart-output.txt)"
+          jq -n --arg message 'ops: record one-time TrustFolio PM2 restart verification' --arg content "$base64_content" '{message:$message,content:$content}' > /tmp/restart-payload.json
+          curl --fail-with-body -sS -X PUT \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            --data-binary @/tmp/restart-payload.json \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/ops-status/trustfolio-pm2-restart-20261025.txt" >/dev/null
+      - name: Fail run if restart did not pass
+        if: always()
+        run: |
+          grep -q '^WORKFLOW_RESTART_OUTCOME=SUCCESS$' pm2-restart-output.txt
