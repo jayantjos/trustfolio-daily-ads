@@ -1,0 +1,9 @@
+BEFORE_HTTP 200 CATEGORIES 20 API_SUCCESS True
+UPDATE_HTTP 200 ELAPSED_SEC 30.3
+UPDATE_SUCCESS True
+UPDATE_DATA_KEYS air-conditioners,air-coolers,ceiling-fans,desktop-computers,drones,geysers,headphones-earbuds,induction-cooktops,laptops,microwave-ovens,mixer-grinders,refrigerators,smart-phones,smart-tvs,smartwatches,speakers,tablets,vacuum-cleaners,washing-machines,water-purifiers
+UPDATE_COUNT None
+AFTER_HTTP 200 CATEGORIES 20 API_SUCCESS True
+CATEGORY_BOUNDS_CHANGED 2
+CATEGORY_BOUNDS_PRESENT 20
+REFRESH_TEST_DONE
