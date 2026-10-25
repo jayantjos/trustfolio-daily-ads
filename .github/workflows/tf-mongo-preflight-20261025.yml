@@ -1,0 +1,75 @@
+name: TrustFolio Mongo watch preflight
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tf-mongo-preflight-20261025.yml']
+permissions:
+  contents: write
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: SSH setup
+        env:
+          K: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          KH: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$H" = '200.234.47.87'; test "$U" = 'scraperuser'
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          printf '%s\n' "$K" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KH" > ~/.ssh/known_hosts; chmod 600 ~/.ssh/known_hosts
+      - name: Examine Mongo topology and price data types read-only
+        env:
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=yes "$U@$H" 'bash -s' > tf-mongo-report.txt 2>&1 <<'REMOTE'
+          set -euo pipefail
+          export PATH="$HOME/.npm-global/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+          if ! command -v node >/dev/null 2>&1 && test -f "$HOME/.nvm/nvm.sh"; then . "$HOME/.nvm/nvm.sh"; nvm use default >/dev/null 2>&1 || true; fi
+          cd "$HOME/apps/trustfolio/node-backend"
+          node <<'JS'
+          require('dotenv').config();
+          const mongoose=require('mongoose');
+          const connectDB=require('./config/mongo');
+          (async()=>{
+            try {
+              await connectDB();
+              const hello=await mongoose.connection.db.admin().command({hello:1});
+              console.log('MONGO_CONNECTED=YES');
+              console.log('MONGO_REPLICASET='+Boolean(hello.setName));
+              console.log('MONGO_MONGOS='+(hello.msg==='isdbgrid'));
+              const col=mongoose.connection.collection('my_products');
+              const sample=await col.findOne({}, {projection:{price:1,price_inr:1,currentPriceValue:1,live:1,category:1,category_slug:1}});
+              if(sample) {
+                for(const k of ['price','price_inr','currentPriceValue','live','category','category_slug']) {
+                  console.log('SAMPLE_'+k+'_TYPE='+typeof sample[k]);
+                }
+                console.log('SAMPLE_LIVE_STATUS='+String(sample.live?.status??'none').replace(/[^a-z_]/g,'').slice(0,30));
+              }
+              let stream;
+              try {
+                stream=col.watch([], {maxAwaitTimeMS:1000});
+                await stream.tryNext();
+                console.log('CHANGE_STREAM=AVAILABLE');
+              } catch(e) {console.log('CHANGE_STREAM=UNAVAILABLE_'+String(e.codeName||e.code||e.name).replace(/[^a-zA-Z0-9_-]/g,''));}
+              finally {if(stream)await stream.close().catch(()=>{});}
+              console.log('END_PREFLIGHT');
+            } catch(e) {console.log('PREFLIGHT_ERROR='+String(e.codeName||e.name).replace(/[^a-zA-Z0-9_-]/g,''));}
+            finally{await mongoose.disconnect().catch(()=>{});}
+          })();
+          JS
+          REMOTE
+      - name: Store result briefly
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          test -f tf-mongo-report.txt || echo 'NO_REPORT' > tf-mongo-report.txt
+          b="$(base64 -w0 tf-mongo-report.txt)"
+          jq -n --arg message 'temporary MongoDB watch preflight' --arg content "$b" '{message:$message,content:$content}' >/tmp/a.json
+          curl --fail-with-body -sS -X PUT -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' --data-binary @/tmp/a.json "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/ops-status/tf-mongo-preflight-20261025.txt" >/dev/null
