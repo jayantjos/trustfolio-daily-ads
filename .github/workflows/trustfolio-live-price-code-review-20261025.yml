@@ -1,0 +1,63 @@
+name: TrustFolio live price code and status classification review
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/trustfolio-live-price-code-review-20261025.yml']
+permissions:
+  contents: write
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: VPS SSH connection
+        env:
+          K: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          KH: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$H" = "200.234.47.87"
+          test "$U" = "scraperuser"
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          test "$KH" = "$expected"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$K" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KH" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Extract relevant code only; no live provider API call
+        env:
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$U@$H" 'python3 -' > review-result.txt 2>&1 <<'PY'
+          from pathlib import Path
+          import re
+          root=Path.home()/'apps/trustfolio/node-backend'
+          blocks={'services/LivePriceService.js':[(1,41),(59,95),(116,197)],
+                  'scripts/trustfolio-category-price-watcher.js':[(70,113),(120,170)]}
+          pattern=re.compile(r'(token|secret|api.key|password|mongodb(\\+srv)?://|authorization|private_key|process\\.env|dotenv)', re.I)
+          for name, ranges in blocks.items():
+              file=root/name
+              if not file.exists(): print("MISSING",name);continue
+              text=file.read_text(errors="replace").splitlines()
+              print("FILE",name)
+              for lo,hi in ranges:
+                  print("SECTION",lo,hi)
+                  for i in range(lo,min(hi,len(text))+1):
+                      line=text[i-1]
+                      if pattern.search(line): print(i,"[SECRET_OR_CONFIG_LINE_OMITTED]")
+                      else: print(i,line[:250])
+          PY
+      - name: Publish temporary review
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          test -f review-result.txt || echo 'NO_REPORT' > review-result.txt
+          b="$(base64 -w0 review-result.txt)"
+          jq -n --arg message 'ops: temporary price code review' --arg content "$b" '{message:$message,content:$content}' >/tmp/json
+          curl --fail-with-body -sS -X PUT -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' --data-binary @/tmp/json "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/ops-status/trustfolio-live-price-code-review-20261025.txt" >/dev/null
