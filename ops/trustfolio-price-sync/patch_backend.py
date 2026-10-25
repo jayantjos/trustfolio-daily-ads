@@ -10,6 +10,7 @@ backup.mkdir(parents=True, exist_ok=True)
 paths = [
     root / "services/LivePriceService.js",
     root / "services/CategoryService.js",
+    root / "controllers/ProductController.js",
 ]
 originals = {}
 modified = {}
@@ -37,7 +38,8 @@ try:
   const availability = String(live.availability || '').toLowerCase();
   if (/discontinued|sold\\s*out|out\\s*of\\s*stock|no\\s*longer\\s*available/.test(availability)) return true;
   // An ambiguous N/A, unavailable or missing listing must persist across TWO fresh checks.
-  return ['not_available', 'unavailable', 'n/a', 'na', 'not_found'].includes(status)
+  return (['not_available', 'unavailable', 'n/a', 'na', 'not_found'].includes(status)
+    || /(^n\/a$|not\s*available|unavailable)/.test(availability))
     && (Number(live.unavailable_checks) || 0) >= 2;
 }
 
@@ -48,8 +50,10 @@ try:
         "  const priced = (result.status === 'ok' || result.status === 'out_of_stock') && result.priceNum > 0;",
         """  const priced = (result.status === 'ok' || result.status === 'out_of_stock') && result.priceNum > 0;
   const s = String(result.status || '').toLowerCase().trim().replace(/[\\s-]+/g, '_');
+  const availabilityLabel = String(result.availability || '').toLowerCase();
   const unavailable = ['out_of_stock', 'sold_out', 'discontinued', 'permanently_unavailable',
-    'not_available', 'unavailable', 'n/a', 'na', 'not_found'].includes(s);""",
+    'not_available', 'unavailable', 'n/a', 'na', 'not_found'].includes(s)
+    || /(^n\/a$|not\s*available|unavailable|sold\s*out|discontinued)/.test(availabilityLabel);""",
         "toLive_pricing",
     )
     live = replace_one(
@@ -80,6 +84,15 @@ try:
         return { updateOne: { filter: { _id: d._id }, update: { $set: fields } } };
       }),""",
         "canonical_live_price_persistence")
+    live = replace_one(live,
+        "  return docs.map((d) => ({",
+        """  if (fetched.length) {
+    // Clear in-process cache immediately after actual live-price writes.
+    require('../controllers/ProductController').invalidatePriceCaches();
+  }
+
+  return docs.map((d) => ({""",
+        "live_price_cache_invalidation")
     modified[paths[0]] = live
 
     cat = originals[paths[1]]
@@ -126,6 +139,17 @@ try:
   }""","empty_category_bound_clear")
     modified[paths[1]] = cat
 
+    product = originals[paths[2]]
+    if "module.exports.invalidatePriceCaches" not in product:
+        product += """
+// Price caches are invalidated after live-price product writes.
+module.exports.invalidatePriceCaches = function invalidatePriceCaches() {
+  topProductsResponseCache.clear();
+  livePriceBoundsCache.clear();
+};
+"""
+    modified[paths[2]] = product
+
     for path in paths:
         bak = backup / path.relative_to(root)
         bak.parent.mkdir(parents=True, exist_ok=True)
@@ -142,6 +166,7 @@ try:
     print("CATEGORY_CANONICAL_SOURCE=INSTALLED")
     print("EMPTY_CATEGORY_RANGE_CLEAR=INSTALLED")
     print("CONFIRMED_UNAVAILABLE_ARCHIVE=INSTALLED")
+    print("IN_PROCESS_CACHE_INVALIDATION=INSTALLED")
 except Exception as exc:
     for path,original in originals.items():
         if path.exists() and path.read_text(encoding="utf8") != original:
