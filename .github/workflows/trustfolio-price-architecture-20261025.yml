@@ -1,0 +1,58 @@
+name: TrustFolio price architecture check 20261025
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/trustfolio-price-architecture-20261025.yml']
+permissions:
+  contents: write
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: SSH setup
+        env:
+          K: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          KH: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$H" = "200.234.47.87"; test "$U" = "scraperuser"
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          printf '%s\n' "$K" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KH" > ~/.ssh/known_hosts; chmod 600 ~/.ssh/known_hosts
+      - name: Check safe metadata only
+        env:
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=yes "$U@$H" 'python3 -' > architecture.txt <<'PY'
+          from pathlib import Path
+          import re
+          r=Path('/home/scraperuser/apps/trustfolio')
+          files=[
+          'node-backend/services/CategoryService.js','node-backend/controllers/ProductController.js',
+          'node-backend/services/LivePriceService.js','node-backend/server.js',
+          'trustfolio-main/src/app/page.tsx','trustfolio-main/src/services/api.service.ts',
+          'trustfolio-main/src/utils/app_utils.ts','trustfolio-main/src/app/category/[slug]/page.tsx']
+          needles=['updateAllCategoryPriceRanges','updateCategoryPriceRange','fetchLivePriceBoundsInner','getCachedCategories','saveCachedCategories','localStorage','cache','setInterval','MyProduct.watch','changeStream','price_ranges','currentPriceValue','price_inr','resolveProductPrice']
+          for p in files:
+              f=r/p
+              s=f.read_text(errors='replace') if f.exists() else ''
+              print('FILE',p,'LINES',len(s.splitlines()))
+              for n in needles:
+                  matches=list(re.finditer(r'\b'+re.escape(n)+r'\b',s))
+                  if matches:
+                      loc=[s.count('\n',0,m.start())+1 for m in matches[:10]]
+                      print('SYMBOL',n,'COUNT',len(matches),'LINES',','.join(map(str,loc)))
+          PY
+      - name: Store metadata report
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          test -f architecture.txt || printf 'FAILED\n' > architecture.txt
+          b="$(base64 -w0 architecture.txt)"
+          jq -n --arg message 'ops: temporary price architecture metadata' --arg content "$b" '{message:$message,content:$content}' >/tmp/body.json
+          curl --fail-with-body -sS -X PUT -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' --data-binary @/tmp/body.json "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/ops-status/trustfolio-price-architecture-20261025.txt" > /dev/null
