@@ -1,0 +1,427 @@
+FILE services/LivePriceService.js N 162
+40 async function fetchLive(item) {
+41   const headers = { 'content-type': 'application/json' };
+42 [CONFIG_OMITTED]
+43 
+44   const res = await fetch(`${WORKER_URL}/api/check`, {
+45     method: 'POST',
+46     headers,
+47     body: JSON.stringify({ items: [item], useCache: true }),
+48     signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+49   });
+50   if (!res.ok) return { status: 'error', error: `worker http ${res.status}` };
+51 
+52   const body = await res.json();
+53   const r = body && Array.isArray(body.results) ? body.results[0] : null;
+54   if (!r) return { status: 'error', error: 'empty worker response' };
+55   if (r.error) return { status: 'error', error: r.error };
+56   return (r.asin ? r.amazon : r.flipkart) || { status: 'error', error: 'no store result' };
+57 }
+58 
+59 function toLive(result, prev = {}) {
+60   const priced = (result.status === 'ok' || result.status === 'out_of_stock') && result.priceNum > 0;
+61   return {
+62     status: result.status,
+63     checked_at: new Date(),
+64     // On blocks and timeouts keep the last good price so the page still shows one.
+65     price_inr: priced ? result.priceNum : prev.price_inr ?? null,
+66     priced_at: priced ? new Date() : prev.priced_at ?? null,
+67     in_stock: result.status === 'ok',
+68     availability: result.availability ?? null,
+69   };
+70 }
+71 
+75  */
+76 async function getLivePrices(ids) {
+77   const objectIds = [...new Set((Array.isArray(ids) ? ids : []).map(String))]
+78     .filter((id) => mongoose.Types.ObjectId.isValid(id))
+79     .slice(0, MAX_IDS)
+80     .map((id) => new mongoose.Types.ObjectId(id));
+81   if (!objectIds.length) return [];
+82 
+83   // Native collection: `live` is not on the MyProduct schema.
+84   const col = mongoose.connection.collection('my_products');
+85   const docs = await col
+86     .find(
+87       { _id: { $in: objectIds } },
+88       {
+89         projection: {
+90           platform: 1, asin: 1, url: 1, clean_url: 1, productUrl: 1, original_product_url: 1,
+91           platform_product_id: 1, price_inr: 1, live: 1,
+92         },
+93       }
+94     )
+95     .toArray();
+96 
+97   const now = Date.now();
+98   const due = WORKER_URL
+99     ? docs.filter((d) => {
+100       const checked = d.live && d.live.checked_at ? new Date(d.live.checked_at).getTime() : 0;
+101       return workerItem(d) && now - checked > FRESH_MS;
+102     })
+103     : [];
+104 
+105   const fetched = await Promise.all(
+106     due.map(async (d) => {
+107       const key = String(d._id);
+108       if (!inflight.has(key)) {
+109         const job = fetchLive(workerItem(d)).catch((e) => ({ status: 'error', error: e.message }));
+110         inflight.set(key, job.finally(() => inflight.delete(key)));
+111       }
+112       d.live = toLive(await inflight.get(key), d.live || {});
+113       return d;
+114     })
+115   );
+116 
+117   // Out of stock listings are removed from my_products. Only a confirmed out_of_stock result counts;
+118   // blocks, timeouts and errors never delete. A copy goes to my_products_deleted so a delete can be undone.
+119   const outOfStock = fetched.filter((d) => d.live.status === 'out_of_stock');
+120   const deletedIds = new Set(outOfStock.map((d) => String(d._id)));
+121   if (outOfStock.length) {
+122     const full = await col.find({ _id: { $in: outOfStock.map((d) => d._id) } }).toArray();
+123     const deletedAt = new Date();
+124     if (full.length) {
+125       await mongoose.connection.collection('my_products_deleted').bulkWrite(
+126         full.map((doc) => ({
+127           replaceOne: {
+128             filter: { _id: doc._id },
+129             replacement: {
+130               ...doc,
+131               live: outOfStock.find((d) => d._id.equals(doc._id)).live,
+132               deleted_at: deletedAt,
+133               deleted_reason: 'out_of_stock',
+134             },
+135             upsert: true,
+136           },
+137         })),
+138         { ordered: false }
+139       );
+140       await col.deleteMany({ _id: { $in: full.map((doc) => doc._id) } });
+141     }
+142   }
+143 
+144   const kept = fetched.filter((d) => !deletedIds.has(String(d._id)));
+145   if (kept.length) {
+146     await col.bulkWrite(
+147       kept.map((d) => ({ updateOne: { filter: { _id: d._id }, update: { $set: { live: d.live } } } })),
+148       { ordered: false }
+149     );
+150   }
+151 
+152   return docs.map((d) => ({
+153     id: String(d._id),
+154     platform: d.platform || null,
+155     supported: Boolean(workerItem(d)),
+156     stored_price_inr: d.price_inr ?? null,
+157     live: d.live || null,
+158     deleted: deletedIds.has(String(d._id)),
+159   }));
+160 }
+FILE services/CategoryService.js N 580
+242 
+243 async function updateCategoryPriceRange(categorySlug) {
+244   const category = await Category.findOne({ slug: categorySlug });
+245   if (!category) return null;
+246 
+247   const slug = String(categorySlug || '').trim();
+248   const categoryFilter = buildCategoryFilter(slug);
+249   if (!categoryFilter) return category;
+250 
+251   const activeClause = {
+252     $or: [{ isActive: true }, { isActive: { $exists: false } }, { isActive: null }],
+253   };
+254 
+255   const products = applyCategoryGuard(
+256     await MyProduct.find(
+257       { $and: [activeClause, categoryFilter] },
+258       {
+259         title: 1,
+260         name: 1,
+261         model: 1,
+262         brand: 1,
+263         category: 1,
+264         product_category: 1,
+265         category_slug: 1,
+266         currentPrice: 1,
+267         current_price: 1,
+268         currentPriceValue: 1,
+269         current_price_value: 1,
+270         price: 1,
+271         price_inr: 1,
+272       }
+273     )
+274       .sort({ scrapedAt: -1 })
+275       .lean(),
+276     slug
+277   );
+278 
+279   const allPrices = new Set();
+280 
+281   products.forEach((p) => {
+282     let price = null;
+283 
+284     if (Number.isFinite(p.currentPriceValue) && p.currentPriceValue > 0) {
+285       price = p.currentPriceValue;
+286     } else if (Number.isFinite(p.current_price_value) && p.current_price_value > 0) {
+287       price = p.current_price_value;
+288     } else if (Number.isFinite(p.price_inr) && p.price_inr > 0) {
+289       price = p.price_inr;
+290     } else {
+291       price =
+292         extractPriceFromString(p.currentPrice)
+293         || extractPriceFromString(p.current_price)
+294         || extractPriceFromString(p.price)
+295         || extractPriceFromString(String(p.price_inr || ''));
+296     }
+297 
+298     if (price && price > 0) {
+299       allPrices.add(Math.round(price));
+300     }
+301   });
+302 
+303   const prices = [...allPrices];
+304   if (prices.length === 0) return category;
+305 
+306   const minPrice = Math.min(...prices);
+307   const maxPrice = Math.max(...prices);
+308   const now = formatDate();
+309 
+310   category.min_price = minPrice;
+311   category.max_price = maxPrice;
+312   category.price_ranges = [
+313     {
+314       title: `Current Catalog (₹${minPrice.toLocaleString('en-IN')}-₹${maxPrice.toLocaleString('en-IN')})`,
+315       start_price: minPrice,
+316       end_price: maxPrice,
+317       last_updated: now,
+318     },
+319   ];
+320   category.updated_at = now;
+321   return category.save();
+322 }
+323 
+324 async function updateAllCategoryPriceRanges() {
+325   const categories = await getAllCategories();
+326   const results = {};
+327   for (const cat of categories) {
+328     try {
+329       const updated = await updateCategoryPriceRange(cat.slug);
+330       results[cat.slug] = !!updated;
+331     } catch {
+332       results[cat.slug] = false;
+333     }
+334   }
+335   return results;
+336 }
+337 
+FILE utils/resolveProductPrice.js N 15
+1 const { extractPriceFromString } = require('./priceUtils');
+2 
+3 /**
+4  * Trustfolio price source of truth:
+5  * Use only MongoDB my_products.price.
+6  * Do not prefer stale mirror/legacy fields like price_inr, currentPriceValue,
+7  * currentPrice, originalPrice, list_price, exact_price, previous_price.
+8  */
+9 function resolveProductPrice(product) {
+10   const price = extractPriceFromString(product?.price);
+11   if (Number.isFinite(price) && price > 0) return price;
+12   return null;
+13 }
+14 
+15 module.exports = { resolveProductPrice };
+FILE controllers/LivePriceController.js N 27
+1 const mongoose = require('mongoose');
+2 const { apiResponse } = require('../utils/apiResponse');
+3 const LivePriceService = require('../services/LivePriceService');
+4 
+5 function isDbConnected() {
+6   return mongoose.connection.readyState === 1;
+7 }
+8 
+9 /**
+10  * POST /api/live-prices
+11  * Body: { ids: [my_products _id, ...] } for the products on screen (max 30).
+12  */
+13 async function getLivePrices(req, res) {
+14   if (!isDbConnected()) {
+15     return res.status(503).json(apiResponse(false, 'Database not connected', []));
+16   }
+17   try {
+18     const ids = req.body && Array.isArray(req.body.ids) ? req.body.ids : [];
+19     const data = await LivePriceService.getLivePrices(ids);
+20     return res.json(apiResponse(true, 'Live prices', data));
+21   } catch (error) {
+22     console.error('Live prices error:', error.message);
+23     return res.status(500).json(apiResponse(false, 'Failed to load live prices', []));
+24   }
+25 }
+26 
+27 module.exports = { getLivePrices };
+FILE config/mongo.js N 66
+1 const dns = require('dns');
+2 const mongoose = require('mongoose');
+3 
+4 const SRV_DNS_FALLBACK = ['1.1.1.1', '8.8.8.8'];
+5 
+6 function isSrvDnsError(error) {
+7   return error && error.message && error.message.includes('querySrv ECONNREFUSED');
+8 }
+9 
+10 function applySrvDnsFallback() {
+11   dns.setServers(SRV_DNS_FALLBACK);
+12   console.warn(`MongoDB: retrying SRV lookup with public DNS (${SRV_DNS_FALLBACK.join(', ')})`);
+13 }
+14 
+15 /** Single shared connect promise so HTTP handlers can await Mongo while it is still handshaking. */
+16 let connectPromise;
+17 
+18 async function connectDBOnce() {
+19 [CONFIG_OMITTED]
+20 [CONFIG_OMITTED]
+21 
+22   if (!uri || uri === '') {
+23     const msg = 'MONGODB_URI is not set. Add it to node-backend/.env (see .env.example).';
+24     console.error('MongoDB:', msg);
+25     throw new Error(msg);
+26   }
+27 
+28 [CONFIG_OMITTED]
+29   if (hasPlaceholder) {
+30 [CONFIG_OMITTED]
+31     console.error('MongoDB:', msg);
+32     throw new Error(msg);
+33   }
+34 
+35   try {
+36     const conn = await mongoose.connect(uri, { dbName: db });
+37     console.log(`MongoDB connected: ${conn.connection.host} (db: ${db})`);
+38     return conn;
+39   } catch (error) {
+40 [CONFIG_OMITTED]
+41       try {
+42         applySrvDnsFallback();
+43         const conn = await mongoose.connect(uri, { dbName: db });
+44         console.log(`MongoDB connected: ${conn.connection.host} (db: ${db})`);
+45         return conn;
+46       } catch (retryError) {
+FILE controllers/ProductController.js N 867
+75   previous_price: 1,
+76   previousPrice: 1,
+77 };
+78 
+79 const livePriceBoundsCache = new Map();
+80 
+81 // TOP_PRODUCTS_RESPONSE_CACHE_V1
+82 // Mobile app may repeat same category/budget request; cache short-lived final response.
+83 const topProductsResponseCache = new Map();
+84 
+85 function topProductsResponseCacheTtlMs() {
+86 [CONFIG_OMITTED]
+87   return Number.isFinite(parsed) && parsed > 0 ? parsed : 600000;
+88 }
+89 
+90 /** Bump when bounds logic changes so TTL cache cannot return pre-change min/max. */
+91 const PRICE_BOUNDS_CACHE_REVISION = 'cat-guard-v2';
+92 
+93 function livePriceBoundsCacheTtlMs() {
+94 [CONFIG_OMITTED]
+95   return Number.isFinite(n) && n >= 0 ? n : 60000;
+96 }
+97 
+98 /**
+99  * Load products used for min/max price envelope. Prefer exact category $in (smaller, index-friendly);
+395 async function fetchLivePriceBoundsInner(categoryRaw) {
+396   const category = String(categoryRaw || '').trim();
+397   const cacheKey = category
+398     ? `${category.toLowerCase()}:${PRICE_BOUNDS_CACHE_REVISION}`
+399     : `__all__:${PRICE_BOUNDS_CACHE_REVISION}`;
+400   const ttl = livePriceBoundsCacheTtlMs();
+401   if (ttl > 0) {
+402     const hit = livePriceBoundsCache.get(cacheKey);
+403     if (hit && Date.now() - hit.at < ttl) {
+404       return hit.value;
+405     }
+406   }
+407 
+408   const products = await loadProductsForCanonicalPriceBounds(category);
+409   let forBounds = products;
+410   if (category) {
+411     const critical = products.filter((p) => ProductRecommendationService.hasCriticalSpecs(p, category));
+412     if (critical.length > 0) forBounds = critical;
+413   }
+414   const canonical = getCanonicalPriceBounds(forBounds);
+415   const value =
+416     !canonical || canonical.count === 0
+417       ? { min: null, max: null, count: 0 }
+418       : { min: canonical.min, max: canonical.max, count: canonical.count };
+419 
+420   if (ttl > 0) {
+421     livePriceBoundsCache.set(cacheKey, { at: Date.now(), value });
+422   }
+423   return value;
+424 }
+425 
+426 async function getProductPriceBounds(req, res) {
+530   }
+531 }
+532 
+533 async function getLivePriceBoundsForCategory(category) {
+534   const categoryFilter = buildCategoryFilter(category);
+535   if (!categoryFilter || !dbConnected()) {
+536     return { min: null, max: null, count: 0 };
+537   }
+538 
+539   // FAST_INTERNAL_BOUNDS_FROM_CATEGORY_META_V1
+540   // /products/top also needs catalogPriceRange; use saved category metadata first.
+541   const categoryKey = String(category || '').trim();
+542   const escapedCategoryForBounds = categoryKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+543 
+544   try {
+545     const categoryDocFastBounds = await Category.findOne({
+546       $or: [
+547         { slug: categoryKey },
+548         { category_slug: categoryKey },
+549         { key: categoryKey },
+550         { category: categoryKey },
+551         { slug: { $regex: new RegExp(`^${escapedCategoryForBounds}$`, 'i') } },
+627 
+628     const normalizedCategory = category.toLowerCase().trim();
+629 
+630     const brandKey = brand ? brand.toLowerCase().trim() : '';
+631     const topCacheKey = `cat-guard-live-budget-v1|${normalizedCategory}|${Math.floor(Number(budget))}|${limit}|${brandKey}`;
+632 const topCacheHit = topProductsResponseCache.get(topCacheKey);
+633 if (topCacheHit && Date.now() - topCacheHit.at < Math.min(topProductsResponseCacheTtlMs(), 30000)) {
+634   return res.json(topCacheHit.value);
+635 }
+636 
+637 if (brand) {
+638   const brandValid = await BrandService.isValidBrandForCategory(normalizedCategory, brand);
+639   if (!brandValid) {
+640     return res.status(400).json(
+641       apiResponse(false, 'Brand is not available for this category. Select a brand from the list.')
+642     );
+FILE controllers/CategoryController.js N 509
+344 async function updateCategoryPriceRange(req, res) {
+345   try {
+346     const category = await CategoryService.updateCategoryPriceRange(req.params.slug);
+347     if (!category) return res.status(404).json(apiResponse(false, 'Category not found'));
+348     res.json(
+349       apiResponse(true, 'Category price range updated successfully', CategoryService.convertToResponse(category))
+350     );
+351   } catch (e) {
+352     res.status(500).json(apiResponse(false, `Failed to update category price range: ${e.message}`));
+353   }
+354 }
+355 
+356 async function updateAllCategoryPriceRanges(req, res) {
+357   try {
+358     const results = await CategoryService.updateAllCategoryPriceRanges();
+359     const count = Object.values(results).filter(Boolean).length;
+360     res.json(
+361       apiResponse(true, `Price ranges updated for ${count} categories`, results)
+362     );
+363   } catch (e) {
+364     res.status(500).json(apiResponse(false, `Failed to update category price ranges: ${e.message}`));
+365   }
+366 }
