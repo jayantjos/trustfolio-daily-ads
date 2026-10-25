@@ -1,0 +1,59 @@
+name: TF live price verification
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tf-price-inspect-20261025.yml']
+permissions:
+  contents: write
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Configure SSH
+        env:
+          K: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          KH: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$H" = '200.234.47.87'
+          test "$U" = 'scraperuser'
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          printf '%s\n' "$K" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KH" > ~/.ssh/known_hosts; chmod 600 ~/.ssh/known_hosts
+      - name: Inspect safe control flow
+        env:
+          H: ${{ secrets.TF_DEPLOY_HOST }}
+          U: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=yes "$U@$H" 'python3 -' > tf-inspect.txt <<'PY'
+          import pathlib,re,os
+          root=pathlib.Path.home()/'apps/trustfolio/node-backend'
+          targets=['services/LivePriceService.js','services/CategoryService.js','controllers/ProductController.js','routes/index.js','server.js','app.js','config/database.js','utils/resolveProductPrice.js','entities/MyProduct.js']
+          matcher=re.compile(r'updateOne|updateMany|deleteOne|deleteMany|findOneAndUpdate|findByIdAndUpdate|\.save\(|\.watch\(|changeStream|invalidate|cache|out_of_stock|sold.out|discontinued|not.available|not_found|price_inr|currentPriceValue|findById|Mongo|connect\(|live.pric|category.*range|range.*category|isActive',re.I)
+          redact=re.compile(r'password|secret|token|mongodb(\+srv)?://|api.?key|private_key|bearer |authorization|process\.env|dotenv',re.I)
+          for file in targets:
+              p=root/file
+              if not p.exists():continue
+              lines=p.read_text(errors='replace').splitlines()
+              print('FILE',file,'COUNT',len(lines))
+              hits=0
+              for num,line in enumerate(lines,1):
+                  if not matcher.search(line):continue
+                  if redact.search(line):print('LINE',num,'REDACTED');continue
+                  print('LINE',num,line.strip()[:165])
+                  hits+=1
+                  if hits>=75:break
+          print('END_INSPECTION')
+          PY
+      - name: Save short report
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          test -f tf-inspect.txt || echo 'INSPECT_FAILED' > tf-inspect.txt
+          b="$(base64 -w0 tf-inspect.txt)"
+          jq -n --arg message 'temporary TF code inspection' --arg content "$b" '{message:$message,content:$content}' >/tmp/r.json
+          curl --fail-with-body -sS -X PUT -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' --data-binary @/tmp/r.json "https://api.github.com/repos/$GITHUB_REPOSITORY/contents/ops-status/tf-live-inspect-20261025.txt" > /dev/null
