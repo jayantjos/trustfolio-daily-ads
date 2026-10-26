@@ -100,6 +100,19 @@ jobs:
               throw Error('INTEGRATED_CROMA_SERVICE_NOT_SUPPORTED');
             console.log('INTEGRATED_CROMA_SERVICE=PASS');
             console.log('CROMA_DIRECT_PRICE_INR='+result.priceNum);
+            if(!source.includes('currentPage:String(page)') || !source.includes('cachedCurlJson'))
+              throw Error('CROMA_ZERO_BASED_PAGING_OR_CACHE_MISSING');
+            for(const sku of ['317985','323239','303326']){
+              const p=await col.findOne(
+                {platform:'croma',platform_product_id:{$in:[sku,Number(sku)]}},
+                {projection:{platform:1,platform_product_id:1,title:1,brand:1,category:1}});
+              if(!p)throw Error('MISSING_CROMA_SAMPLE_'+sku);
+              const live=await croma.fetchCromaDirect(p);
+              console.log('CROMA_ADAPTER_SAMPLE='+JSON.stringify({sku,status:live.status,price:live.priceNum||null}));
+              if(live.status!=='ok' || !(live.priceNum>0))
+                throw Error('CROMA_SAMPLE_NOT_VERIFIED_'+sku);
+            }
+            console.log('CROMA_PAGE0_FALLBACK_QA=PASS');
             console.log('CROMA_MAX_PARALLEL=8');
             console.log('CROMA_MAX_WAITING_QUEUE=64');
             console.log('SCRAPEDO_USED=NO');
