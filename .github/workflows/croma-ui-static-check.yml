@@ -1,0 +1,12 @@
+name: Croma frontend patch static checks
+on:
+  push:
+    branches: [diagnostics/croma-direct-live-price-20261027]
+    paths: [.github/workflows/croma-ui-static-check.yml]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m py_compile ops/croma-direct/patch_ui_checking.py
+      - run: bash -n ops/croma-direct/deploy_ui_checking.sh
