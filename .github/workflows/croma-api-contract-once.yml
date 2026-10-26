@@ -1,0 +1,37 @@
+name: Verify actual Croma public live-price response
+on:
+  push:
+    branches: ['diagnostics/croma-direct-live-price-20261027']
+    paths: ['.github/workflows/croma-api-contract-once.yml']
+permissions:
+  contents: read
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Direct public POST contract for one proven Croma SKU
+        run: |
+          set -euo pipefail
+          http=$(curl -sS --max-time 18 --connect-timeout 7 -o /tmp/croma-api-response.json -w '%{http_code}' \
+            -X POST 'https://api.trustfolio.in/api/live-prices' \
+            -H 'Content-Type: application/json' \
+            --data '{"ids":["6a06d9a1fe6fd8dc386b8562"]}')
+          echo "API_HTTP_STATUS=$http"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          j=json.loads(Path('/tmp/croma-api-response.json').read_text())
+          print('API_SUCCESS='+str(j.get('success')))
+          rows=j.get('data') or []
+          print('API_DATA_COUNT='+str(len(rows)))
+          for x in rows[:2]:
+            live=x.get('live') or {}
+            print('PLATFORM='+str(x.get('platform')))
+            print('SUPPORTED='+str(x.get('supported')))
+            print('LIVE_STATUS='+str(live.get('status')))
+            print('LIVE_PRICE_INR='+str(live.get('price_inr')))
+            print('LIVE_IN_STOCK='+str(live.get('in_stock')))
+            print('LIVE_CHECKED_AT='+str(live.get('checked_at')))
+          if not rows:raise SystemExit('NO_API_PRODUCT_RETURNED')
+          PY
