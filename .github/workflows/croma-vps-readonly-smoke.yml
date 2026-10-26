@@ -75,6 +75,16 @@ jobs:
             console.log('DIRECT_CROMA_RESULT='+JSON.stringify(result));
             console.log('CROMA_READONLY_TEST='+(
               result.status==='ok' && result.priceNum===33900 ? 'PASS':'INCONCLUSIVE'));
+            for(const sku of ['317985','323239','303326']){
+              const d=await mongoose.connection.collection('my_products').findOne(
+                {platform:'croma',platform_product_id:{$in:[sku,Number(sku)]}},
+                {projection:{platform:1,platform_product_id:1,title:1,brand:1,category:1}});
+              if(!d) throw Error('SAMPLE_SKU_MISSING_'+sku);
+              const p=await adapter.fetchCromaDirect(d);
+              console.log('CROMA_PAGE0_MODEL_SKU='+JSON.stringify({sku,status:p.status,buyPrice:p.priceNum||null}));
+              if(p.status!=='ok' || !(p.priceNum>0)) throw Error('SAMPLE_PRICE_NOT_FOUND_'+sku);
+            }
+            console.log('CROMA_3_MODEL_SKU_QA=PASS');
             console.log('MONGODB_WRITES=0');
             console.log('SCRAPEDO_USED=NO');
           })().catch(e=>{console.error('TEST_ERROR='+e.message);process.exitCode=1})
