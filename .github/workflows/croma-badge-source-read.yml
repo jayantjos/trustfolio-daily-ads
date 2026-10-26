@@ -1,0 +1,48 @@
+name: Croma frontend badge read-only source
+on:
+  push:
+    branches: ['diagnostics/croma-direct-live-price-20261027']
+    paths: ['.github/workflows/croma-badge-source-read.yml']
+permissions:
+  contents: read
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Pinned SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$HOST" = '200.234.47.87'
+          test "$USER" = 'scraperuser'
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          test "$HOSTKEY" = "$expected"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Read UI and API code only
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -e
+          root="$HOME/apps/trustfolio/trustfolio-main"
+          echo '===LIVE PRICE TYPES==='
+          sed -n '26,60p' "$root/src/types/product.ts"
+          echo '===LIVE PRICE API CLIENT==='
+          sed -n '343,365p' "$root/src/services/api.service.ts"
+          echo '===LIVE PRICE FETCH AND FILTER==='
+          sed -n '300,365p' "$root/src/components/ProductsTable.tsx"
+          echo '===LIVE PRICE DOT RENDER==='
+          grep -n -E 'priceInfo|priceState|live|blue|dot|Price|state' "$root/src/components/ProductsTable.tsx" | tail -52
+          echo '===LIVE PRICE DOT JSX==='
+          sed -n '365,445p' "$root/src/components/ProductsTable.tsx"
+          REMOTE
