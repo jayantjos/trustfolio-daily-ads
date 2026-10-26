@@ -1,0 +1,108 @@
+name: One-time Croma direct backend integration
+on:
+  push:
+    branches: ['diagnostics/croma-direct-live-price-20261027']
+    paths:
+      - '.github/workflows/croma-direct-one-shot-deploy.yml'
+permissions:
+  contents: read
+jobs:
+  deploy-croma-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deployment source
+        run: |
+          set -euo pipefail
+          node --check ops/croma-direct/CromaLivePriceDirect.js
+          python3 -m py_compile ops/croma-direct/install_backend_croma.py
+      - name: Secure SSH setup
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$HOST" = "200.234.47.87"
+          test "$USER" = "scraperuser"
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          test "$HOSTKEY" = "$expected"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Apply guarded Croma backend patch, QA and rollback on failure
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          REMOTE="$USER@$HOST"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes ops/croma-direct/CromaLivePriceDirect.js "$REMOTE:~/croma-liveprice-direct-test.js"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes ops/croma-direct/install_backend_croma.py "$REMOTE:~/croma-backend-install-test.py"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          installer="$HOME/croma-backend-install-test.py"
+          adapter="$HOME/croma-liveprice-direct-test.js"
+          backup=""
+          rollback_on_error() {
+            rc="$?"
+            trap - ERR
+            if [[ -n "$backup" ]]; then
+              python3 "$installer" --rollback "$backup" || true
+              pm2 restart trustfolio-backend || true
+              echo 'PRODUCTION_CROMA_INTEGRATION=ROLLED_BACK'
+            fi
+            exit "$rc"
+          }
+          trap rollback_on_error ERR
+          python3 "$installer" --check --adapter-source "$adapter"
+          output=$(python3 "$installer" --apply --adapter-source "$adapter")
+          printf '%s\n' "$output"
+          backup=$(printf '%s\n' "$output" | sed -n 's/^BACKUP_PATH=//p')
+          test -n "$backup"
+          echo 'BACKUP_VERIFIED=YES'
+          pm2 restart trustfolio-backend
+          sleep 2
+          pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{const p=JSON.parse(s).find(x=>x.name==="trustfolio-backend");if(!p || p.pm2_env.status!=="online")process.exit(2);console.log("BACKEND_PM2_ONLINE=YES")})'
+          node <<'JS'
+          require('dotenv').config();
+          const mongoose=require('mongoose');
+          const connectDB=require('./config/mongo');
+          const service=require('./services/LivePriceService');
+          (async()=>{
+            await connectDB();
+            const col=mongoose.connection.collection('my_products');
+            const doc=await col.findOne(
+              {platform:'croma',platform_product_id:{$in:['317463',317463]}},
+              {projection:{_id:1,platform_product_id:1,price_inr:1}});
+            if(!doc)throw Error('CROMA_TEST_SKU_NOT_FOUND');
+            const rows=await service.getLivePrices([String(doc._id)]);
+            const row=rows.find(x=>x.id===String(doc._id));
+            if(!row || row.platform!=='croma' || !row.supported || row.deleted)
+              throw Error('CROMA_API_SERVICE_NOT_SUPPORTED');
+            if(!row.live || row.live.status!=='ok' || !(Number(row.live.price_inr)>0))
+              throw Error('CROMA_API_PRICE_NOT_VERIFIED');
+            if(row.live.in_stock !== null)
+              throw Error('UNKNOWN_CROMA_STOCK_MUST_REMAIN_NULL');
+            const mongo=await col.findOne({_id:doc._id}, {projection:{price_inr:1,price:1,live:1}});
+            if(Number(mongo.price_inr)!==Number(row.live.price_inr))
+              throw Error('CROMA_MONGO_PRICE_SYNC_FAILED');
+            console.log('CROMA_SERVICE_SUPPORTED=YES');
+            console.log('CROMA_PRODUCT_SKU='+doc.platform_product_id);
+            console.log('CROMA_LIVE_BUY_PRICE_INR='+row.live.price_inr);
+            console.log('CROMA_MONGODB_CANONICAL_PRICE_INR='+mongo.price_inr);
+            console.log('CROMA_PINCODE_STOCK_VERIFIED=NO');
+            console.log('CROMA_END_TO_END_TEST=PASS');
+          })().catch(e=>{console.error('CROMA_DEPLOY_QA_ERROR='+e.message);process.exitCode=1})
+            .finally(()=>mongoose.disconnect());
+          JS
+          echo 'CROMA_PRODUCTION_INTEGRATION=INSTALLED'
+          echo 'AMAZON_FLIPKART_WORKER_UNCHANGED=YES'
+          echo 'SCRAPEDO_USED=NO'
+          trap - ERR
+          REMOTE_SCRIPT
