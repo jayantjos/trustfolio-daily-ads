@@ -10,3 +10,4 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 -m py_compile ops/croma-direct/patch_ui_checking.py
       - run: bash -n ops/croma-direct/deploy_ui_checking.sh
+      - run: node ops/availability-policy/ProductAvailabilityPolicy.test.js
