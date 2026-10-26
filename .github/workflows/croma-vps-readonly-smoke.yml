@@ -39,9 +39,11 @@ jobs:
         run: |
           set -euo pipefail
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes ops/croma-direct/CromaLivePriceDirect.js "$USER@$HOST:~/croma-liveprice-direct-test.js"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes ops/croma-direct/install_backend_croma.py "$USER@$HOST:~/croma-backend-install-test.py"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd "$HOME/apps/trustfolio/node-backend"
+          python3 "$HOME/croma-backend-install-test.py" --check --adapter-source "$HOME/croma-liveprice-direct-test.js"
           echo '===SERVICE_PROJECTED_FIELDS==='
           sed -n '93,125p' services/LivePriceService.js
           echo '===SERVICE_END==='
