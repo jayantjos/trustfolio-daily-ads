@@ -41,6 +41,8 @@ jobs:
           sed -n '343,365p' "$root/src/services/api.service.ts"
           echo '===LIVE PRICE FETCH AND FILTER==='
           sed -n '300,365p' "$root/src/components/ProductsTable.tsx"
+          echo '===FRONTEND_BUILD_SCRIPTS===' 
+          cd "$root" && node -p 'JSON.stringify(require("./package.json").scripts)'
           echo '===LIVE PRICE DOT RENDER==='
           grep -n -E 'priceInfo|priceState|live|blue|dot|Price|state' "$root/src/components/ProductsTable.tsx" | tail -52
           echo '===LIVE PRICE DOT JSX==='
