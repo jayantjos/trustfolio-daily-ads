@@ -10,13 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Direct public POST contract for one proven Croma SKU
+      - name: Direct public POST contract for four proven Croma SKUs
         run: |
           set -euo pipefail
           http=$(curl -sS --max-time 18 --connect-timeout 7 -o /tmp/croma-api-response.json -w '%{http_code}' \
             -X POST 'https://api.trustfolio.in/api/live-prices' \
             -H 'Content-Type: application/json' \
-            --data '{"ids":["6a06d9a1fe6fd8dc386b8562"]}')
+            --data '{"ids":["6a06d9a1fe6fd8dc386b8562","6a0810eafe6fd8dc386bc132","6a10101f0f397d1e1344ce02","6a2c23c863eb5b6abbf91873"]}')
           echo "API_HTTP_STATUS=$http"
           python3 - <<'PY'
           import json
@@ -25,7 +25,7 @@ jobs:
           print('API_SUCCESS='+str(j.get('success')))
           rows=j.get('data') or []
           print('API_DATA_COUNT='+str(len(rows)))
-          for x in rows[:2]:
+          for x in rows:
             live=x.get('live') or {}
             print('PLATFORM='+str(x.get('platform')))
             print('SUPPORTED='+str(x.get('supported')))
@@ -33,5 +33,7 @@ jobs:
             print('LIVE_PRICE_INR='+str(live.get('price_inr')))
             print('LIVE_IN_STOCK='+str(live.get('in_stock')))
             print('LIVE_CHECKED_AT='+str(live.get('checked_at')))
-          if not rows:raise SystemExit('NO_API_PRODUCT_RETURNED')
+          if len(rows)!=4:raise SystemExit('PUBLIC_CROMA_RESULT_COUNT_INVALID')
+          if not all(x.get('platform')=='croma' and x.get('supported') and (x.get('live') or {}).get('status')=='ok' and ((x.get('live') or {}).get('price_inr') or 0)>0 for x in rows):raise SystemExit('CROMA_PUBLIC_LIVE_STATUS_INCOMPLETE')
+          print('PUBLIC_CROMA_FOUR_ITEM_LIVE_QA=PASS')
           PY
