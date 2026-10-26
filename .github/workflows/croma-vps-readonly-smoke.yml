@@ -1,0 +1,72 @@
+name: Croma direct listing price VPS read-only test
+on:
+  push:
+    branches: ['diagnostics/croma-direct-live-price-20261027']
+    paths:
+      - '.github/workflows/croma-vps-readonly-smoke.yml'
+      - 'ops/croma-direct/**'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Croma adapter JavaScript
+        run: node --check ops/croma-direct/CromaLivePriceDirect.js
+      - name: Establish SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$HOST" = "200.234.47.87"
+          test "$USER" = "scraperuser"
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          test "$HOSTKEY" = "$expected"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Copy diagnostic adapter and run one product
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes ops/croma-direct/CromaLivePriceDirect.js "$USER@$HOST:~/croma-liveprice-direct-test.js"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          echo '===SERVICE_PROJECTED_FIELDS==='
+          sed -n '93,125p' services/LivePriceService.js
+          echo '===SERVICE_END==='
+          sed -n '185,199p' services/LivePriceService.js
+          node <<'JS'
+          require('dotenv').config();
+          const mongoose=require('mongoose');
+          const connectDB=require('./config/mongo');
+          const adapter=require(process.env.HOME+'/croma-liveprice-direct-test.js');
+          (async()=>{
+            await connectDB();
+            const doc=await mongoose.connection.collection('my_products').findOne(
+              {platform:'croma',platform_product_id:{$in:['317463',317463]}},
+              {projection:{_id:1,platform:1,platform_product_id:1,title:1,brand:1,category:1,price_inr:1}});
+            if(!doc) throw Error('SKU_317463_NOT_FOUND');
+            console.log('CROMA_SKU='+doc.platform_product_id);
+            console.log('STORED_PRICE_INR='+doc.price_inr);
+            console.log('DIRECT_CROMA_SUPPORTED='+adapter.canFetchCroma(doc));
+            const result=await adapter.fetchCromaDirect(doc);
+            console.log('DIRECT_CROMA_RESULT='+JSON.stringify(result));
+            console.log('CROMA_READONLY_TEST='+(
+              result.status==='ok' && result.priceNum===33900 ? 'PASS':'INCONCLUSIVE'));
+            console.log('MONGODB_WRITES=0');
+            console.log('SCRAPEDO_USED=NO');
+          })().catch(e=>{console.error('TEST_ERROR='+e.message);process.exitCode=1})
+            .finally(()=>mongoose.disconnect());
+          JS
+          REMOTE
