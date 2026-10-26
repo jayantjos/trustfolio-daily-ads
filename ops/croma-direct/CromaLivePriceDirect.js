@@ -2,6 +2,30 @@
 // Direct Croma JSON listing price; no Scrape.do, no changes to Amazon/Flipkart worker.
 const {execFile} = require('node:child_process');
 const API = 'https://api.croma.com/searchservices/v1/search';
+const MAX_CONCURRENT = 3;
+const MAX_QUEUE = 12;
+let active = 0;
+const queue = [];
+function limited(task) {
+  return new Promise(resolve => {
+    if (active >= MAX_CONCURRENT && queue.length >= MAX_QUEUE) {
+      resolve({status:'error',in_stock:null,error:'croma queue full'});
+      return;
+    }
+    const run = () => {
+      active++;
+      Promise.resolve().then(task).then(resolve, () => {
+        resolve({status:'error',in_stock:null,error:'croma request failed'});
+      }).finally(() => {
+        active--;
+        const next = queue.shift();
+        if (next) next();
+      });
+    };
+    if (active < MAX_CONCURRENT) run();
+    else queue.push(run);
+  });
+}
 function canFetchCroma(doc) {
   return String(doc && doc.platform || '').toLowerCase() === 'croma'
     && /^\d{4,12}$/.test(String(doc.platform_product_id || ''))
@@ -48,7 +72,7 @@ function searchQueries(doc) {
   return [...new Set([title.split(' ').slice(0,6).join(' '),
     (brand + ' ' + kind).trim()].filter(Boolean))].slice(0,2);
 }
-async function fetchCromaDirect(doc) {
+async function directFetch(doc) {
   if (!canFetchCroma(doc)) return {status:'error',error:'missing croma SKU/title'};
   const sku = String(doc.platform_product_id);
   for (const query of searchQueries(doc)) {
@@ -64,11 +88,12 @@ async function fetchCromaDirect(doc) {
       key => row[key] != null && String(row[key]) === sku));
     if (!hit) continue;
     const n = buyPrice(hit);
-    if (n == null) return {status:'no_price'};
+    if (n == null) return {status:'no_price',in_stock:null};
     // Search-listing price is proven; delivery-PIN stock is NOT.
     return {status:'ok',priceNum:n,in_stock:null,availability:null};
   }
   // Empty/unmatched search result must never be interpreted as OOS.
   return {status:'no_price'};
 }
+async function fetchCromaDirect(doc) { return limited(() => directFetch(doc)); }
 module.exports={canFetchCroma,fetchCromaDirect};
