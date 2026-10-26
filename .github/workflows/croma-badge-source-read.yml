@@ -35,7 +35,7 @@ jobs:
           ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$USER@$HOST" 'bash -s' <<'REMOTE'
           set -e
           root="$HOME/apps/trustfolio/trustfolio-main"
-          echo '===LIVE PRICE TYPES==='
+          echo '===CROMA_PREPATCH_SAMPLES==='\n          test -f "$HOME/apps/trustfolio/node-backend/services/CromaLivePriceDirect.js"\n          sed -n '332,347p' "$root/src/components/ProductsTable.tsx"\n          echo '===LIVE PRICE TYPES==='
           sed -n '26,60p' "$root/src/types/product.ts"
           echo '===LIVE PRICE API CLIENT==='
           sed -n '343,365p' "$root/src/services/api.service.ts"
