@@ -2,8 +2,10 @@
 // Direct Croma JSON listing price; no Scrape.do, no changes to Amazon/Flipkart worker.
 const {execFile} = require('node:child_process');
 const API = 'https://api.croma.com/searchservices/v1/search';
-const MAX_CONCURRENT = 3;
-const MAX_QUEUE = 12;
+// Cap active Croma search requests; keep it adjustable if Croma starts throttling.
+const MAX_CONCURRENT = Math.min(8, Math.max(1, Number.parseInt(process.env.CROMA_MAX_CONCURRENT || '8', 10) || 8));
+// Existing /api/live-prices accepts up to 30 IDs; leave room for overlapping views.
+const MAX_QUEUE = 64;
 let active = 0;
 const queue = [];
 function limited(task) {
