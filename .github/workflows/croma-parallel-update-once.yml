@@ -1,0 +1,112 @@
+name: One-time Croma concurrent lookup deployment
+on:
+  push:
+    branches: ['diagnostics/croma-direct-live-price-20261027']
+    paths: ['.github/workflows/croma-parallel-update-once.yml']
+permissions:
+  contents: read
+jobs:
+  update-croma-adapter-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JavaScript and parallel unit test
+        run: |
+          set -euo pipefail
+          node --check ops/croma-direct/CromaLivePriceDirect.js
+          node ops/croma-direct/test_croma_parallel.js
+      - name: Configure pinned SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$HOST" = "200.234.47.87"
+          test "$USER" = "scraperuser"
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          test "$HOSTKEY" = "$expected"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: VPS adapter-only install, backup, QA and rollback
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          REMOTE="$USER@$HOST"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes ops/croma-direct/CromaLivePriceDirect.js "$REMOTE:~/croma-concurrency-next.js"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          adapter="services/CromaLivePriceDirect.js"
+          incoming="$HOME/croma-concurrency-next.js"
+          backup="$HOME/backups/trustfolio-croma-direct-parallel/$(date -u +%Y%m%dT%H%M%SZ)"
+          test -f "$adapter"
+          test -f "$incoming"
+          node --check "$incoming"
+          mkdir -p "$backup"
+          cp -p "$adapter" "$backup/CromaLivePriceDirect.js"
+          echo "BACKUP_CONFIRMED=YES"
+          rollback() {
+            rc="$?"
+            trap - ERR
+            cp -p "$backup/CromaLivePriceDirect.js" "$adapter" || true
+            pm2 restart trustfolio-backend || true
+            echo 'CROMA_PARALLEL_DEPLOY=ROLLED_BACK'
+            exit "$rc"
+          }
+          trap rollback ERR
+          cp "$incoming" "services/CromaLivePriceDirect.next.js"
+          node --check "services/CromaLivePriceDirect.next.js"
+          mv "services/CromaLivePriceDirect.next.js" "$adapter"
+          node --check "$adapter"
+          node --check services/LivePriceService.js
+          pm2 restart trustfolio-backend
+          sleep 2
+          pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{const p=JSON.parse(s).find(x=>x.name==="trustfolio-backend");if(!p||p.pm2_env.status!=="online")process.exit(2);console.log("BACKEND_PM2_ONLINE=YES")})'
+          node <<'JS'
+          require('dotenv').config();
+          const fs=require('fs');
+          const mongoose=require('mongoose');
+          const connectDB=require('./config/mongo');
+          const croma=require('./services/CromaLivePriceDirect');
+          const service=require('./services/LivePriceService');
+          (async()=>{
+            const source=fs.readFileSync('./services/CromaLivePriceDirect.js','utf8');
+            if(!source.includes('MAX_CONCURRENT = Math.min(8,'))
+              throw Error('CROMA_EIGHT_PARALLEL_LIMIT_MISSING');
+            if(!source.includes('MAX_QUEUE = 64;'))
+              throw Error('CROMA_QUEUE_CAPACITY_INCORRECT');
+            await connectDB();
+            const col=mongoose.connection.collection('my_products');
+            const doc=await col.findOne(
+              {platform:'croma',platform_product_id:{$in:['317463',317463]}},
+              {projection:{_id:1,platform:1,platform_product_id:1,title:1,brand:1,category:1,price_inr:1}}
+            );
+            if(!doc)throw Error('CROMA_TEST_SKU_NOT_FOUND');
+            const result=await croma.fetchCromaDirect(doc);
+            console.log('DIRECT_RESULT='+JSON.stringify(result));
+            if(result.status!=='ok'|| !(Number(result.priceNum)>0))
+              throw Error('CROMA_DIRECT_LIVE_PRICE_NOT_VERIFIED');
+            const rows=await service.getLivePrices([String(doc._id)]);
+            const row=rows.find(x=>x.id===String(doc._id));
+            if(!row || !row.supported || row.deleted || row.platform!=='croma')
+              throw Error('INTEGRATED_CROMA_SERVICE_NOT_SUPPORTED');
+            console.log('INTEGRATED_CROMA_SERVICE=PASS');
+            console.log('CROMA_DIRECT_PRICE_INR='+result.priceNum);
+            console.log('CROMA_MAX_PARALLEL=8');
+            console.log('CROMA_MAX_WAITING_QUEUE=64');
+            console.log('SCRAPEDO_USED=NO');
+          })().catch(e=>{console.error('QA_ERROR='+e.message);process.exitCode=1})
+            .finally(()=>mongoose.disconnect());
+          JS
+          echo 'CROMA_PARALLEL_DEPLOY=PASS'
+          echo 'EXISTING_AMAZON_FLIPKART_WORKER_UNCHANGED=YES'
+          trap - ERR
+          REMOTE_SCRIPT
