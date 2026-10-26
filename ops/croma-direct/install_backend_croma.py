@@ -98,7 +98,7 @@ def main():
         restored = (folder / 'LivePriceService.js').read_bytes()
         if sha(restored) != manifest['service_sha_before']:
             raise RuntimeError('backup digest verification failed')
-        tmp = SERVICE.with_suffix('.js.restore-temp')
+        tmp = SERVICE.with_name('LivePriceService.restore-temp.js')
         tmp.write_bytes(restored)
         syntax(tmp)
         os.replace(tmp, SERVICE)
@@ -130,7 +130,7 @@ def main():
         'service_sha_before': sha(orig), 'adapter_existed': False
     }))
     try:
-        tmp = SERVICE.with_suffix('.js.croma-temp')
+        tmp = SERVICE.with_name('LivePriceService.croma-temp.js')
         tmp.write_text(transformed, encoding='utf8')
         syntax(tmp)
         os.replace(tmp, SERVICE)
