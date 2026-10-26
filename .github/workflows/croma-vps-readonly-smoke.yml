@@ -44,6 +44,7 @@ jobs:
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes ops/croma-direct/install_backend_croma.py "$USER@$HOST:~/croma-backend-install-test.py"
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes ops/croma-direct/audit_ui_and_samples.sh "$USER@$HOST:~/croma-audit-samples.sh"
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes ops/croma-direct/probe_search_coverage.js "$USER@$HOST:~/croma-probe-coverage.js"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes ops/croma-direct/probe_page0.js "$USER@$HOST:~/croma-probe-page0.js"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd "$HOME/apps/trustfolio/node-backend"
@@ -54,7 +55,7 @@ jobs:
           sed -n '93,125p' services/LivePriceService.js
           echo '===SERVICE_END==='
           bash "$HOME/croma-audit-samples.sh"
-          node "$HOME/croma-probe-coverage.js"
+          node "$HOME/croma-probe-page0.js"
           sed -n '185,199p' services/LivePriceService.js
           node <<'JS'
           require('dotenv').config();
