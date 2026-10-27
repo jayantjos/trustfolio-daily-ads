@@ -1,0 +1,137 @@
+name: TrustFolio opt-in LinkedIn and X crossposting (isolated from Meta)
+on:
+  pull_request:
+    paths:
+      - 'automation/linkedin_x_crosspost_v1.py'
+      - 'automation/test_linkedin_x_crosspost_v1.py'
+      - '.github/workflows/linkedin-x-crosspost.yml'
+  workflow_run:
+    workflows: ['TrustFolio automated Instagram campaigns']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Completed Meta scheduled workflow run ID (dry-run ONLY)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: trustfolio-extended-social-one-at-a-time
+  cancel-in-progress: false
+
+jobs:
+  offline-safety-ci:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test official API request structures, same source IDs, no duplicates and no paid X without approval
+        run: |
+          set -euo pipefail
+          python -m py_compile automation/linkedin_x_crosspost_v1.py
+          python automation/linkedin_x_crosspost_v1.py --help
+          python -m unittest -v automation.test_linkedin_x_crosspost_v1
+          python - <<'PY'
+          import pathlib
+          src=pathlib.Path('.github/workflows/linkedin-x-crosspost.yml').read_text()
+          assert 'workflow_run:' in src
+          assert "github.event.workflow_run.event == 'schedule'" in src
+          assert "github.event.workflow_run.head_branch == 'main'" in src
+          assert '--live' in src
+          assert "TF_X_PAID_API_APPROVED" in src
+          assert "TF_LINKEDIN_DIRECT_PUBLISH_ENABLED" in src
+          assert "TF_X_DIRECT_PUBLISH_ENABLED" in src
+          assert 'continue-on-error: true' in src
+          assert '.github/workflows/auto-instagram-campaigns.yml' not in src
+          print('META_PIPELINE_UNMODIFIED=PASS')
+          PY
+
+  crosspost-approved-source:
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'schedule' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       (vars.TF_LINKEDIN_DIRECT_PUBLISH_ENABLED == 'true' ||
+        vars.TF_X_DIRECT_PUBLISH_ENABLED == 'true'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SOURCE_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
+      TF_LINKEDIN_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_LINKEDIN_DIRECT_PUBLISH_ENABLED || 'false' }}
+      TF_X_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_X_DIRECT_PUBLISH_ENABLED || 'false' }}
+      TF_X_PAID_API_APPROVED: ${{ vars.TF_X_PAID_API_APPROVED || 'false' }}
+      TF_LINKEDIN_VERSION: ${{ vars.TF_LINKEDIN_VERSION || '202608' }}
+      TF_LINKEDIN_AUTHOR_URN: ${{ vars.TF_LINKEDIN_AUTHOR_URN }}
+      TF_X_USER_ID: ${{ vars.TF_X_USER_ID }}
+      TF_LINKEDIN_ACCESS_TOKEN: ${{ secrets.TF_LINKEDIN_ACCESS_TOKEN }}
+      TF_X_USER_ACCESS_TOKEN: ${{ secrets.TF_X_USER_ACCESS_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_EVENT_NAME: ${{ github.event_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Find exactly one existing QA artifact from original Meta schedule
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json,os,re
+          from urllib.request import Request,urlopen
+          n=os.environ['SOURCE_RUN_ID']
+          if not re.fullmatch('[0-9]{5,25}',n):
+              raise SystemExit('Invalid original run ID')
+          url='https://api.github.com/repos/jayantjos/trustfolio-daily-ads/actions/runs/'+n+'/artifacts'
+          with urlopen(Request(url,headers={
+              'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+              'Accept':'application/vnd.github+json'}),timeout=25) as r:
+              obj=json.load(r)
+          found=[x for x in obj.get('artifacts',[]) if
+                 x.get('name')=='trustfolio-social-campaign-'+n and not x.get('expired')]
+          if len(found)>1:raise SystemExit('Ambiguous original ad artifact')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:
+              out.write('available='+str(len(found)==1).lower()+'\n')
+          print('ORIGINAL_APPROVED_ARTIFACT_AVAILABLE='+str(bool(found)))
+          PY
+      - name: Download original immutable approved ad artifact
+        if: steps.source.outputs.available == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: trustfolio-social-campaign-${{ env.SOURCE_RUN_ID }}
+          path: source-social-ad
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ env.SOURCE_RUN_ID }}
+      - name: Verify source image and generate safe previews without publishing
+        if: steps.source.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          python automation/linkedin_x_crosspost_v1.py --network linkedin --folder source-social-ad
+          python automation/linkedin_x_crosspost_v1.py --network x --folder source-social-ad
+      - name: LinkedIn approved feed publish (separate per-mode lock)
+        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_LINKEDIN_DIRECT_PUBLISH_ENABLED == 'true'
+        continue-on-error: true
+        run: python automation/linkedin_x_crosspost_v1.py --network linkedin --folder source-social-ad --live
+      - name: X approved feed publish (requires paid API opt-in and separate lock)
+        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_X_DIRECT_PUBLISH_ENABLED == 'true'
+        continue-on-error: true
+        run: python automation/linkedin_x_crosspost_v1.py --network x --folder source-social-ad --live
+      - name: Preserve original Meta auto-posting configuration and limits
+        run: |
+          echo "META_DAILY_INSTAGRAM_CAP_UNCHANGED=3"
+          echo "META_DAILY_FACEBOOK_CAP_UNCHANGED=3"
+          echo "LINKEDIN_X_DEFAULT_LIVE_PUBLISHING=DISABLED"
+          echo "NO_AUTO_RETRY_AFTER_AMBIGUOUS_EXTERNAL_POST=YES"
