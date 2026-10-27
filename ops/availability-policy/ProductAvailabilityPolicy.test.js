@@ -26,6 +26,8 @@ assert.equal(b.unavailable_checks,0);
 const c={...ambiguous,...toAvailabilityState(ambiguous,b)};
 assert.equal(c.unavailable_checks,1);
 assert.equal(classify({status:'ok',availability:'item sold out'}),'permanent');
+assert.equal(classify({status:'ok',availability:'out_of_stock'}),'permanent');
+assert.equal(classify({status:'ok',availability:'not_available'}),'ambiguous');
 assert.equal(classify({status:'ok',availability:'not available'}),'ambiguous');
 assert.equal(classify({status:'ok',availability:'available'}),'none');
 assert.equal(classify({status:'ok',http_status:502,availability:'out of stock'}),'transient');
