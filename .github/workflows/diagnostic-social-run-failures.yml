@@ -1,4 +1,4 @@
-name: TrustFolio one-time read-only posting failure diagnostic
+name: TrustFolio read-only scheduled posting Graph error diagnostic
 on:
   pull_request:
     paths:
@@ -9,51 +9,62 @@ permissions:
 jobs:
   list-failed-social-runs:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     env:
       GH_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Read recent scheduled campaign run IDs and failed steps (no Meta calls)
+      - name: Inspect recent failed scheduled run and sanitized Meta Graph errors (no writes)
         run: |
           python - <<'PY'
-          import json,os
+          import json,os,re
           from urllib.request import Request,urlopen
-          from urllib.error import HTTPError
-          from urllib.parse import urlencode
+          from urllib.error import HTTPError,URLError
           base='https://api.github.com/repos/jayantjos/trustfolio-daily-ads/'
+          headers={'Authorization':'Bearer '+os.environ['GH_READ_TOKEN'],
+                   'Accept':'application/vnd.github+json',
+                   'X-GitHub-Api-Version':'2022-11-28',
+                   'User-Agent':'TrustFolioReadonlyPostingAudit/1'}
           def get(path):
-              req=Request(base+path,headers={
-                  'Authorization':'Bearer '+os.environ['GH_READ_TOKEN'],
-                  'Accept':'application/vnd.github+json',
-                  'X-GitHub-Api-Version':'2022-11-28',
-                  'User-Agent':'trustfolio-readonly-run-check'})
+              with urlopen(Request(base+path,headers=headers),timeout=25) as r:
+                  return json.load(r)
+          def sanitized(job_id):
+              url=base+'actions/jobs/'+str(job_id)+'/logs'
               try:
-                  with urlopen(req,timeout=20) as response:
-                      return json.load(response)
-              except HTTPError as exc:
-                  print('GITHUB_DIAGNOSTIC_HTTP='+str(exc.code))
-                  raise
-          data=get('actions/workflows/auto-instagram-campaigns.yml/runs?per_page=60')
-          runs=data.get('workflow_runs') or []
-          print('SOCIAL_RUNS_RETURNED='+str(len(runs)))
+                  with urlopen(Request(url,headers=headers),timeout=40) as resp:
+                      body=resp.read(4_000_000).decode('utf8','replace')
+              except (HTTPError,URLError,TimeoutError) as e:
+                  print('JOB_LOGS_UNAVAILABLE',job_id,type(e).__name__)
+                  return
+              patterns=('META_POST_BLOCKED_REASON=','GRAPH_CODE=',
+                        'GRAPH_SUBCODE=','META_RESULT=',
+                        'PriceAuditBlocked:','Website returned brand-fallback',
+                        'META_PARTIAL_PUBLICATION_FAILURE')
+              for line in body.splitlines():
+                  if not any(p in line for p in patterns):
+                      continue
+                  for p in patterns:
+                      at=line.find(p)
+                      if at>=0:
+                          excerpt=line[at:at+170]
+                          excerpt=re.sub(r'(?i)(bearer|token|secret|authorization)[=:]\S+','[redacted]',excerpt)
+                          print('SANITIZED_FAILURE',job_id,excerpt)
+                          break
+          runs=get('actions/workflows/auto-instagram-campaigns.yml/runs?per_page=75').get('workflow_runs') or []
+          count=0
           for run in runs:
-              if run.get('event') not in ('schedule','workflow_dispatch','push'):
+              if run.get('event')!='schedule' or run.get('created_at','')<'2026-10-27':
                   continue
-              created=run.get('created_at') or ''
-              if created < '2026-10-25':
+              print('SCHEDULED_RUN',run['id'],run.get('created_at'),
+                    run.get('conclusion'),run.get('html_url'))
+              if run.get('conclusion')!='failure' or count>=6:
                   continue
-              rid=run['id']
-              print('RUN',rid,'created',created,'event',run.get('event'),
-                    'status',run.get('status'),'conclusion',run.get('conclusion'),
-                    'attempt',run.get('run_attempt'),
-                    'url',run.get('html_url'))
-              jobs=get('actions/runs/'+str(rid)+'/jobs?per_page=40').get('jobs') or []
+              jobs=get('actions/runs/'+str(run['id'])+'/jobs?per_page=30').get('jobs') or []
               for job in jobs:
-                  print('JOB',job.get('id'),job.get('name'),
-                        'status',job.get('status'),'conclusion',job.get('conclusion'))
-                  failed=[step for step in job.get('steps') or []
-                          if step.get('conclusion') in ('failure','cancelled','timed_out')]
-                  for step in failed:
-                      print('FAILED_STEP',str(step.get('name'))[:180],
-                            'step_number',step.get('number'))
+                  if job.get('conclusion')=='failure':
+                      print('FAILED_JOB',job['id'],job.get('name'))
+                      sanitized(job['id'])
+                      count+=1
+              if count>=6:
+                  break
+          print('READ_ONLY_GRAPH_DIAGNOSTIC_COMPLETE')
           PY
