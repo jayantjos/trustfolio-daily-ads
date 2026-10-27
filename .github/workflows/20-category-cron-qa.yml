@@ -43,7 +43,9 @@ jobs:
           import json
           f=Path('.github/workflows/auto-instagram-campaigns.yml').read_text()
           cfg=json.loads(Path('automation/campaigns.json').read_text())
-          assert 'mode=plan[\'mode\']' in f
+          renderer=Path('automation/render_with_brand_fallback_v1.py').read_text()
+          assert "automation/render_with_brand_fallback_v1.py" in f
+          assert "mode=plan['mode']" in renderer
           assert "TF_AUTO_POST_ENABLED" in f
           assert "TF_METRICOOL_API_TOKEN" in f
           assert len(cfg['rotation']['categories'])==20

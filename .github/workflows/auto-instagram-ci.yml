@@ -40,7 +40,7 @@ jobs:
           PY
       - name: No-network regression suite for images, site ranking and publishing gate
         run: |
-          python -m unittest -v automation.test_auto_campaign_v1 automation.test_metricool_publish_v1
+          python -m unittest -v automation.test_auto_campaign_v1 automation.test_metricool_publish_v1 automation.test_rebuild_stale_meta_v1
           python -m unittest -v test_campaign_link_contract_v1 test_site_top5_ads_v1 test_ads_spec_sanity
       - name: Confirm website source can produce real category/brand-safe campaign
         run: |
