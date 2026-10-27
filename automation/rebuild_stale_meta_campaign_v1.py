@@ -11,6 +11,12 @@ from pathlib import Path
 import re
 import subprocess
 import time
+import sys
+
+# GitHub invokes this file as `python automation/rebuild_stale_meta_campaign_v1.py`.
+# In that CLI mode sys.path[0] is automation/, not the repository root.
+# Resolve our own repository root before importing the automation package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from automation.auto_campaign_v1 import package_assets
 from automation.meta_graph_publish_v1 import validate_approved_manifest
