@@ -20,6 +20,7 @@ def qa_manifest():
         "size":[1080,1350],
         "ranked_product_ids":["p1","p2","p3","p4","p5"],
         "campaign_id":"tfauto-"+"b"*18,
+        "mode":"budget",
         "landing_url":"https://www.trustfolio.in/category/smart-phones/products?budget=15000",
         "caption":"✨ Best Smartphones Under ₹15,000. "
                   "Compare the real Top 5 website picks; latest prices can change. "
@@ -242,6 +243,53 @@ class DirectMetaSafetyTests(unittest.TestCase):
                     "https://media.trustfolio.in/trustfolio-auto/t.jpg","local.jpg",env={})
             media.assert_not_called()
             identity.assert_not_called()
+
+
+    def test_daily_mode_lock_is_independent_of_fallback_budget(self):
+        cfg={"today":"2026-10-27","campaign_mode":"budget"}
+        first=m.ledger_path(cfg,"facebook","tfauto-"+"a"*18)
+        second=m.ledger_path(cfg,"facebook","tfauto-"+"b"*18)
+        self.assertEqual(first,second)
+        self.assertTrue(first.endswith("/facebook-mode-budget.json"))
+        self.assertNotEqual(first,m.ledger_path(cfg,"instagram","tfauto-"+"a"*18))
+
+    def test_existing_unfinished_mode_reservation_never_retries_blindly(self):
+        import base64,json
+        cfg={"github_token":"gh","today":"2026-10-27","campaign_mode":"budget"}
+        encoded=base64.b64encode(json.dumps({"status":"reserved"}).encode()).decode()
+        with patch.object(m,"ensure_ledger"), \
+             patch.object(m,"ledger_list",return_value=[{"name":"instagram-mode-budget.json"}]), \
+             patch.object(m,"_github",return_value={"content":encoded}):
+            with self.assertRaisesRegex(m.PublishingBlocked,"pending reconciliation"):
+                m.reserve(cfg,"instagram","tfauto-"+"a"*18,
+                          "https://media.trustfolio.in/x.jpg",max_posts=3)
+
+    def test_existing_completed_mode_blocks_duplicate_even_if_budget_changes(self):
+        import base64,json
+        cfg={"github_token":"gh","today":"2026-10-27","campaign_mode":"comparison"}
+        encoded=base64.b64encode(json.dumps({"status":"api_accepted_published"}).encode()).decode()
+        with patch.object(m,"ensure_ledger"), \
+             patch.object(m,"ledger_list",return_value=[{"name":"facebook-mode-comparison.json"}]), \
+             patch.object(m,"_github",return_value={"content":encoded}):
+            self.assertIsNone(m.reserve(cfg,"facebook","tfauto-"+"b"*18,
+                                        "https://media.trustfolio.in/x.jpg",max_posts=3))
+
+    def test_failed_instagram_preflight_does_not_block_facebook_publication(self):
+        cfg={"networks":("instagram","facebook"),"max_posts":3}
+        with patch.object(m,"load_env",return_value=cfg), \
+             patch.object(m,"_check_media"), \
+             patch.object(m,"confirm_page_token_type"), \
+             patch.object(m,"confirm_page_identity",
+                          side_effect=m.PublishingBlocked("Instagram disconnected")), \
+             patch.object(m,"reserve",return_value="a"*40), \
+             patch.object(m,"publish_facebook",
+                          return_value={"network":"facebook","status":"api_accepted_published",
+                                        "media_id":"123"}) as facebook:
+            results=m.publish_verified(qa_manifest(),"https://media.trustfolio.in/x.jpg","x.jpg")
+        self.assertEqual(results[0]["network"],"instagram")
+        self.assertEqual(results[0]["status"],"blocked")
+        self.assertEqual(results[1]["status"],"api_accepted_published")
+        facebook.assert_called_once()
 
 
 if __name__=="__main__":

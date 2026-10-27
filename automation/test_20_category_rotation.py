@@ -115,6 +115,36 @@ class TwentyCategoryRotationTests(unittest.TestCase):
         self.assertFalse(plan["auto_publish"])
         self.assertTrue(all(brand=="" for _,_,brand in calls))
 
+    def test_non_round_budget_within_configured_minimum_and_maximum(self):
+        day=date(2026,10,27)
+        candidates=rotation_candidates("budget",POLICY,day)
+        first_category=candidates[0]["category"]
+        bounds=next(x["budgets"] for x in POLICY["rotation"]["categories"]
+                    if x["site_slug"]==first_category)
+        same=[x["budget"] for x in candidates if x["category"]==first_category]
+        self.assertTrue(set(bounds).issubset(same))
+        self.assertTrue(any(min(bounds)<v<max(bounds) and v not in bounds for v in same))
+        self.assertTrue(all(min(bounds)<=v<=max(bounds) for v in same))
+
+    def test_third_budget_fallback_before_moving_to_new_category(self):
+        day=date(2026,10,27)
+        amounts=rotation_candidates("comparison",POLICY,day)
+        first=amounts[0]["category"]
+        candidate_amounts=[x["budget"] for x in amounts if x["category"]==first]
+        self.assertGreaterEqual(len(candidate_amounts),3)
+        wanted=candidate_amounts[2]
+        calls=[]
+        def site(category,budget,brand):
+            calls.append((category,budget))
+            if category==first and budget==wanted:
+                return live_mock(category,budget,brand)
+            raise ValueError("No five real products for this candidate")
+        result=choose_campaign("comparison",POLICY,day=day,fetcher=site)
+        self.assertEqual(result["status"],"eligible")
+        self.assertEqual(result["budget"],wanted)
+        self.assertEqual(result["category"],first)
+        self.assertEqual(calls[:3],[(first,x) for x in candidate_amounts[:3]])
+
     def test_missing_all_verified_brands_skips_without_faking(self):
         calls=[]
         def f(category,budget,brand):
@@ -125,7 +155,7 @@ class TwentyCategoryRotationTests(unittest.TestCase):
         self.assertFalse(plan["auto_publish"])
         self.assertGreater(len(plan["attempts"]),0)
         self.assertTrue(all(b for _,_,b in calls))
-        self.assertLessEqual(len(calls),20)
+        self.assertLessEqual(len(calls),POLICY['rotation']['max_website_attempts_per_run'])
 
     def test_campaign_type_must_match_rendered_visual(self):
         plan={"status":"eligible","mode":"brand_budget","category":"smartwatches",
@@ -164,7 +194,7 @@ class TwentyCategoryRotationTests(unittest.TestCase):
 
     def test_six_daily_cron_slots_and_live_price_guard(self):
         workflow=(ROOT/".github/workflows/auto-instagram-campaigns.yml").read_text("utf8")
-        self.assertIn("TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '6'",workflow)
+        self.assertIn("TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '3'",workflow)
         self.assertIn("github.event_name == 'schedule'",workflow)
         self.assertIn("python automation/verify_price_before_meta_publish_v1.py",workflow)
         self.assertIn("2026-10-21",workflow)
@@ -175,11 +205,15 @@ class TwentyCategoryRotationTests(unittest.TestCase):
             self.assertIn("cron: '"+item+"'",workflow)
             self.assertIn("github.event.schedule == '"+item+"'",workflow)
         self.assertIn("'--slot',str(slot)",workflow)
+        # Each mode's second cron is recovery, never an extra published mode.
+        self.assertIn("'0 5 * * *':('budget',0)",workflow)
+        self.assertIn("'30 10 * * *':('brand_budget',0)",workflow)
+        self.assertIn("'30 15 * * *':('comparison',0)",workflow)
         self.assertIn("mode=plan['mode']",workflow)
         self.assertEqual(POLICY["rotation"]["cadence_ist"],{
-            "budget":["08:30","10:30"],
-            "brand_budget":["13:30","16:00"],
-            "comparison":["19:00","21:00"]})
+            "budget":["08:30","10:30 recovery"],
+            "brand_budget":["13:30","16:00 recovery"],
+            "comparison":["19:00","21:00 recovery"]})
 
 
 if __name__=="__main__":

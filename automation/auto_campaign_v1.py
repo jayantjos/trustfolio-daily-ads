@@ -76,7 +76,7 @@ def rotation_candidates(mode, policy, day, *, slot=0):
     index = 2 * ((same_parity_slot + int(offsets.get(mode, 0)) + 2 * slot) % cohort_size) + parity_offset
     cycle = same_parity_slot // cohort_size
     limit = int(rotation.get("max_categories_checked_per_slot", 5))
-    if not (1 <= limit <= 20):
+    if not (1 <= limit <= len(categories)//2):
         raise ValueError("Invalid category retry limit")
     brand_limit = int(rotation.get("max_brands_checked_per_category", 2))
     if not (1 <= brand_limit <= 4):
@@ -90,9 +90,17 @@ def rotation_candidates(mode, policy, day, *, slot=0):
             raise ValueError("Invalid budget ladder for " + category)
         # Each category revisits after 10 dates of its own parity, with a
         # new primary price tier. Even dates start one tier ahead of odd.
-        # Check one alternative tier if the first has <5 genuine products.
+        # Try every configured tier, then a deterministic unrounded amount within
+        # the same category's configured minimum/maximum budget range.
+        # This keeps the ad reproducible on catch-up runs, not randomly changing.
         selected = (cycle + parity_offset) % len(budgets)
-        amounts = [budgets[(selected + i) % len(budgets)] for i in range(min(2, len(budgets)))]
+        amounts = [budgets[(selected + i) % len(budgets)] for i in range(len(budgets))]
+        low, high = min(budgets), max(budgets)
+        if high - low > 2:
+            seed = f"{day.isoformat()}|{mode}|{category}|{slot}"
+            intermediate = low + 1 + (int(hashlib.sha256(seed.encode()).hexdigest()[:12], 16) % (high - low - 1))
+            if intermediate not in amounts:
+                amounts.insert(1, intermediate)
         if mode == "brand_budget":
             brands = [str(b).strip() for b in entry.get("brands", []) if str(b).strip()]
             if not brands:
@@ -130,7 +138,10 @@ def choose_campaign(mode, policy, *, day, slot=0, overrides=None, fetcher=build_
             candidates = candidates[offset:] + candidates[:offset]
 
     failures = []
-    for candidate in candidates:
+    max_attempts = int((policy.get("rotation") or {}).get("max_website_attempts_per_run", 48))
+    if not 1 <= max_attempts <= 120:
+        raise ValueError("Invalid website attempt limit")
+    for candidate in candidates[:max_attempts]:
         category = str(candidate["category"]).strip()
         budget = int(candidate["budget"])
         brand = str(candidate.get("brand") or "").strip() if mode == "brand_budget" else ""

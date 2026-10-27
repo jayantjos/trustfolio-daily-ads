@@ -4,7 +4,7 @@
   "expected_metricool_blog_id": "7271681",
   "expected_metricool_user_id": "5635852",
   "timezone": "Asia/Kolkata",
-  "posting_policy": "Official Meta Graph API: From Oct 21, 2026 IST cron may publish TWO budget, TWO same-brand+budget, TWO Top-5 comparison ad candidates each day to @trustfolio3 and Trustfolio Facebook Page (up to 6/network/day). All ads require exactly 5 live site-ranked products, mode/brand validation, approved art, public-image SHA integrity, duplicate ledger and live IG API quota. Skip a mode if no valid 5-product ranking. The three formats each have two distinct daily category slots, rotating 20 categories with odd/even calendar-date groups and price tiers; no guarantee of six published posts when live Top-5, brand or price QA fails. Metricool auto-publication is OFF. Video Shorts export is separately QA-only, uploading/publishing to YouTube/X/LinkedIn requires explicit account OAuth authorization.",
+  "posting_policy": "Official Meta Graph API: exactly one approved budget, one same-brand+budget, and one Top-5 comparison campaign daily, crossposted to @trustfolio3 and the Trustfolio Facebook Page (maximum 3 published posts per network per IST date). Each format has a morning/evening catch-up run for GitHub cron delays, with one immutable per-network per-mode ledger lock preventing duplicate posts. Select from all configured price tiers then a deterministic non-round budget within the category's configured bounds; fall back across up to ten same-parity categories and verified brands. No fake or incomplete Top-5, no stale price, no unapproved visual, no blind retry after ambiguous Meta replies. Skipped campaigns trigger an audit alarm, not fabricated posts. Metricool unattended posting OFF.",
   "modes_description": {
     "budget": "Five website-ranked product picks for a price budget.",
     "brand_budget": "Five website-ranked products all of the same brand and under budget; skip if not available.",
@@ -80,18 +80,27 @@
     ]
   },
   "rotation": {
-    "description": "Twenty fixed design categories with source-verified website Top-5 picks. Odd calendar dates rotate among 10 odd-day categories and even dates among 10 even-day categories. Different mode and slot offsets keep all six primary slots on separate categories. A category advances its primary budget tier after each ten same-parity dates, with even-day tiers offset from odd-day tiers. Category retries never cross date parity; skip unverified brand/rank.",
+    "description": "Twenty categories divided into odd/even calendar-date cohorts. Three daily modes and idempotent catch-up attempts: 3 published posts per account maximum. First try current budget tier, then a deterministic non-round integer strictly between configured min/max, then the remaining two tiers; continue through same-parity categories while preserving verified brand, Top-5, QA and price conditions.",
     "cadence_ist": {
-      "budget": ["08:30", "10:30"],
-      "brand_budget": ["13:30", "16:00"],
-      "comparison": ["19:00", "21:00"]
+      "budget": [
+        "08:30",
+        "10:30 recovery"
+      ],
+      "brand_budget": [
+        "13:30",
+        "16:00 recovery"
+      ],
+      "comparison": [
+        "19:00",
+        "21:00 recovery"
+      ]
     },
     "mode_category_offsets": {
       "budget": 0,
       "brand_budget": 7,
       "comparison": 13
     },
-    "max_categories_checked_per_slot": 5,
+    "max_categories_checked_per_slot": 10,
     "max_brands_checked_per_category": 2,
     "categories": [
       {
@@ -373,6 +382,7 @@
           "Livpure"
         ]
       }
-    ]
+    ],
+    "max_website_attempts_per_run": 48
   }
 }

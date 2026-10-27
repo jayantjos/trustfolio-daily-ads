@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 import re
 import time
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -224,7 +224,11 @@ def ensure_ledger(cfg):
 
 
 def ledger_path(cfg,network,key):
-    return "meta-publication-ledger/"+cfg["today"]+"/"+network+"-"+key+".json"
+    # One immutable publication slot per mode/network/date, regardless of which
+    # eligible category or budget a later catch-up may select.
+    mode = cfg.get("campaign_mode")
+    name = (network+"-mode-"+mode+".json") if mode in ("budget","brand_budget","comparison") else (network+"-"+key+".json")
+    return "meta-publication-ledger/"+cfg["today"]+"/"+name
 
 
 def ledger_list(cfg):
@@ -248,9 +252,22 @@ def reserve(cfg, network, key, url, *, max_posts):
     Never blindly retry without checking Instagram/Facebook publication.
     """
     ensure_ledger(cfg)
-    name=network+"-"+key+".json"
+    name=ledger_path(cfg,network,key).rsplit("/",1)[-1]
     current=ledger_list(cfg)
     if any(x.get("name")==name for x in current):
+        if cfg.get("campaign_mode"):
+            # A reserved/ambiguous API attempt is not proof of publication.
+            # Never blindly retry it; successful posts can safely be skipped.
+            previous=_github(cfg["github_token"],
+                             "contents/"+ledger_path(cfg,network,key)+"?"+
+                             urlencode({"ref":LEDGER_BRANCH}))
+            try:
+                item=json.loads(base64.b64decode(previous["content"]).decode("utf8"))
+            except (KeyError,TypeError,ValueError):
+                raise PublishingBlocked("Unreadable existing mode reservation; reconcile before retry") from None
+            if item.get("status")!="api_accepted_published":
+                raise PublishingBlocked("Prior "+network+" "+cfg["campaign_mode"]+
+                                        " reservation is pending reconciliation")
         return None
     used=sum(x.get("name","").startswith(network+"-") for x in current)
     if used>=max_posts:
@@ -259,6 +276,8 @@ def reserve(cfg, network, key, url, *, max_posts):
         "campaign_id":key, "network":network, "status":"reserved",
         "public_media_url":url, "reserved_at":datetime.now(IST).isoformat(),
     }
+    if cfg.get("campaign_mode"):
+        result["mode"]=cfg["campaign_mode"]
     data={
         "branch":LEDGER_BRANCH,
         "message":"Reserve Meta "+network+" campaign "+key,
@@ -283,6 +302,8 @@ def record_status(cfg,network,key,sha,status,extra=None):
         raise PublishingBlocked("Ledger SHA invalid")
     value={"campaign_id":key,"network":network,"status":status,
            "recorded_at":datetime.now(IST).isoformat()}
+    if cfg.get("campaign_mode"):
+        value["mode"]=cfg["campaign_mode"]
     value.update(extra or {})
     obj={"branch":LEDGER_BRANCH,"sha":sha,
          "message":"Meta "+network+" campaign "+key+" "+status,
@@ -338,27 +359,44 @@ def publish_facebook(cfg,url,caption,network,key,sha):
 def publish_verified(manifest,media_url,local_jpg,*,env=None):
     key=validate_approved_manifest(manifest)
     cfg=load_env(env=env)
-    # Reuse existing proven media-byte match check from previous QA gate.
+    mode=manifest.get("mode")
+    if mode not in ("budget","brand_budget","comparison"):
+        raise PublishingBlocked("Missing valid campaign mode for daily publication lock")
+    cfg["campaign_mode"]=mode
+    # Common preflight must succeed before attempting either network.
     _check_media(media_url,local_jpg)
     confirm_page_token_type(cfg)
-    igid=confirm_page_identity(cfg)
+    # Instagram connection failures must not prevent a valid Facebook post.
+    igid=None
+    ig_error=None
+    if "instagram" in cfg["networks"]:
+        try:
+            igid=confirm_page_identity(cfg)
+        except (PublishingBlocked, URLError, TimeoutError, OSError) as error:
+            ig_error=str(error)
     results=[]
     for network in cfg["networks"]:
-        if network=="instagram":
-            quota=check_instagram_quota(cfg,igid)
-            # No published account is infinite; runtime API quota governs.
-            if quota["quota_usage"]>=quota["quota_total"]:
-                raise PublishingBlocked("No Instagram quota")
-        sha=reserve(cfg,network,key,media_url,max_posts=cfg["max_posts"])
-        if sha is None:
-            results.append({"network":network,"status":"already_reserved_no_duplicate"})
-            continue
-        if network=="instagram":
-            results.append(publish_instagram(cfg,igid,media_url,manifest["caption"],
-                                             network,key,sha))
-        elif network=="facebook":
-            results.append(publish_facebook(cfg,media_url,manifest["caption"],
-                                            network,key,sha))
+        try:
+            if network=="instagram":
+                if igid is None:
+                    raise PublishingBlocked("Instagram identity preflight blocked: "+str(ig_error))
+                quota=check_instagram_quota(cfg,igid)
+                if quota["quota_usage"]>=quota["quota_total"]:
+                    raise PublishingBlocked("No Instagram quota")
+            sha=reserve(cfg,network,key,media_url,max_posts=cfg["max_posts"])
+            if sha is None:
+                results.append({"network":network,"status":"already_published_no_duplicate"})
+                continue
+            if network=="instagram":
+                results.append(publish_instagram(cfg,igid,media_url,manifest["caption"],
+                                                 network,key,sha))
+            else:
+                results.append(publish_facebook(cfg,media_url,manifest["caption"],
+                                                network,key,sha))
+        except (PublishingBlocked, URLError, TimeoutError, OSError) as error:
+            # A reservation made before a possibly accepted Meta write remains
+            # locked; the next recovery run flags it for reconciliation.
+            results.append({"network":network,"status":"blocked","reason":str(error)})
     return results
 
 
@@ -382,6 +420,10 @@ def main():
         print("META_RESULT="+r["network"]+":"+r["status"])
         if r.get("media_id"):
             print("META_POST_OBJECT_ID="+r["media_id"])
+        if r.get("reason"):
+            print("META_POST_BLOCKED_REASON="+r["network"]+":"+r["reason"])
+    if any(r["status"]=="blocked" for r in results):
+        raise SystemExit("META_PARTIAL_PUBLICATION_FAILURE=YES")
 
 
 if __name__=="__main__":
