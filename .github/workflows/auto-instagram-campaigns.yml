@@ -50,7 +50,7 @@ jobs:
   render-qa-schedule:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     env:
       MEDIA_BASE: https://media.trustfolio.in
       MEDIA_PREFIX: trustfolio-auto
@@ -210,33 +210,19 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
           ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
 
-      - name: Render original website-ranked ad on VPS
+      - name: Render and safely try another verified brand or budget if website changes
         if: steps.plan.outputs.eligible == 'true'
         env:
           HOST: ${{ secrets.TF_DEPLOY_HOST }}
           USER: ${{ secrets.TF_DEPLOY_USER }}
         run: |
           set -euo pipefail
-          [[ "$RUN_KEY" =~ ^[0-9]+$ ]]
-          REMOTE="${USER}@${HOST}"
-          REMOTE_REL="new_scraper/ads/ads_qa/auto-runs/$RUN_KEY"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" "mkdir -p \"\$HOME/$REMOTE_REL\""
-          scp -o StrictHostKeyChecking=yes campaign/plan.json "$REMOTE:$REMOTE_REL/plan.json"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" "cd \"\$HOME/new_scraper/ads\" && \"\$HOME/venv/bin/python\" - '$RUN_KEY'" <<'PY'
-          import json,sys
-          from pathlib import Path
-          key=sys.argv[1]
-          assert key.isdecimal()
-          root=Path.home()/'new_scraper'/'ads'
-          folder=root/'ads_qa'/'auto-runs'/key
-          plan=json.loads((folder/'plan.json').read_text('utf8'))
-          assert plan['status']=='eligible' and plan['account']=='trustfolio3'
-          sys.path.insert(0,str(root))
-          from ads_qa.render_site_ranked_qa_v1 import run
-          run(plan['category'],int(plan['budget']),plan['brand'],folder,mode=plan['mode'])
-          PY
-          scp -o StrictHostKeyChecking=yes "$REMOTE:$REMOTE_REL/trustfolio-live-website-top5-1024x1536.png" campaign/
-          scp -o StrictHostKeyChecking=yes "$REMOTE:$REMOTE_REL/website-top5-render-qa.json" campaign/
+          python automation/render_with_brand_fallback_v1.py \
+            --plan campaign/plan.json \
+            --folder campaign \
+            --run-key "$RUN_KEY" \
+            --host "$HOST" --user "$USER" \
+            --max-renders 3
 
       - name: Validate exact rank mapping and create full-size Instagram 4:5 JPG/caption
         if: steps.plan.outputs.eligible == 'true'
@@ -262,9 +248,9 @@ jobs:
         env:
           HOST: ${{ secrets.TF_DEPLOY_HOST }}
           USER: ${{ secrets.TF_DEPLOY_USER }}
-          ID: ${{ steps.plan.outputs.campaign_id }}
         run: |
           set -euo pipefail
+          ID="$(python -c 'import json;print(json.load(open("campaign/plan.json"))["campaign_id"])')"
           [[ "$ID" =~ ^tfauto-[a-f0-9]{18}$ ]]
           REMOTE="${USER}@${HOST}"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" 'mkdir -p "$HOME/public_media/trustfolio-auto"'
@@ -274,9 +260,9 @@ jobs:
       - name: Verify media URL publicly serves the exact approved JPEG
         if: steps.plan.outputs.eligible == 'true'
         env:
-          ID: ${{ steps.plan.outputs.campaign_id }}
         run: |
           set -euo pipefail
+          ID="$(python -c 'import json;print(json.load(open("campaign/plan.json"))["campaign_id"])')"
           python - "$ID" <<'PY'
           import sys
           from automation.metricool_publish_v1 import _check_media
@@ -290,9 +276,9 @@ jobs:
       - name: Validate direct Meta API media eligibility without publishing
         if: steps.plan.outputs.eligible == 'true'
         env:
-          ID: ${{ steps.plan.outputs.campaign_id }}
         run: |
           set -euo pipefail
+          ID="$(python -c 'import json;print(json.load(open("campaign/plan.json"))["campaign_id"])')"
           python automation/meta_graph_publish_v1.py \
             --manifest campaign/post/post.json \
             --jpg "campaign/post/$ID.jpg" \
@@ -309,7 +295,8 @@ jobs:
           TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          ID: ${{ steps.plan.outputs.campaign_id }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
         run: |
           set -euo pipefail
           # Previously queued Metricool posts remain drafts. Daily per-mode
@@ -327,9 +314,18 @@ jobs:
           echo "INSTAGRAM_METRICOOL_OLD_QUEUE=CANCELED_TO_DRAFTS"
           # Recheck same product IDs, ranks, real displayed prices and sources
           # immediately before Meta publishing: skip if final JPEG became stale.
-          python automation/verify_price_before_meta_publish_v1.py \
+          if ! python automation/verify_price_before_meta_publish_v1.py \
             --plan campaign/plan.json \
-            --report campaign/website-top5-render-qa.json
+            --report campaign/website-top5-render-qa.json; then
+            # A changed website ranking/price invalidates the OLD poster.
+            # Render a NEW immutable JPEG and run fresh rank/price/SHA QA.
+            # Fail closed if the website remains unstable or genuine Top-5 missing.
+            python automation/rebuild_stale_meta_campaign_v1.py \
+              --folder campaign --run-key "$RUN_KEY" \
+              --host "$HOST" --user "$USER" --max-rebuilds 2
+          fi
+          ID="$(python -c 'import json;print(json.load(open("campaign/plan.json"))["campaign_id"])')"
+          [[ "$ID" =~ ^tfauto-[a-f0-9]{18}$ ]]
           python automation/meta_graph_publish_v1.py \
             --manifest campaign/post/post.json \
             --jpg "campaign/post/$ID.jpg" \
