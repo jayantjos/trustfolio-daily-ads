@@ -26,7 +26,7 @@ def patch_text(s):
     s=replace_one(s,
       "const { canFetchCroma, fetchCromaDirect } = require('./CromaLivePriceDirect');",
       "const { canFetchCroma, fetchCromaDirect } = require('./CromaLivePriceDirect');\n"
-      "const { toAvailabilityState, isConfirmedUnavailable } = require('./ProductAvailabilityPolicy');",
+      "const { classify, toAvailabilityState, isConfirmedUnavailable } = require('./ProductAvailabilityPolicy');",
       'policy_import')
     start=s.find('function isConfirmedUnavailable(live) {')
     end=s.find('function toLive(result, prev = {}) {',start)
@@ -39,17 +39,26 @@ def patch_text(s):
     if "const priced = (result.status === 'ok' || result.status === 'out_of_stock') && result.priceNum > 0;" not in h:
       raise RuntimeError('toLive unexpected price status logic')
     s=s[:idx]+"""function toLive(result, prev = {}) {
-  const priced = (result.status === 'ok' || result.status === 'out_of_stock') && result.priceNum > 0;
+  const availabilityKind = classify(result);
+  // Do not show a fresh LIVE badge for a product whose listing explicitly says unavailable.
+  const liveStatus = availabilityKind === 'permanent' ? 'out_of_stock'
+    : availabilityKind === 'ambiguous' ? 'not_available'
+    : availabilityKind === 'transient' && result.status === 'ok' ? 'error' : result.status;
+  const priced = (liveStatus === 'ok' || liveStatus === 'out_of_stock') && result.priceNum > 0;
   const availabilityState = toAvailabilityState(result, prev);"""+s[end:]
     s=replace_one(s,
       "  return {\n    status: result.status,",
-      "  return {\n    ...availabilityState,\n    status: result.status,",
+      "  return {\n    ...availabilityState,\n    status: liveStatus,",
       'availability_state_in_live')
     s=replace_one(s,
       "    unavailable_checks: unavailable ? (Number(prev.unavailable_checks) || 0) + 1 : 0,",
       "    error: result.error ? String(result.error).slice(0, 180) : null,\n"
       "    http_status: Number(result.http_status ?? result.httpStatus ?? result.statusCode) || null,",
       'track_request_errors')
+    s=replace_one(s,
+      "      ? result.in_stock : result.status === 'ok',",
+      "      ? result.in_stock : liveStatus === 'ok',",
+      'stock_flag_not_false_positive')
     s=replace_one(s,
       "  const outOfStock = fetched.filter((d) => isConfirmedUnavailable(d.live));",
       "  // Bound irreversible per-request removals. Archive precedes delete, and\n"
