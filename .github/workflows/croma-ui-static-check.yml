@@ -14,3 +14,4 @@ jobs:
       - run: python3 -m py_compile ops/availability-policy/apply_policy.py
       - run: bash -n ops/availability-policy/deploy_on_vps.sh
       - run: node --check ops/availability-policy/ProductAvailabilityPolicy.js
+      - run: node --check ops/availability-policy/ProductAvailabilityPolicy.test.js
