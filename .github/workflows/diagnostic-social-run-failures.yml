@@ -1,0 +1,59 @@
+name: TrustFolio one-time read-only posting failure diagnostic
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/diagnostic-social-run-failures.yml'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  list-failed-social-runs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Read recent scheduled campaign run IDs and failed steps (no Meta calls)
+        run: |
+          python - <<'PY'
+          import json,os
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError
+          from urllib.parse import urlencode
+          base='https://api.github.com/repos/jayantjos/trustfolio-daily-ads/'
+          def get(path):
+              req=Request(base+path,headers={
+                  'Authorization':'Bearer '+os.environ['GH_READ_TOKEN'],
+                  'Accept':'application/vnd.github+json',
+                  'X-GitHub-Api-Version':'2022-11-28',
+                  'User-Agent':'trustfolio-readonly-run-check'})
+              try:
+                  with urlopen(req,timeout=20) as response:
+                      return json.load(response)
+              except HTTPError as exc:
+                  print('GITHUB_DIAGNOSTIC_HTTP='+str(exc.code))
+                  raise
+          data=get('actions/workflows/auto-instagram-campaigns.yml/runs?per_page=60')
+          runs=data.get('workflow_runs') or []
+          print('SOCIAL_RUNS_RETURNED='+str(len(runs)))
+          for run in runs:
+              if run.get('event') not in ('schedule','workflow_dispatch','push'):
+                  continue
+              created=run.get('created_at') or ''
+              if created < '2026-10-25':
+                  continue
+              rid=run['id']
+              print('RUN',rid,'created',created,'event',run.get('event'),
+                    'status',run.get('status'),'conclusion',run.get('conclusion'),
+                    'attempt',run.get('run_attempt'),
+                    'url',run.get('html_url'))
+              jobs=get('actions/runs/'+str(rid)+'/jobs?per_page=40').get('jobs') or []
+              for job in jobs:
+                  print('JOB',job.get('id'),job.get('name'),
+                        'status',job.get('status'),'conclusion',job.get('conclusion'))
+                  failed=[step for step in job.get('steps') or []
+                          if step.get('conclusion') in ('failure','cancelled','timed_out')]
+                  for step in failed:
+                      print('FAILED_STEP',str(step.get('name'))[:180],
+                            'step_number',step.get('number'))
+          PY
