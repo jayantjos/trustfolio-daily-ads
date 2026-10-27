@@ -2,7 +2,7 @@
 
 No test reaches Meta, GitHub API, social accounts, or real website.
 """
-from datetime import date
+from datetime import date, datetime, timedelta
 import os
 import unittest
 from unittest.mock import patch
@@ -290,6 +290,89 @@ class DirectMetaSafetyTests(unittest.TestCase):
         self.assertEqual(results[0]["status"],"blocked")
         self.assertEqual(results[1]["status"],"api_accepted_published")
         facebook.assert_called_once()
+
+
+    def test_expired_prepublication_ig_reservation_can_be_safely_reclaimed(self):
+        import base64,json
+        cfg={"github_token":"gh","today":"2026-10-27","campaign_mode":"budget"}
+        at=(datetime.now(m.IST)-timedelta(hours=2)).isoformat()
+        old={"status":"reserved","mode":"budget","campaign_id":"tfauto-"+"a"*18,
+             "reserved_at":at}
+        encoded=base64.b64encode(json.dumps(old).encode()).decode()
+        old_sha="a"*40
+        new_sha="b"*40
+        with patch.object(m,"ensure_ledger"), \
+             patch.object(m,"ledger_list",return_value=[{"name":"instagram-mode-budget.json"}]), \
+             patch.object(m,"_github",side_effect=[
+                 {"sha":old_sha,"content":encoded},
+                 {"content":{"sha":new_sha}}
+             ]) as github:
+            result=m.reserve(cfg,"instagram","tfauto-"+"c"*18,
+                             "https://media.trustfolio.in/x.jpg",max_posts=3)
+        self.assertEqual(result,new_sha)
+        self.assertEqual(github.call_count,2)
+        self.assertEqual(github.call_args.kwargs["method"],"PUT")
+        self.assertEqual(github.call_args.kwargs["data"]["sha"],old_sha)
+
+    def test_ig_container_started_status_cannot_be_reclaimed(self):
+        import base64,json
+        cfg={"github_token":"gh","today":"2026-10-27","campaign_mode":"budget"}
+        old={"status":"container_created","mode":"budget",
+             "container_id":"1234567","reserved_at":
+                 (datetime.now(m.IST)-timedelta(hours=3)).isoformat()}
+        encoded=base64.b64encode(json.dumps(old).encode()).decode()
+        with patch.object(m,"ensure_ledger"), \
+             patch.object(m,"ledger_list",return_value=[{"name":"instagram-mode-budget.json"}]), \
+             patch.object(m,"_github",return_value={"content":encoded,"sha":"a"*40}) as github:
+            with self.assertRaisesRegex(m.PublishingBlocked,"pending reconciliation"):
+                m.reserve(cfg,"instagram","tfauto-"+"b"*18,
+                          "https://media.trustfolio.in/x.jpg",max_posts=3)
+        github.assert_called_once()
+
+    def test_media_preparation_failure_keeps_ledger_unreserved(self):
+        cfg={"networks":("instagram",),"max_posts":3}
+        with patch.object(m,"load_env",return_value=cfg), \
+             patch.object(m,"_check_media"), \
+             patch.object(m,"confirm_page_token_type"), \
+             patch.object(m,"confirm_page_identity",return_value="1791"), \
+             patch.object(m,"check_instagram_quota",
+                          return_value={"quota_usage":0,"quota_total":100}), \
+             patch.object(m,"prepare_instagram_media",
+                          side_effect=m.PublishingBlocked("Meta HTTP 400 GRAPH_CODE=190")), \
+             patch.object(m,"reserve") as reservation:
+            results=m.publish_verified(qa_manifest(),
+                         "https://media.trustfolio.in/x.jpg","x.jpg")
+        reservation.assert_not_called()
+        self.assertEqual(results[0]["status"],"blocked")
+        self.assertIn("GRAPH_CODE=190",results[0]["reason"])
+
+    def test_ig_container_is_ready_before_publication_ledger_write(self):
+        cfg={"networks":("instagram",),"max_posts":3}
+        events=[]
+        def prepared(*args):
+            events.append("prepare")
+            return "1234567"
+        def reserved(*args,**kwargs):
+            events.append("reserve")
+            return "a"*40
+        def published(*args,**kwargs):
+            events.append("publish")
+            self.assertEqual(kwargs["prepared_container"],"1234567")
+            return {"network":"instagram","status":"api_accepted_published",
+                    "media_id":"98765"}
+        with patch.object(m,"load_env",return_value=cfg), \
+             patch.object(m,"_check_media"), \
+             patch.object(m,"confirm_page_token_type"), \
+             patch.object(m,"confirm_page_identity",return_value="1791"), \
+             patch.object(m,"check_instagram_quota",
+                          return_value={"quota_usage":0,"quota_total":100}), \
+             patch.object(m,"prepare_instagram_media",side_effect=prepared), \
+             patch.object(m,"reserve",side_effect=reserved), \
+             patch.object(m,"publish_instagram",side_effect=published):
+            results=m.publish_verified(qa_manifest(),
+                         "https://media.trustfolio.in/x.jpg","x.jpg")
+        self.assertEqual(events,["prepare","reserve","publish"])
+        self.assertEqual(results[0]["status"],"api_accepted_published")
 
 
 if __name__=="__main__":
