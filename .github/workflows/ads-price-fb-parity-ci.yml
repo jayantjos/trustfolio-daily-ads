@@ -80,6 +80,9 @@ jobs:
               "'30 10 * * *':('brand_budget',0)":'brand_second',
               "'30 13 * * *':('comparison',0)":'comparison_first',
               "'30 15 * * *':('comparison',0)":'comparison_second',
+              "'0 14 * * *':('budget',0)":'budget_late_recovery',
+              "'0 15 * * *':('brand_budget',0)":'brand_late_recovery',
+              "'45 16 * * *':('comparison',0)":'comparison_late_recovery',
           }
           for needle in modes:
               assert needle in src,needle
