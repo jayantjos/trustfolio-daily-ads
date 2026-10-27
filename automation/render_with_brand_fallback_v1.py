@@ -10,6 +10,8 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+
 from automation.auto_campaign_v1 import choose_campaign
 from site_top5_ads_v1 import build_site_ads_payload
 
