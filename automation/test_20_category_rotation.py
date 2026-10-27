@@ -115,6 +115,36 @@ class TwentyCategoryRotationTests(unittest.TestCase):
         self.assertFalse(plan["auto_publish"])
         self.assertTrue(all(brand=="" for _,_,brand in calls))
 
+    def test_non_round_budget_within_configured_minimum_and_maximum(self):
+        day=date(2026,10,27)
+        candidates=rotation_candidates("budget",POLICY,day)
+        first_category=candidates[0]["category"]
+        bounds=next(x["budgets"] for x in POLICY["rotation"]["categories"]
+                    if x["site_slug"]==first_category)
+        same=[x["budget"] for x in candidates if x["category"]==first_category]
+        self.assertTrue(set(bounds).issubset(same))
+        self.assertTrue(any(min(bounds)<v<max(bounds) and v not in bounds for v in same))
+        self.assertTrue(all(min(bounds)<=v<=max(bounds) for v in same))
+
+    def test_third_budget_fallback_before_moving_to_new_category(self):
+        day=date(2026,10,27)
+        amounts=rotation_candidates("comparison",POLICY,day)
+        first=amounts[0]["category"]
+        candidate_amounts=[x["budget"] for x in amounts if x["category"]==first]
+        self.assertGreaterEqual(len(candidate_amounts),3)
+        wanted=candidate_amounts[2]
+        calls=[]
+        def site(category,budget,brand):
+            calls.append((category,budget))
+            if category==first and budget==wanted:
+                return live_mock(category,budget,brand)
+            raise ValueError("No five real products for this candidate")
+        result=choose_campaign("comparison",POLICY,day=day,fetcher=site)
+        self.assertEqual(result["status"],"eligible")
+        self.assertEqual(result["budget"],wanted)
+        self.assertEqual(result["category"],first)
+        self.assertEqual(calls[:3],[(first,x) for x in candidate_amounts[:3]])
+
     def test_missing_all_verified_brands_skips_without_faking(self):
         calls=[]
         def f(category,budget,brand):
