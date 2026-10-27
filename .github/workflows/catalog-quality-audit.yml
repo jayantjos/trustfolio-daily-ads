@@ -1,4 +1,4 @@
-name: TrustFolio catalog quality inventory audit
+name: TrustFolio catalog quality inventory audit v2
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
