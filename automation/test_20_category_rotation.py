@@ -125,7 +125,7 @@ class TwentyCategoryRotationTests(unittest.TestCase):
         self.assertFalse(plan["auto_publish"])
         self.assertGreater(len(plan["attempts"]),0)
         self.assertTrue(all(b for _,_,b in calls))
-        self.assertLessEqual(len(calls),20)
+        self.assertLessEqual(len(calls),POLICY['rotation']['max_website_attempts_per_run'])
 
     def test_campaign_type_must_match_rendered_visual(self):
         plan={"status":"eligible","mode":"brand_budget","category":"smartwatches",
@@ -164,7 +164,7 @@ class TwentyCategoryRotationTests(unittest.TestCase):
 
     def test_six_daily_cron_slots_and_live_price_guard(self):
         workflow=(ROOT/".github/workflows/auto-instagram-campaigns.yml").read_text("utf8")
-        self.assertIn("TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '6'",workflow)
+        self.assertIn("TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '3'",workflow)
         self.assertIn("github.event_name == 'schedule'",workflow)
         self.assertIn("python automation/verify_price_before_meta_publish_v1.py",workflow)
         self.assertIn("2026-10-21",workflow)
@@ -175,11 +175,15 @@ class TwentyCategoryRotationTests(unittest.TestCase):
             self.assertIn("cron: '"+item+"'",workflow)
             self.assertIn("github.event.schedule == '"+item+"'",workflow)
         self.assertIn("'--slot',str(slot)",workflow)
+        # Each mode's second cron is recovery, never an extra published mode.
+        self.assertIn("'0 5 * * *':('budget',0)",workflow)
+        self.assertIn("'30 10 * * *':('brand_budget',0)",workflow)
+        self.assertIn("'30 15 * * *':('comparison',0)",workflow)
         self.assertIn("mode=plan['mode']",workflow)
         self.assertEqual(POLICY["rotation"]["cadence_ist"],{
-            "budget":["08:30","10:30"],
-            "brand_budget":["13:30","16:00"],
-            "comparison":["19:00","21:00"]})
+            "budget":["08:30","10:30 recovery"],
+            "brand_budget":["13:30","16:00 recovery"],
+            "comparison":["19:00","21:00 recovery"]})
 
 
 if __name__=="__main__":
