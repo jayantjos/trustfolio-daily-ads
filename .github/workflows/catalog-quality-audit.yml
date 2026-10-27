@@ -11,6 +11,8 @@ jobs:
     timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
+      - name: Check audit syntax
+        run: node --check ops/catalog-quality/audit_catalog_quality.js
       - name: Prepare SSH
         env:
           KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
