@@ -33,15 +33,16 @@ function classify(result) {
   const status=normalize(result.status);
   const statusRaw=rawText(result.status);
   const availability=rawText(result.availability);
+  const availabilityStatus=normalize(result.availability);
   const detail=rawText(result.error);
   const http=Number(result.http_status ?? result.httpStatus ?? result.statusCode ?? 0);
   if (http >= 500 || (http >= 400 && http !== 404 && http !== 410) ||
       errorRegex.test(detail)) return 'transient';
   // A transport error cannot assert product availability, even with a stale label.
   if (status !== 'no_price' && TRANSIENT.has(status)) return 'transient';
-  if (PERMANENT.has(status) || permanentRegex.test(statusRaw) || permanentRegex.test(availability))
+  if (PERMANENT.has(status) || PERMANENT.has(availabilityStatus) || permanentRegex.test(statusRaw) || permanentRegex.test(availability))
     return 'permanent';
-  if (AMBIGUOUS.has(status) || ambiguousRegex.test(statusRaw) ||
+  if (AMBIGUOUS.has(status) || AMBIGUOUS.has(availabilityStatus) || ambiguousRegex.test(statusRaw) ||
       ambiguousRegex.test(availability) || http===404 || http===410)
     return 'ambiguous';
   return TRANSIENT.has(status) ? 'transient' : 'none';
