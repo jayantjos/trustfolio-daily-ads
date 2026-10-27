@@ -4,7 +4,8 @@ on:
     branches: [main]
     paths: ['automation/**', '.github/workflows/auto-instagram-campaigns.yml']
   schedule:
-    # UTC; local Asia/Kolkata: 08:30/10:30 budget, 13:30/16:00 brand, 19:00/21:00 comparison.
+    # IST: 08:30, 13:30, 19:00 primary; 10:30, 16:00, 21:00 idempotent recovery.
+    # Only ONE published campaign per mode per network per date; 3 IG + 3 FB.
     - cron: '0 3 * * *'
     - cron: '0 5 * * *'
     - cron: '0 8 * * *'
@@ -53,8 +54,8 @@ jobs:
       # Proven live Meta IG+FB publication, 2026-10-17; repo variable "false" is emergency OFF switch.
       TF_META_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_META_DIRECT_PUBLISH_ENABLED || 'true' }}
       TF_META_POST_NETWORKS: ${{ vars.TF_META_POST_NETWORKS || 'instagram,facebook' }}
-      # Six reviewed and capped mode slots/day, two each; live Meta limits still apply.
-      TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '6'
+      # Three distinct daily formats per network; recovery triggers never add posts.
+      TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '3'
       TF_META_START_DATE: ${{ vars.TF_META_START_DATE || '2026-10-21' }}
       TF_META_PAGE_ID: ${{ vars.TF_META_PAGE_ID || '619193294620746' }}
       TF_META_GRAPH_VERSION: ${{ vars.TF_META_GRAPH_VERSION || 'v25.0' }}
@@ -73,7 +74,49 @@ jobs:
           python -m pip install --disable-pip-version-check Pillow==11.3.0
           python -m unittest -v automation.test_auto_campaign_v1 automation.test_20_category_rotation automation.test_live_price_before_publish_v1 automation.test_verify_price_before_meta_publish_v1
           python -m unittest -v test_campaign_link_contract_v1 test_site_top5_ads_v1 test_ads_spec_sanity
+      - name: Skip recovery rendering when both platforms already published this mode
+        id: already_done
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CRON_TRIGGER: ${{ github.event.schedule }}
+        run: |
+          python - <<'PY'
+          import base64,json,os
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          mode={
+              '0 3 * * *':'budget','0 5 * * *':'budget',
+              '0 8 * * *':'brand_budget','30 10 * * *':'brand_budget',
+              '30 13 * * *':'comparison','30 15 * * *':'comparison'
+          }[os.environ['CRON_TRIGGER']]
+          day=datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()
+          complete=[]
+          for network in ('instagram','facebook'):
+              path=f"meta-publication-ledger/{day}/{network}-mode-{mode}.json"
+              url=("https://api.github.com/repos/jayantjos/trustfolio-daily-ads/contents/"
+                   +path+"?ref=trustfolio-meta-publishing-ledger")
+              req=Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                                       'Accept':'application/vnd.github+json'})
+              try:
+                  with urlopen(req,timeout=20) as response:
+                      content=json.load(response)['content']
+                  record=json.loads(base64.b64decode(content).decode('utf8'))
+                  complete.append(record.get('status')=='api_accepted_published')
+              except HTTPError as error:
+                  if error.code!=404:
+                      raise
+                  complete.append(False)
+          done=all(complete)
+          print('DAILY_MODE='+mode+' IST_DATE='+day+' BOTH_NETWORKS_DONE='+str(done))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:
+              out.write('skip='+str(done).lower()+'\n')
+          PY
+
       - name: Pick eligible site-ranked campaign deterministically
+        if: steps.already_done.outputs.skip != 'true'
         id: plan
         env:
           EVENT_TYPE: ${{ github.event_name }}
@@ -91,9 +134,9 @@ jobs:
           from datetime import datetime
           from zoneinfo import ZoneInfo
           cron_modes={
-              '0 3 * * *':('budget',0), '0 5 * * *':('budget',1),
-              '0 8 * * *':('brand_budget',0), '30 10 * * *':('brand_budget',1),
-              '30 13 * * *':('comparison',0), '30 15 * * *':('comparison',1),
+              '0 3 * * *':('budget',0), '0 5 * * *':('budget',0),
+              '0 8 * * *':('brand_budget',0), '30 10 * * *':('brand_budget',0),
+              '30 13 * * *':('comparison',0), '30 15 * * *':('comparison',0),
           }
           event=os.getenv('EVENT_TYPE')
           if event=='schedule':
@@ -125,6 +168,19 @@ jobs:
                   and (os.getenv('EVENT_TYPE')=='schedule' or os.getenv('INPUT_PUBLISH')=='true')
               )
               out.write('publish='+('true' if allow_publish else 'false')+'\n')
+          PY
+
+      - name: Fail visibly when no genuine eligible Top-5 campaign exists
+        if: github.event_name == 'schedule' && steps.already_done.outputs.skip != 'true' && steps.plan.outputs.eligible != 'true'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          plan=json.loads(Path('campaign/plan.json').read_text('utf8'))
+          print('SOCIAL_PUBLICATION_BLOCKED='+str(plan.get('status')))
+          for attempt in (plan.get('attempts') or [])[:10]:
+              print('SOURCE_REJECTED={category}/{budget}/{brand}/{reason}'.format(**attempt))
+          raise SystemExit('No five verified products found within safe retry limits')
           PY
 
       - name: Authenticate against exact authorized VPS (ads folder only)
@@ -236,7 +292,8 @@ jobs:
             --preflight-only
 
       - name: Publish to verified Instagram and Facebook through official Meta Graph API
-        # Two candidates per mode/day: budget, brand+budget, Top-5 comparison.
+        # One publication per mode/day with two scheduled recovery opportunities.
+        # Each schedule call may produce at most one IG and one FB post.
         # Website must return all five same-brand products or brand slot skips.
         # Old Oct 20-25 Metricool queue was canceled into drafts; no duplicate posting.
         if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '0 5 * * *' || github.event.schedule == '0 8 * * *' || github.event.schedule == '30 10 * * *' || github.event.schedule == '30 13 * * *' || github.event.schedule == '30 15 * * *')
@@ -247,9 +304,9 @@ jobs:
           ID: ${{ steps.plan.outputs.campaign_id }}
         run: |
           set -euo pipefail
-          # Previously queued Metricool Instagram posts were converted to drafts;
-          # do not use that stale queue. All six approved cron slots now publish
-          # the same verified JPG to BOTH Meta accounts from Oct 21 onward.
+          # Previously queued Metricool posts remain drafts. Daily per-mode
+          # network locks ensure only 3 Instagram + 3 Facebook posts, even when
+          # a recovery cron retries after a missed or partially failed run.
           # GitHub cron jobs may be delayed: use today's actual IST date.
           today_ist="$(TZ=Asia/Kolkata date +%F)"
           if [[ "$today_ist" < "2026-10-21" ]]; then
@@ -288,5 +345,5 @@ jobs:
         run: |
           echo "CREATIVE_ARTIFACT_UPLOADED=YES"
           echo "METRICOOL_UNATTENDED_PUBLICATION=DISABLED"
-          echo "META_DIRECT_PUBLICATION=SIX_DAILY_SLOTS_IG_AND_FB_FROM_OCT21"
+          echo "META_DIRECT_PUBLICATION=THREE_DAILY_MODES_TWO_NETWORKS_WITH_CATCHUP"
           echo "SOURCE_WEBSITE_APPS_MODIFIED=NO"
