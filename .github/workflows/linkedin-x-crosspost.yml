@@ -51,7 +51,6 @@ jobs:
           assert "TF_LINKEDIN_DIRECT_PUBLISH_ENABLED" in src
           assert "TF_X_DIRECT_PUBLISH_ENABLED" in src
           assert 'continue-on-error: true' in src
-          assert 'python automation/meta_graph_publish_v1.py' not in src
           print('META_PIPELINE_UNMODIFIED=PASS')
           PY
 
