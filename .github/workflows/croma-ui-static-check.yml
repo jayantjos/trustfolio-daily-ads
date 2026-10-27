@@ -12,3 +12,5 @@ jobs:
       - run: bash -n ops/croma-direct/deploy_ui_checking.sh
       - run: node ops/availability-policy/ProductAvailabilityPolicy.test.js
       - run: python3 -m py_compile ops/availability-policy/apply_policy.py
+      - run: bash -n ops/availability-policy/deploy_on_vps.sh
+      - run: node --check ops/availability-policy/ProductAvailabilityPolicy.js
