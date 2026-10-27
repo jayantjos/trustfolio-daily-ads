@@ -330,6 +330,17 @@ jobs:
             --jpg "campaign/post/$ID.jpg" \
             --media-url "$MEDIA_BASE/$MEDIA_PREFIX/$ID.jpg"
 
+      - name: Archive FINAL verified Meta campaign for optional LinkedIn and X reuse
+        # After publication, because a ranking drift can rebuild the JPG and ID.
+        # This does not publish anything and does not change Meta scheduling.
+        if: always() && github.event_name == 'schedule' && steps.plan.outputs.eligible == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-social-final-${{ github.run_id }}
+          path: campaign/
+          retention-days: 30
+          if-no-files-found: warn
+
       - name: Post via Metricool ONLY after media/identity/duplicate preflight
         if: steps.plan.outputs.eligible == 'true' && steps.plan.outputs.publish == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED != 'true'
         env:
