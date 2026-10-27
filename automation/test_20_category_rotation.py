@@ -210,7 +210,9 @@ class TwentyCategoryRotationTests(unittest.TestCase):
         self.assertIn("'0 5 * * *':('budget',0)",workflow)
         self.assertIn("'30 10 * * *':('brand_budget',0)",workflow)
         self.assertIn("'30 15 * * *':('comparison',0)",workflow)
-        self.assertIn("mode=plan['mode']",workflow)
+        self.assertIn("automation/render_with_brand_fallback_v1.py",workflow)
+        remote_renderer=(ROOT/"automation/render_with_brand_fallback_v1.py").read_text("utf8")
+        self.assertIn("mode=plan['mode']",remote_renderer)
         self.assertEqual(POLICY["rotation"]["cadence_ist"],{
             "budget":["08:30","10:30 recovery"],
             "brand_budget":["13:30","16:00 recovery"],
