@@ -259,7 +259,6 @@ jobs:
 
       - name: Verify media URL publicly serves the exact approved JPEG
         if: steps.plan.outputs.eligible == 'true'
-        env:
         run: |
           set -euo pipefail
           ID="$(python -c 'import json;print(json.load(open("campaign/plan.json"))["campaign_id"])')"
@@ -275,7 +274,6 @@ jobs:
 
       - name: Validate direct Meta API media eligibility without publishing
         if: steps.plan.outputs.eligible == 'true'
-        env:
         run: |
           set -euo pipefail
           ID="$(python -c 'import json;print(json.load(open("campaign/plan.json"))["campaign_id"])')"
