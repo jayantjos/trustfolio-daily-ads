@@ -1,8 +1,9 @@
 {
   "campaign_id": "tfauto-9ac21da140d9689240",
   "container_id": "17917896366530469",
+  "meta_media_id": "17916512013543046",
   "mode": "budget",
   "network": "instagram",
-  "recorded_at": "2026-10-28T00:41:32.965599+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-10-28T00:41:38.869065+05:30",
+  "status": "api_accepted_published"
 }
