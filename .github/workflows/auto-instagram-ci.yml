@@ -38,6 +38,13 @@ jobs:
               if path.endswith('auto-instagram-campaigns.yml'):
                   assert len(data['on']['schedule'])==9
           PY
+      - name: Smoke test direct Python CLI invocation of rebuilt ad pipeline
+        run: |
+          set -euo pipefail
+          python -m py_compile automation/rebuild_stale_meta_campaign_v1.py
+          python automation/rebuild_stale_meta_campaign_v1.py --help
+          python automation/render_with_brand_fallback_v1.py --help
+          python -m unittest -v automation.test_rebuild_stale_meta_v1
       - name: No-network regression suite for images, site ranking and publishing gate
         run: |
           python -m unittest -v automation.test_auto_campaign_v1 automation.test_metricool_publish_v1 automation.test_rebuild_stale_meta_v1
