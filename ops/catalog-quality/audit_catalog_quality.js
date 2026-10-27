@@ -1,8 +1,8 @@
 'use strict';
 // Read-only: catalog quality metrics. No product updates or deletions.
-require('dotenv').config();
-const mongoose=require('mongoose');
-const connectDB=require('./config/mongo');
+require(process.cwd()+'/node_modules/dotenv').config();
+const mongoose=require(process.cwd()+'/node_modules/mongoose');
+const connectDB=require(process.cwd()+'/config/mongo');
 const colNames=['my_products','my_products_deleted'];
 (async()=>{
  await connectDB();
