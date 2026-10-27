@@ -36,13 +36,15 @@ function classify(result) {
   const detail=rawText(result.error);
   const http=Number(result.http_status ?? result.httpStatus ?? result.statusCode ?? 0);
   if (http >= 500 || (http >= 400 && http !== 404 && http !== 410) ||
-      TRANSIENT.has(status) || errorRegex.test(detail)) return 'transient';
+      errorRegex.test(detail)) return 'transient';
+  // A transport error cannot assert product availability, even with a stale label.
+  if (status !== 'no_price' && TRANSIENT.has(status)) return 'transient';
   if (PERMANENT.has(status) || permanentRegex.test(statusRaw) || permanentRegex.test(availability))
     return 'permanent';
   if (AMBIGUOUS.has(status) || ambiguousRegex.test(statusRaw) ||
       ambiguousRegex.test(availability) || http===404 || http===410)
     return 'ambiguous';
-  return 'none';
+  return TRANSIENT.has(status) ? 'transient' : 'none';
 }
 function toAvailabilityState(result,previous={},now=new Date()) {
   const kind=classify(result);
