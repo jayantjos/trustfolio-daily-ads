@@ -31,6 +31,7 @@ jobs:
       - name: Test five-product website live-price recheck fail-closed
         run: |
           python -m py_compile automation/validate_live_price_before_publish_v1.py automation/verify_price_before_meta_publish_v1.py
+          python automation/rebuild_stale_meta_campaign_v1.py --help >/dev/null
           python -m unittest -v automation.test_live_price_before_publish_v1 automation.test_verify_price_before_meta_publish_v1
       - name: Assert Oct 21 crosspost IG+FB, and zero push/PR publishing
         run: |
