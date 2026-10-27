@@ -48,13 +48,18 @@ jobs:
           assert "vars.TF_META_DIRECT_PUBLISH_ENABLED" in env['TF_META_DIRECT_PUBLISH_ENABLED']
           assert "'true'" in env['TF_META_DIRECT_PUBLISH_ENABLED']
           assert "'false'" in env['TF_AUTO_POST_ENABLED']
-          assert env['TF_META_MAX_POSTS_PER_DAY_PER_NETWORK']=='6'
+          assert env['TF_META_MAX_POSTS_PER_DAY_PER_NETWORK']=='3'
           assert "'2026-10-21'" in env['TF_META_START_DATE']
           publisher=[s for s in job['steps'] if s.get('name','').startswith('Publish to verified Instagram and Facebook')]
           assert len(publisher)==1
           publish=publisher[0]
           cond=publish['if']
           assert "github.event_name == 'schedule'" in cond
+          planner=next(s for s in job['steps'] if s.get('id')=='plan')
+          assert "'0 5 * * *':('budget',0)" in planner['run']
+          assert "'30 10 * * *':('brand_budget',0)" in planner['run']
+          assert "'30 15 * * *':('comparison',0)" in planner['run']
+          assert any(s.get('id')=='already_done' for s in job['steps'] )
           for cron in ('0 3 * * *','0 5 * * *','0 8 * * *',
                        '30 10 * * *','30 13 * * *','30 15 * * *'):
               assert "github.event.schedule == '"+cron+"'" in cond
@@ -78,7 +83,7 @@ jobs:
           src=Path('automation/meta_readonly_preflight.py').read_text('utf8')
           assert 'publish_verified(' not in src
           assert 'confirm_page_token_type(' in src
-          print('DIRECT_META_SIX_SLOTS_IG_AND_FACEBOOK_FROM_OCT21')
+          print('DIRECT_META_THREE_PUBLISHED_MODES_PER_NETWORK_WITH_RECOVERY_SLOTS')
           print('DIRECT_META_INSTAGRAM_AND_FACEBOOK_FROM_2026_10_21')
           print('DIRECT_META_FIVE_PRODUCT_LIVE_PRICE_RECHECK_REQUIRED')
           print('DIRECT_META_PUSH_AND_PR_POSTS_DISABLED')
