@@ -4,7 +4,8 @@ on:
     branches: [main]
     paths: ['automation/**', '.github/workflows/auto-instagram-campaigns.yml']
   schedule:
-    # IST: 08:30, 13:30, 19:00 primary; 10:30, 16:00, 21:00 idempotent recovery.
+    # IST main 08:30/13:30/19:00; recovery 10:30/16:00/21:00.
+    # Extra missed-post catch-up 19:30 budget, 20:30 brand, 22:15 comparison.
     # Only ONE published campaign per mode per network per date; 3 IG + 3 FB.
     - cron: '0 3 * * *'
     - cron: '0 5 * * *'
@@ -12,6 +13,9 @@ on:
     - cron: '30 10 * * *'
     - cron: '30 13 * * *'
     - cron: '30 15 * * *'
+    - cron: '0 14 * * *'
+    - cron: '0 15 * * *'
+    - cron: '45 16 * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -90,7 +94,9 @@ jobs:
           mode={
               '0 3 * * *':'budget','0 5 * * *':'budget',
               '0 8 * * *':'brand_budget','30 10 * * *':'brand_budget',
-              '30 13 * * *':'comparison','30 15 * * *':'comparison'
+              '30 13 * * *':'comparison','30 15 * * *':'comparison',
+              '0 14 * * *':'budget','0 15 * * *':'brand_budget',
+              '45 16 * * *':'comparison'
           }[os.environ['CRON_TRIGGER']]
           day=datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()
           complete=[]
@@ -137,6 +143,8 @@ jobs:
               '0 3 * * *':('budget',0), '0 5 * * *':('budget',0),
               '0 8 * * *':('brand_budget',0), '30 10 * * *':('brand_budget',0),
               '30 13 * * *':('comparison',0), '30 15 * * *':('comparison',0),
+              '0 14 * * *':('budget',0), '0 15 * * *':('brand_budget',0),
+              '45 16 * * *':('comparison',0),
           }
           event=os.getenv('EVENT_TYPE')
           if event=='schedule':
@@ -296,7 +304,7 @@ jobs:
         # Each schedule call may produce at most one IG and one FB post.
         # Website must return all five same-brand products or brand slot skips.
         # Old Oct 20-25 Metricool queue was canceled into drafts; no duplicate posting.
-        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '0 5 * * *' || github.event.schedule == '0 8 * * *' || github.event.schedule == '30 10 * * *' || github.event.schedule == '30 13 * * *' || github.event.schedule == '30 15 * * *')
+        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '0 5 * * *' || github.event.schedule == '0 8 * * *' || github.event.schedule == '30 10 * * *' || github.event.schedule == '30 13 * * *' || github.event.schedule == '30 15 * * *' || github.event.schedule == '0 14 * * *' || github.event.schedule == '0 15 * * *' || github.event.schedule == '45 16 * * *')
         env:
           TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -15,7 +15,7 @@ Production properties:
 """
 import argparse
 import base64
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import hashlib
 import json
 import os
@@ -71,11 +71,24 @@ def _request_json(url, token, *, method="GET", data=None, github=False):
                 raise PublishingBlocked("Meta/GitHub response was not a JSON object")
             return result
     except HTTPError as error:
-        # Exception objects can contain server-supplied URL/body; do not
-        # log OAuth tokens or potentially sensitive response contents.
+        # Include only stable Graph error codes, never provider-provided
+        # messages, URLs, response headers, or access tokens.
+        detail=""
+        if not github:
+            try:
+                payload=json.loads(error.read(4096))
+                graph_error=payload.get("error") or {}
+                code=graph_error.get("code")
+                subcode=graph_error.get("error_subcode")
+                if type(code) is int:
+                    detail+=" GRAPH_CODE="+str(code)
+                if type(subcode) is int:
+                    detail+=" GRAPH_SUBCODE="+str(subcode)
+            except (ValueError,TypeError,AttributeError,OSError):
+                pass
         raise PublishingBlocked(
             ("GitHub" if github else "Meta") +
-            " REST operation failed: HTTP " + str(error.code)
+            " REST operation failed: HTTP " + str(error.code)+detail
         ) from None
 
 
@@ -265,9 +278,59 @@ def reserve(cfg, network, key, url, *, max_posts):
                 item=json.loads(base64.b64decode(previous["content"]).decode("utf8"))
             except (KeyError,TypeError,ValueError):
                 raise PublishingBlocked("Unreadable existing mode reservation; reconcile before retry") from None
-            if item.get("status")!="api_accepted_published":
-                raise PublishingBlocked("Prior "+network+" "+cfg["campaign_mode"]+
-                                        " reservation is pending reconciliation")
+            if item.get("status")=="api_accepted_published":
+                return None
+            # Exact historical recovery: with this publisher, /media_publish can
+            # only run AFTER record_status(container_created) succeeds. Therefore
+            # a durable 'reserved' record without a container status has not
+            # reached the public-post write. Older failed Oct 27 IG attempts can
+            # be safely reused after the original 25-min job has exited.
+            # Any container_created or ambiguous post-publish state remains locked.
+            if (network=="instagram" and item.get("status")=="reserved"
+                    and not item.get("container_id")
+                    and item.get("mode")==cfg.get("campaign_mode")):
+                try:
+                    since=datetime.fromisoformat(item["reserved_at"])
+                    if since.tzinfo is None:
+                        raise ValueError("Timezone missing")
+                    eligible=datetime.now(IST)-since>=timedelta(minutes=45)
+                except (KeyError,TypeError,ValueError):
+                    eligible=False
+                if eligible:
+                    old_sha=previous.get("sha")
+                    if not re.fullmatch(r"[a-f0-9]{40}",str(old_sha or "")):
+                        raise PublishingBlocked("No safe GitHub version for reservation recovery")
+                    now=datetime.now(IST).isoformat()
+                    recovered={
+                        "campaign_id":key,"network":network,
+                        "mode":cfg["campaign_mode"],"status":"reserved",
+                        "public_media_url":url,"reserved_at":now,
+                        "recovered_from":item.get("campaign_id"),
+                        "recovered_at":now
+                    }
+                    payload={
+                        "branch":LEDGER_BRANCH,"sha":old_sha,
+                        "message":"Safely reclaim prepublication Instagram mode "+
+                                  cfg["campaign_mode"],
+                        "content":base64.b64encode(
+                            (json.dumps(recovered,sort_keys=True,indent=2)+"\n").encode()
+                        ).decode()
+                    }
+                    try:
+                        result=_github(cfg["github_token"],
+                                       "contents/"+ledger_path(cfg,network,key),
+                                       method="PUT",data=payload)
+                    except PublishingBlocked as error:
+                        if "HTTP 409" in str(error) or "HTTP 422" in str(error):
+                            raise PublishingBlocked(
+                                "Instagram reservation changed during recovery; retry read-only") from None
+                        raise
+                    new_sha=(result.get("content") or {}).get("sha")
+                    if not re.fullmatch(r"[a-f0-9]{40}",str(new_sha or "")):
+                        raise PublishingBlocked("Could not verify reclaimed Instagram reservation")
+                    return new_sha
+            raise PublishingBlocked("Prior "+network+" "+cfg["campaign_mode"]+
+                                    " reservation is pending reconciliation")
         return None
     used=sum(x.get("name","").startswith(network+"-") for x in current)
     if used>=max_posts:
@@ -314,25 +377,35 @@ def record_status(cfg,network,key,sha,status,extra=None):
     return (r.get("content") or {}).get("sha")
 
 
-def publish_instagram(cfg,igid,url,caption,network,key,sha):
+def prepare_instagram_media(cfg,igid,url,caption):
+    """Create & finish a PRIVATE Instagram container before locking a public post.
+
+    /media does not publish a feed post. If it fails, there must be no
+    reservation; a later cron can safely try again.
+    """
     creation=_graph(cfg["version"],igid+"/media",cfg["page_token"],
                     post={"image_url":url,"caption":caption})
     container=str(creation.get("id") or "")
     if not re.fullmatch(r"[0-9]+",container):
         raise PublishingBlocked("Meta did not return valid Instagram media container")
-    sha=record_status(cfg,network,key,sha,"container_created",{"container_id":container})
-    # Poll processing completion; publish only confirmed finished images.
     for _ in range(8):
         stat=_graph(cfg["version"],container,cfg["page_token"],fields="status_code")
         status=stat.get("status_code")
         if status=="FINISHED":
-            break
+            return container
         if status in ("ERROR","EXPIRED","PUBLISHED"):
             raise PublishingBlocked("Meta Instagram container status: "+str(status))
         time.sleep(4)
-    else:
-        raise PublishingBlocked("Meta Instagram container did not finish processing")
-    # If this write times out, reservation remains: avoid double posting.
+    raise PublishingBlocked("Meta Instagram container did not finish processing")
+
+
+def publish_instagram(cfg,igid,url,caption,network,key,sha,*,prepared_container=None):
+    container=prepared_container or prepare_instagram_media(cfg,igid,url,caption)
+    # Publishing is forbidden until this ledger transition is confirmed.
+    # A later retry may only reclaim a stale 'reserved' lock, never
+    # 'container_created' (public media_publish may have been accepted).
+    sha=record_status(cfg,network,key,sha,"container_created",
+                      {"container_id":container})
     published=_graph(cfg["version"],igid+"/media_publish",cfg["page_token"],
                      post={"creation_id":container})
     mediaid=str(published.get("id") or "")
@@ -383,13 +456,19 @@ def publish_verified(manifest,media_url,local_jpg,*,env=None):
                 quota=check_instagram_quota(cfg,igid)
                 if quota["quota_usage"]>=quota["quota_total"]:
                     raise PublishingBlocked("No Instagram quota")
+            prepared=None
+            if network=="instagram":
+                # The container creation and processing checks are non-public.
+                # Do not strand the mode's reservation on a failed /media call.
+                prepared=prepare_instagram_media(cfg,igid,media_url,manifest["caption"])
             sha=reserve(cfg,network,key,media_url,max_posts=cfg["max_posts"])
             if sha is None:
                 results.append({"network":network,"status":"already_published_no_duplicate"})
                 continue
             if network=="instagram":
                 results.append(publish_instagram(cfg,igid,media_url,manifest["caption"],
-                                                 network,key,sha))
+                                                 network,key,sha,
+                                                 prepared_container=prepared))
             else:
                 results.append(publish_facebook(cfg,media_url,manifest["caption"],
                                                 network,key,sha))
