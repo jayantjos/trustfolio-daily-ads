@@ -201,6 +201,7 @@ class TwentyCategoryRotationTests(unittest.TestCase):
         self.assertIn("TF_AUTO_POST_ENABLED",workflow)
         cron=['0 3 * * *','0 5 * * *','0 8 * * *',
               '30 10 * * *','30 13 * * *','30 15 * * *']
+        cron+=['0 14 * * *','0 15 * * *','45 16 * * *']
         for item in cron:
             self.assertIn("cron: '"+item+"'",workflow)
             self.assertIn("github.event.schedule == '"+item+"'",workflow)
