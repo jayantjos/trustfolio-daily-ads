@@ -42,7 +42,9 @@ jobs:
           assert data['on']['schedule']==[
               {'cron':'0 3 * * *'},{'cron':'0 5 * * *'},
               {'cron':'0 8 * * *'},{'cron':'30 10 * * *'},
-              {'cron':'30 13 * * *'},{'cron':'30 15 * * *'}]
+              {'cron':'30 13 * * *'},{'cron':'30 15 * * *'},
+              {'cron':'0 14 * * *'},{'cron':'0 15 * * *'},
+              {'cron':'45 16 * * *'}]
           job=data['jobs']['render-qa-schedule']
           env=job['env']
           assert "vars.TF_META_DIRECT_PUBLISH_ENABLED" in env['TF_META_DIRECT_PUBLISH_ENABLED']
@@ -61,7 +63,8 @@ jobs:
           assert "'30 15 * * *':('comparison',0)" in planner['run']
           assert any(s.get('id')=='already_done' for s in job['steps'] )
           for cron in ('0 3 * * *','0 5 * * *','0 8 * * *',
-                       '30 10 * * *','30 13 * * *','30 15 * * *'):
+                       '30 10 * * *','30 13 * * *','30 15 * * *',
+                       '0 14 * * *','0 15 * * *','45 16 * * *'):
               assert "github.event.schedule == '"+cron+"'" in cond
           assert "workflow_dispatch" not in cond
           assert 'if [[ "$today_ist" < "2026-10-21" ]]' in publish['run']
