@@ -4,6 +4,8 @@ on:
     paths:
       - 'automation/linkedin_x_crosspost_v1.py'
       - 'automation/test_linkedin_x_crosspost_v1.py'
+      - 'automation/buffer_free_crosspost_v1.py'
+      - 'automation/test_buffer_free_crosspost_v1.py'
       - '.github/workflows/linkedin-x-crosspost.yml'
   workflow_run:
     workflows: ['TrustFolio automated Instagram campaigns']
@@ -39,7 +41,8 @@ jobs:
           set -euo pipefail
           python -m py_compile automation/linkedin_x_crosspost_v1.py
           python automation/linkedin_x_crosspost_v1.py --help
-          python -m unittest -v automation.test_linkedin_x_crosspost_v1
+          python -m unittest -v automation.test_linkedin_x_crosspost_v1 automation.test_buffer_free_crosspost_v1
+          python automation/buffer_free_crosspost_v1.py --help
           python - <<'PY'
           import pathlib
           src=pathlib.Path('.github/workflows/linkedin-x-crosspost.yml').read_text()
@@ -61,7 +64,8 @@ jobs:
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'schedule' &&
        github.event.workflow_run.head_branch == 'main' &&
-       (vars.TF_LINKEDIN_DIRECT_PUBLISH_ENABLED == 'true' ||
+       (vars.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' ||
+        vars.TF_LINKEDIN_DIRECT_PUBLISH_ENABLED == 'true' ||
         vars.TF_X_DIRECT_PUBLISH_ENABLED == 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -70,6 +74,10 @@ jobs:
       TF_LINKEDIN_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_LINKEDIN_DIRECT_PUBLISH_ENABLED || 'false' }}
       TF_X_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_X_DIRECT_PUBLISH_ENABLED || 'false' }}
       TF_X_PAID_API_APPROVED: ${{ vars.TF_X_PAID_API_APPROVED || 'false' }}
+      TF_BUFFER_FREE_PUBLISH_ENABLED: ${{ vars.TF_BUFFER_FREE_PUBLISH_ENABLED || 'false' }}
+      TF_BUFFER_LINKEDIN_CHANNEL_ID: ${{ vars.TF_BUFFER_LINKEDIN_CHANNEL_ID }}
+      TF_BUFFER_X_CHANNEL_ID: ${{ vars.TF_BUFFER_X_CHANNEL_ID }}
+      TF_BUFFER_API_KEY: ${{ secrets.TF_BUFFER_API_KEY }}
       TF_LINKEDIN_VERSION: ${{ vars.TF_LINKEDIN_VERSION || '202608' }}
       TF_LINKEDIN_AUTHOR_URN: ${{ vars.TF_LINKEDIN_AUTHOR_URN }}
       TF_X_USER_ID: ${{ vars.TF_X_USER_ID }}
@@ -130,6 +138,16 @@ jobs:
           set -euo pipefail
           python automation/linkedin_x_crosspost_v1.py --network linkedin --folder source-social-ad
           python automation/linkedin_x_crosspost_v1.py --network x --folder source-social-ad
+          python automation/buffer_free_crosspost_v1.py --network linkedin --folder source-social-ad
+          python automation/buffer_free_crosspost_v1.py --network x --folder source-social-ad
+      - name: Buffer Free - LinkedIn image schedule (zero X developer API fees)
+        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true'
+        continue-on-error: true
+        run: python automation/buffer_free_crosspost_v1.py --network linkedin --folder source-social-ad --live
+      - name: Buffer Free - X image schedule (zero X developer API fees)
+        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true'
+        continue-on-error: true
+        run: python automation/buffer_free_crosspost_v1.py --network x --folder source-social-ad --live
       - name: LinkedIn approved feed publish (separate per-mode lock)
         if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_LINKEDIN_DIRECT_PUBLISH_ENABLED == 'true'
         continue-on-error: true
