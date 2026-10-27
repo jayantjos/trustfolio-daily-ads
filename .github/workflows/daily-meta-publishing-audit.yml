@@ -1,0 +1,58 @@
+name: TrustFolio verify 3 Facebook and 3 Instagram posts daily
+on:
+  schedule:
+    # 23:00 IST; report missed publication locks after all three recovery windows.
+    - cron: '30 17 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit-meta-publication-ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Compare today's published API acceptances with 3+3 requirement
+        run: |
+          python - <<'PY'
+          import base64,json,os
+          from datetime import datetime,timedelta
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError
+          from zoneinfo import ZoneInfo
+          today=datetime.now(ZoneInfo('Asia/Kolkata'))
+          day=(today-timedelta(days=1 if today.hour<7 else 0)).date().isoformat()
+          missing=[]
+          count={}
+          for network in ('instagram','facebook'):
+              count[network]=0
+              for mode in ('budget','brand_budget','comparison'):
+                  path=f"meta-publication-ledger/{day}/{network}-mode-{mode}.json"
+                  url=("https://api.github.com/repos/jayantjos/trustfolio-daily-ads/"
+                       "contents/"+path+"?ref=trustfolio-meta-publishing-ledger")
+                  req=Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                                           'Accept':'application/vnd.github+json'})
+                  try:
+                      with urlopen(req,timeout=20) as response:
+                          payload=json.load(response)
+                      record=json.loads(base64.b64decode(payload['content']).decode('utf8'))
+                      if (record.get('status')=='api_accepted_published'
+                              and record.get('mode')==mode
+                              and record.get('network')==network):
+                          count[network]+=1
+                      else:
+                          missing.append(network+'/'+mode+' (incomplete reservation)')
+                  except HTTPError as error:
+                      if error.code!=404:
+                          raise
+                      missing.append(network+'/'+mode+' (no ledger record)')
+          print('SOCIAL_AUDIT_IST_DATE='+day)
+          print('INSTAGRAM_API_ACCEPTED='+str(count['instagram'])+'/3')
+          print('FACEBOOK_API_ACCEPTED='+str(count['facebook'])+'/3')
+          for item in missing:
+              print('MISSING_VERIFIED_POST='+item)
+          if missing:
+              raise SystemExit('Daily 3+3 post target not met; inspect the failed campaign runs and Meta errors')
+          print('DAILY_THREE_PLUS_THREE_API_ACCEPTANCE_CONFIRMED')
+          PY
