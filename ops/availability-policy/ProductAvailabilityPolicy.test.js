@@ -30,6 +30,8 @@ assert.equal(classify({status:'ok',availability:'not available'}),'ambiguous');
 assert.equal(classify({status:'ok',availability:'available'}),'none');
 assert.equal(classify({status:'ok',http_status:502,availability:'out of stock'}),'transient');
 assert.equal(classify({status:'no_price',availability:null}),'transient');
+assert.equal(classify({status:'no_price',availability:'this item is discontinued'}),'permanent');
+assert.equal(classify({status:'no_price',availability:'N/A'}),'ambiguous');
 console.log('AVAILABILITY_POLICY_TEST=PASS');
 console.log('HTTP_502_MASS_DELETE_GUARD=PASS');
 console.log('NA_TWO_FRESH_CHECKS=PASS');
