@@ -99,18 +99,28 @@ jobs:
               'Authorization':'Bearer '+os.environ['GH_TOKEN'],
               'Accept':'application/vnd.github+json'}),timeout=25) as r:
               obj=json.load(r)
-          found=[x for x in obj.get('artifacts',[]) if
-                 x.get('name')=='trustfolio-social-campaign-'+n and not x.get('expired')]
-          if len(found)>1:raise SystemExit('Ambiguous original ad artifact')
+          candidates=obj.get('artifacts',[])
+          # The original artifact is captured before Meta publishing. If a
+          # price drift rerenders the creative during publishing, only the
+          # FINAL artifact holds the exact published JPEG/caption/ID.
+          names=['trustfolio-social-final-'+n,'trustfolio-social-campaign-'+n]
+          found=[]
+          for name in names:
+              matches=[x for x in candidates if x.get('name')==name and not x.get('expired')]
+              if len(matches)>1:raise SystemExit('Ambiguous original ad artifact')
+              if matches:
+                  found=matches
+                  break
           with open(os.environ['GITHUB_OUTPUT'],'a') as out:
-              out.write('available='+str(len(found)==1).lower()+'\n')
+              out.write('available='+str(bool(found)).lower()+'\n')
+              if found:out.write('artifact='+found[0]['name']+'\n')
           print('ORIGINAL_APPROVED_ARTIFACT_AVAILABLE='+str(bool(found)))
           PY
       - name: Download original immutable approved ad artifact
         if: steps.source.outputs.available == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: trustfolio-social-campaign-${{ env.SOURCE_RUN_ID }}
+          name: ${{ steps.source.outputs.artifact }}
           path: source-social-ad
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ env.SOURCE_RUN_ID }}
