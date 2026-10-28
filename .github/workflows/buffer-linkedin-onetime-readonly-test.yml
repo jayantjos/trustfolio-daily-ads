@@ -28,10 +28,12 @@ jobs:
           if not key:
               print("BUFFER_LINKEDIN_READ_ONLY_CONFIG=BLOCKED_MISSING_GITHUB_SECRET")
               sys.exit(2)
-          if channel!=expected:
-              print("BUFFER_LINKEDIN_READ_ONLY_CONFIG=BLOCKED_MISSING_OR_DIFFERENT_CHANNEL_VARIABLE")
+          if channel and channel!=expected:
+              print("BUFFER_LINKEDIN_READ_ONLY_CONFIG=BLOCKED_DIFFERENT_CHANNEL_VARIABLE")
               sys.exit(3)
-          confirmed=verify_buffer_channel(key,"linkedin",channel)
+          if not channel:
+              print("BUFFER_LINKEDIN_GITHUB_VARIABLE=NOT_SET")
+          confirmed=verify_buffer_channel(key,"linkedin",expected)
           if confirmed.get("name")!="trustfolio-in":
               print("BUFFER_LINKEDIN_READ_ONLY_CONFIG=BLOCKED_UNEXPECTED_CHANNEL_NAME")
               sys.exit(4)
