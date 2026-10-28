@@ -109,6 +109,63 @@ class RecoveryTests(unittest.TestCase):
                                   PriceAuditBlocked("Website product ranking changed")),
                            max_rebuilds=2)
 
+    def test_brand_fallback_prepublication_tries_different_genuine_campaign(self):
+        item=dict(plan(),mode="brand_budget",brand="Noise")
+        alternative=dict(item,category="headphones-earbuds",budget=4000,
+                         brand="boAt",campaign_id="tfauto-"+"b"*18)
+        calls=[]
+        def stage(p,r,**kwargs):
+            return p,{"campaign_id":p["campaign_id"]},"https://media.trustfolio.in/x.jpg"
+        def audit(p,r):
+            calls.append((p["category"],p["brand"]))
+            if p["brand"]=="Noise":
+                raise ValueError("Website returned brand-fallback products; cannot claim a brand-only ad")
+        select=Mock(return_value=alternative)
+        selected,_,_=rebuild.rebuild_until_stable(
+            item,folder="campaign",run_key="1",host="200.234.47.87",
+            user="scraperuser",max_rebuilds=3,
+            render=lambda p,**k:(p,report_for(p)),
+            stage=stage,audit=audit,alternative_selector=select)
+        self.assertEqual(selected["brand"],"boAt")
+        self.assertEqual(calls,[("smartwatches","Noise"),("headphones-earbuds","boAt")])
+        self.assertIn(("smartwatches",3000,"Noise"),select.call_args.kwargs["excluded"])
+
+    def test_repeated_price_drift_switches_budget_and_category_before_post(self):
+        item=plan()
+        alternative=dict(item,category="headphones-earbuds",budget=5000,
+                         campaign_id="tfauto-"+"b"*18)
+        seen=[]
+        def audit(p,r):
+            seen.append((p["category"],p["budget"]))
+            if p["category"]=="smartwatches":
+                raise PriceAuditBlocked("Website product ranking changed after poster was rendered")
+        select=Mock(return_value=alternative)
+        selected,_,_=rebuild.rebuild_until_stable(
+            item,folder="campaign",run_key="1",host="200.234.47.87",
+            user="scraperuser",max_rebuilds=3,
+            render=lambda p,**k:(p,report_for(p)),
+            stage=lambda p,r,**k:(p,{},"https://media.trustfolio.in/x.jpg"),
+            audit=audit,alternative_selector=select)
+        self.assertEqual(seen,[("smartwatches",3000),("smartwatches",3000),
+                               ("headphones-earbuds",5000)])
+        self.assertEqual(selected["category"],"headphones-earbuds")
+        self.assertEqual(select.call_count,1)
+
+    def test_unverified_or_repeated_alternative_never_gets_published(self):
+        item=dict(plan(),mode="brand_budget",brand="Noise")
+        failing=lambda p,r: (_ for _ in ()).throw(ValueError("Brand fallback"))
+        for invalid in (
+            dict(item),dict(item,status="no_eligible_campaign"),
+        ):
+            with self.subTest(invalid=invalid["status"]):
+                with self.assertRaises(PriceAuditBlocked):
+                    rebuild.rebuild_until_stable(
+                        item,folder="campaign",run_key="1",host="200.234.47.87",
+                        user="scraperuser",max_rebuilds=2,
+                        render=lambda p,**k:(p,report_for(p)),
+                        stage=lambda p,r,**k:(p,{},"https://media.trustfolio.in/x.jpg"),
+                        audit=failing,alternative_selector=lambda p,**k:invalid)
+
     def test_no_unbounded_rebuilds_and_remote_target_is_pinned(self):
         with self.assertRaisesRegex(ValueError,"Unbounded"):
             rebuild.rebuild_until_stable(plan(),folder="campaign",run_key="2",
