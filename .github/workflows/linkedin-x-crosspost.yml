@@ -31,7 +31,6 @@ jobs:
     timeout-minutes: 7
     permissions:
       contents: read
-      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -57,23 +56,6 @@ jobs:
           assert 'continue-on-error: true' in src
           print('META_PIPELINE_UNMODIFIED=PASS')
           PY
-
-      # TEMPORARY PR-only real-asset dry run; remove before merge.
-      # Run 40572781421 generated and saved a QA-approved TrustFolio
-      # campaign on 2026-10-28 IST. No Meta/Buffer write is called.
-      - name: Download real approved TrustFolio source ad for dry-run
-        uses: actions/download-artifact@v4
-        with:
-          name: trustfolio-social-campaign-40572781421
-          path: source-social-ad
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: 40572781421
-      - name: Real-ad LinkedIn and Buffer captions preview WITHOUT publishing
-        run: |
-          set -euo pipefail
-          python automation/linkedin_x_crosspost_v1.py --network linkedin --folder source-social-ad
-          python automation/buffer_free_crosspost_v1.py --network linkedin --folder source-social-ad
-          echo "TRUSTFOLIO_REAL_APPROVED_AD_LINKEDIN_DRY_RUN=PASS"
 
   crosspost-approved-source:
     if: >-
