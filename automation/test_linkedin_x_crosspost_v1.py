@@ -35,8 +35,43 @@ class SocialTests(unittest.TestCase):
                                               requester=fake)
             self.assertEqual(ident,"urn:li:ugcPost:1234567890")
             self.assertEqual(calls[1][1]["raw"],file.read_bytes())
-            self.assertEqual(calls[2][1]["payload"]["commentary"],p["caption"])
+            self.assertEqual(calls[2][1]["payload"]["commentary"],social.linkedin_post_text(p))
+            self.assertNotEqual(calls[2][1]["payload"]["commentary"],p["caption"])
             self.assertEqual(calls[2][1]["payload"]["content"]["media"]["id"],"urn:li:image:Photo55")
+
+    def test_linkedin_three_modes_use_unique_professional_copy_and_exact_filters(self):
+        post=sample()
+        url=post["landing_url"]
+        examples={}
+        for mode in social.MODES:
+            p=dict(post,mode=mode)
+            if mode=="brand_budget":
+                p["brand"]="HP"
+                p["landing_url"]=url+"&brand=HP"
+            value=social.linkedin_post_text(p)
+            examples[mode]=value
+            self.assertIn(p["landing_url"],value)
+            self.assertIn("₹55,000",value)
+            self.assertIn("#TrustFolio",value)
+            self.assertNotIn("Instagram feed",value)
+            self.assertNotIn("bio link",value)
+            self.assertNotIn("play.google.com",value)
+        self.assertEqual(len(set(examples.values())),3)
+        self.assertIn("HP",examples["brand_budget"])
+        self.assertIn("comparison",examples["comparison"])
+        self.assertIn("5 website-ranked options",examples["budget"])
+
+    def test_linkedin_caption_refuses_wrong_budget_or_brand(self):
+        p=sample()
+        p["landing_url"]="https://www.trustfolio.in/category/laptops/products?budget=99999"
+        with self.assertRaisesRegex(social.ExtraSocialBlocked,"filters"):
+            social.linkedin_post_text(p)
+        p=dict(sample(),mode="brand_budget",brand="HP")
+        with self.assertRaisesRegex(social.ExtraSocialBlocked,"filters"):
+            social.linkedin_post_text(p)
+        p["landing_url"]="https://untrusted.invalid/category/laptops/products?budget=55000&brand=HP"
+        with self.assertRaisesRegex(social.ExtraSocialBlocked,"TrustFolio"):
+            social.linkedin_post_text(p)
 
     def test_linkedin_upload_host_is_pinned(self):
         with tempfile.TemporaryDirectory() as root:
