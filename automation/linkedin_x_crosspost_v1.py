@@ -158,6 +158,56 @@ def complete_slot(token,path,network,post,post_id):
                   "sha":file["sha"],"branch":LEDGER,
                   "content":base64.b64encode(json.dumps(old).encode()).decode()})
 
+def linkedin_post_text(post):
+    """Professional, per-mode LinkedIn caption for the original verified Top-5.
+
+    No invented prices, benefits or reviews. LinkedIn supports a clickable
+    landing URL, unlike the Instagram-only bio instructions in the source.
+    """
+    mode=post.get("mode")
+    if mode not in MODES:
+        raise ExtraSocialBlocked("Unsupported LinkedIn campaign mode")
+    category=str(post.get("category") or "").replace("-", " ").title()
+    try:
+        budget=int(post["budget_inr"])
+    except (KeyError,TypeError,ValueError):
+        raise ExtraSocialBlocked("Invalid LinkedIn campaign budget") from None
+    if budget<=0 or not category.strip():
+        raise ExtraSocialBlocked("Invalid LinkedIn category/budget")
+    brand=str(post.get("brand") or "").strip()
+    if mode=="brand_budget" and not brand:
+        raise ExtraSocialBlocked("Brand-only campaign is missing its brand")
+    landing=str(post.get("landing_url") or "")
+    url=urlsplit(landing)
+    if (url.scheme!="https" or url.hostname not in ("trustfolio.in","www.trustfolio.in")
+            or not url.path.endswith("/products")):
+        raise ExtraSocialBlocked("LinkedIn link must use the original TrustFolio results page")
+    from urllib.parse import parse_qs
+    params=parse_qs(url.query)
+    if (params.get("budget")!=[str(budget)]
+            or (params.get("brand",[""])[0] if mode=="brand_budget" else "")!=
+               (brand if mode=="brand_budget" else "")):
+        raise ExtraSocialBlocked("LinkedIn caption filters do not match the approved poster")
+    amount=f"₹{budget:,}"
+    if mode=="budget":
+        opening=f"{amount} tak ke budget mein {category} choose kar rahe hain?"
+        details=("TrustFolio par is budget ke 5 website-ranked options ek jagah dekhein. "
+                 "Prices aur specifications ko apni zaroorat ke hisaab se compare karein.")
+    elif mode=="brand_budget":
+        opening=f"{brand} {category} under {amount} — Top 5 options."
+        details=(f"Sirf {brand} ke available website-ranked options dekhein aur "
+                 "features aur listed prices ko ek jagah compare karein.")
+    else:
+        opening=f"{amount} ke andar {category}: 5 alag products ka comparison."
+        details=("Alag-alag models ke prices aur specifications ko side-by-side dekhein. "
+                 "Yeh alag products ka comparison hai, ek product par saving ka claim nahi.")
+    return (f"{opening}\n\n{details}\n\n"
+            f"🔎 Explore the Top 5: {landing}\n\n"
+            "Prices, availability aur ranking badal sakte hain; "
+            "kharidne se pehle retailer par confirm karein.\n\n"
+            "#TrustFolio #SmartShopping #ProductComparison")
+
+
 def linkedin_image_post(post,jpg,token,author,version="202608",requester=api_request):
     if not re.fullmatch(r"urn:li:(organization|person):[A-Za-z0-9_-]+",author):
         raise ExtraSocialBlocked("LinkedIn owner must be explicit verified person/company URN")
@@ -178,7 +228,7 @@ def linkedin_image_post(post,jpg,token,author,version="202608",requester=api_req
     requester(url,token,method="PUT",raw=jpg.read_bytes(),content_type="image/jpeg",
               extra_headers={"Accept":"*/*"})
     _,_,h=requester("https://api.linkedin.com/rest/posts",token,method="POST",
-        payload={"author":author,"commentary":post["caption"],"visibility":"PUBLIC",
+        payload={"author":author,"commentary":linkedin_post_text(post),"visibility":"PUBLIC",
                  "distribution":{"feedDistribution":"MAIN_FEED","targetEntities":[],
                                  "thirdPartyDistributionChannels":[]},
                  "content":{"media":{"id":urn,"altText":"TrustFolio verified Top-5 products"}},
@@ -271,6 +321,10 @@ def main():
     print("EXTRA_SOCIAL_CAMPAIGN_ID="+post["campaign_id"])
     if not args.live:
         print("EXTRA_SOCIAL_DRY_RUN=YES")
+        if args.network=="linkedin":
+            print("LINKEDIN_CAPTION_PREVIEW_START")
+            print(linkedin_post_text(post))
+            print("LINKEDIN_CAPTION_PREVIEW_END")
         if args.network=="x":print("X_TEXT_LENGTH="+str(len(x_post_text(post))))
         return
     if os.getenv("GITHUB_EVENT_NAME")!="workflow_run":
