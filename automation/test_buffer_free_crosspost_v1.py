@@ -30,7 +30,10 @@ class TestBufferFree(unittest.TestCase):
                     graphql_request=graphql)
         self.assertEqual(result["id"],"post-123")
         opts=calls[-1][1]["input"]
-        self.assertEqual(opts["text"],p["caption"])
+        self.assertEqual(opts["text"],buffer.linkedin_post_text(p))
+        self.assertNotEqual(opts["text"],p["caption"])
+        self.assertIn(p["landing_url"],opts["text"])
+        self.assertNotIn("Instagram",opts["text"])
         self.assertEqual(opts["assets"],[{"image":{"url":link}}])
         self.assertEqual(opts["dueAt"],"2026-10-28T04:06:00.000Z")
         self.assertEqual(opts["mode"],"customScheduled")

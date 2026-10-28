@@ -18,7 +18,7 @@ from urllib.request import Request,urlopen
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from automation.linkedin_x_crosspost_v1 import (
     NETWORKS,REPO,LEDGER,ExtraSocialBlocked,validate_source,
-    reserve_slot,get_ledger,ledger_path,x_post_text,
+    reserve_slot,get_ledger,ledger_path,x_post_text,linkedin_post_text,
 )
 from automation.meta_graph_publish_v1 import _github
 from zoneinfo import ZoneInfo
@@ -99,7 +99,7 @@ def submit_to_buffer(token,post,network,channel_id,media_url,*,now=None,
     if media_url!="https://media.trustfolio.in/trustfolio-auto/"+post["campaign_id"]+".jpg":
         raise BufferBlocked("Media URL does not match QA campaign image")
     verify_buffer_channel(token,network,channel_id,graphql_request=graphql_request)
-    caption=post["caption"] if network=="linkedin" else x_post_text(post)
+    caption=linkedin_post_text(post) if network=="linkedin" else x_post_text(post)
     now=now or datetime.now(timezone.utc)
     if now.tzinfo is None:raise BufferBlocked("Buffer schedule must use UTC aware time")
     due=(now.astimezone(timezone.utc)+timedelta(minutes=5)).isoformat(timespec="milliseconds").replace("+00:00","Z")
@@ -171,6 +171,10 @@ def main():
     print("BUFFER_FREE_TARGET="+args.network)
     if not args.live:
         print("BUFFER_FREE_DRY_RUN=YES")
+        if args.network=="linkedin":
+            print("LINKEDIN_CAPTION_PREVIEW_START")
+            print(linkedin_post_text(post))
+            print("LINKEDIN_CAPTION_PREVIEW_END")
         return
     if not token:raise BufferBlocked("Missing GitHub lock token")
     schedule_if_enabled(args.network,post,url,os.environ,gh_token=token)

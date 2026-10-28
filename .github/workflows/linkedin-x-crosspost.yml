@@ -75,7 +75,7 @@ jobs:
       TF_X_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_X_DIRECT_PUBLISH_ENABLED || 'false' }}
       TF_X_PAID_API_APPROVED: ${{ vars.TF_X_PAID_API_APPROVED || 'false' }}
       TF_BUFFER_FREE_PUBLISH_ENABLED: ${{ vars.TF_BUFFER_FREE_PUBLISH_ENABLED || 'false' }}
-      TF_BUFFER_LINKEDIN_CHANNEL_ID: ${{ vars.TF_BUFFER_LINKEDIN_CHANNEL_ID }}
+      TF_BUFFER_LINKEDIN_CHANNEL_ID: ${{ vars.TF_BUFFER_LINKEDIN_CHANNEL_ID || '6ae212582f1f5ed648fd63b5' }}
       TF_BUFFER_X_CHANNEL_ID: ${{ vars.TF_BUFFER_X_CHANNEL_ID }}
       TF_BUFFER_API_KEY: ${{ secrets.TF_BUFFER_API_KEY }}
       TF_LINKEDIN_VERSION: ${{ vars.TF_LINKEDIN_VERSION || '202608' }}
@@ -141,11 +141,10 @@ jobs:
           python automation/buffer_free_crosspost_v1.py --network linkedin --folder source-social-ad
           python automation/buffer_free_crosspost_v1.py --network x --folder source-social-ad
       - name: Buffer Free - LinkedIn image schedule (zero X developer API fees)
-        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true'
-        continue-on-error: true
+        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_LINKEDIN_CHANNEL_ID != ''
         run: python automation/buffer_free_crosspost_v1.py --network linkedin --folder source-social-ad --live
       - name: Buffer Free - X image schedule (zero X developer API fees)
-        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true'
+        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_X_CHANNEL_ID != ''
         continue-on-error: true
         run: python automation/buffer_free_crosspost_v1.py --network x --folder source-social-ad --live
       - name: LinkedIn approved feed publish (separate per-mode lock)
