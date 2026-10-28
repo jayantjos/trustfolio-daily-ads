@@ -252,7 +252,12 @@ def caption_for(plan, landing_url, *, network="instagram"):
     else:
         action = f"👉 Shop / Compare Now — Top 5 dekho: {landing_url}"
     tags = "#TrustFolio #SmartShopping #ProductComparison #BestDealsIndia"
+    hub_filters = {"category": category_slug, "budget": str(budget_inr)}
+    if mode == "brand_budget":
+        hub_filters["brand"] = brand
+    hub = "https://media.trustfolio.in/trustfolio-links/index.html?" + urlencode(hub_filters)
     return (f"✨ {title}\n\n{body}\n\n{cta}\n{action}\n\n"
+            f"🔗 Website + app quick links: {hub}\n"
             "📲 TrustFolio Android App: "
             "https://play.google.com/store/apps/details?id=com.trustfolio.app\n"
             "Prices, availability aur ranking badal sakte hain; "
