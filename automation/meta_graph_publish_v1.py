@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from automation.metricool_publish_v1 import _check_media
+from automation.auto_campaign_v1 import caption_for
 
 GRAPH_ORIGIN = "https://graph.facebook.com"
 GITHUB_ORIGIN = "https://api.github.com/repos/jayantjos/trustfolio-daily-ads"
@@ -429,8 +430,26 @@ def publish_facebook(cfg,url,caption,network,key,sha):
     return {"network":network,"status":"api_accepted_published","media_id":photoid}
 
 
+def network_caption(manifest, network):
+    """Derive platform-specific CTA from verified campaign metadata.
+
+    The same source image, ranked IDs and filtered landing URL are preserved;
+    do not silently substitute a different product or brand.
+    """
+    try:
+        plan={"mode":manifest["mode"],"category":manifest["category"],
+              "budget":manifest["budget_inr"],"brand":manifest.get("brand") or ""}
+        result=caption_for(plan,manifest["landing_url"],network=network)
+    except (KeyError,TypeError,ValueError) as exc:
+        raise PublishingBlocked("Social CTA does not match approved campaign filters") from exc
+    if not (50<=len(result)<=2100):
+        raise PublishingBlocked("Platform social CTA exceeds approved caption limit")
+    return result
+
+
 def publish_verified(manifest,media_url,local_jpg,*,env=None):
     key=validate_approved_manifest(manifest)
+    captions={n:network_caption(manifest,n) for n in ("instagram","facebook")}
     cfg=load_env(env=env)
     mode=manifest.get("mode")
     if mode not in ("budget","brand_budget","comparison"):
@@ -460,17 +479,17 @@ def publish_verified(manifest,media_url,local_jpg,*,env=None):
             if network=="instagram":
                 # The container creation and processing checks are non-public.
                 # Do not strand the mode's reservation on a failed /media call.
-                prepared=prepare_instagram_media(cfg,igid,media_url,manifest["caption"])
+                prepared=prepare_instagram_media(cfg,igid,media_url,captions["instagram"])
             sha=reserve(cfg,network,key,media_url,max_posts=cfg["max_posts"])
             if sha is None:
                 results.append({"network":network,"status":"already_published_no_duplicate"})
                 continue
             if network=="instagram":
-                results.append(publish_instagram(cfg,igid,media_url,manifest["caption"],
+                results.append(publish_instagram(cfg,igid,media_url,captions["instagram"],
                                                  network,key,sha,
                                                  prepared_container=prepared))
             else:
-                results.append(publish_facebook(cfg,media_url,manifest["caption"],
+                results.append(publish_facebook(cfg,media_url,captions["facebook"],
                                                 network,key,sha))
         except (PublishingBlocked, URLError, TimeoutError, OSError) as error:
             # A reservation made before a possibly accepted Meta write remains

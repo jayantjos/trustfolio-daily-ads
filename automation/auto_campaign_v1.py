@@ -204,33 +204,64 @@ def check_report(plan, report):
     return ids
 
 
-def caption_for(plan, landing_url):
-    category = plan["category"].replace("-", " ").title()
-    brand = plan["brand"]
-    budget = format(plan["budget"],",")
-    if plan["mode"] == "brand_budget":
-        title = f"Best {brand} {category} Under ₹{budget}!"
-        body = f"{brand} ke Top 5 picks dekho — prices aur features compare karo."
-    elif plan["mode"] == "comparison":
-        title = f"Compare Top 5 {category} Under ₹{budget}!"
-        body = "5 alag products ko side-by-side compare karo. Same-product price savings ka claim nahi."
+def caption_for(plan, landing_url, *, network="instagram"):
+    """Distinct honest CTAs for organic Instagram, Facebook and LinkedIn.
+
+    All URLs and brand/budget claims must match the same site-approved
+    campaign. A text CTA never pretends to be a paid Meta CTA button.
+    """
+    if network not in ("instagram", "facebook", "linkedin"):
+        raise ValueError("Unsupported organic social network")
+    mode = plan.get("mode")
+    if mode not in MODES:
+        raise ValueError("Unsupported campaign mode")
+    category_slug = str(plan.get("category") or "").strip()
+    category = category_slug.replace("-", " ").title()
+    brand = str(plan.get("brand") or "").strip()
+    budget_inr = int(plan["budget"])
+    if budget_inr <= 0 or not category_slug:
+        raise ValueError("Invalid campaign budget or category")
+    if mode == "brand_budget" and not brand:
+        raise ValueError("Brand-only campaign requires a brand")
+    link = urlsplit(str(landing_url or ""))
+    q = parse_qs(link.query)
+    if (link.scheme != "https" or link.hostname not in ("trustfolio.in", REPO_HOST)
+            or link.path != "/category/" + category_slug + "/products"
+            or q.get("category", [category_slug])[0] != category_slug
+            or q.get("budget") != [str(budget_inr)]
+            or q.get("brand", [""])[0] != (brand if mode == "brand_budget" else "")):
+        raise ValueError("Social caption URL does not match real category, budget and brand")
+    amount = f"₹{budget_inr:,}"
+    if mode == "brand_budget":
+        title = f"Best {brand} {category} Under {amount}!"
+        body = (f"{brand} ke website-ranked Top 5 options dekho. "
+                "Listed prices aur specifications compare karke choose karo.")
+    elif mode == "comparison":
+        title = f"Compare Top 5 {category} Under {amount}!"
+        body = ("5 alag-alag products ka side-by-side comparison dekho. "
+                "Alag models ko ek hi product ki price saving nahi bataya ja raha.")
     else:
-        title = f"Best {category} Under ₹{budget}!"
-        body = "Top 5 ranked picks, latest listed prices aur shopping options dekho."
+        title = f"Best {category} Under {amount}!"
+        body = ("Apne budget ke 5 website-ranked options ek jagah dekho. "
+                "Prices, features aur retailer options compare karo.")
+    cta = "🚀 Apna budget daalo, Best 5 paao!"
+    if network == "instagram":
+        action = (f"🔎 Top 5 dekho (link copy karo): {landing_url}\n"
+                  "Instagram feed links tappable nahi hote; profile par website link "
+                  "available ho to wahan se open karo.")
+    else:
+        action = f"👉 Shop / Compare Now — Top 5 dekho: {landing_url}"
     tags = "#TrustFolio #SmartShopping #ProductComparison #BestDealsIndia"
-    hub_filters = {"category":plan["category"],"budget":str(plan["budget"])}
-    if brand: hub_filters["brand"] = brand
-    hub = ("https://media.trustfolio.in/trustfolio-links/index.html?"
-           + urlencode(hub_filters))
-    # Instagram captions are not clickable. The brand's bio needs a one-time
-    # profile Links update; do not claim it is active until verified.
-    return (f"✨ {title}\n\n{body}\n\n"
-            f"🔎 Filtered results: {landing_url}\n"
+    hub_filters = {"category": category_slug, "budget": str(budget_inr)}
+    if mode == "brand_budget":
+        hub_filters["brand"] = brand
+    hub = "https://media.trustfolio.in/trustfolio-links/index.html?" + urlencode(hub_filters)
+    return (f"✨ {title}\n\n{body}\n\n{cta}\n{action}\n\n"
             f"🔗 Website + app quick links: {hub}\n"
-            "📲 Android app: https://play.google.com/store/apps/details?id=com.trustfolio.app\n"
-            "Instagram feed links tappable nahi hote. Link copy karo; "
-            "bio link activate hone ke baad profile se direct open karo.\n\n"
-            "Prices, availability aur ranking badal sakte hain; buy karne se pehle verify karo.\n\n"
+            "📲 TrustFolio Android App: "
+            "https://play.google.com/store/apps/details?id=com.trustfolio.app\n"
+            "Prices, availability aur ranking badal sakte hain; "
+            "buy karne se pehle retailer par confirm karo.\n\n"
             + tags)
 
 

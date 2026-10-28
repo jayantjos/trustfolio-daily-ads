@@ -201,8 +201,9 @@ def linkedin_post_text(post):
         opening=f"{amount} ke andar {category}: 5 alag products ka comparison."
         details=("Alag-alag models ke prices aur specifications ko side-by-side dekhein. "
                  "Yeh alag products ka comparison hai, ek product par saving ka claim nahi.")
-    return (f"{opening}\n\n{details}\n\n"
-            f"🔎 Explore the Top 5: {landing}\n\n"
+    return (f"✨ {opening}\n\n{details}\n\n"
+            "🚀 Apna budget daalo, Best 5 paao!\n"
+            f"👉 Explore / Compare Top 5: {landing}\n\n"
             "Prices, availability aur ranking badal sakte hain; "
             "kharidne se pehle retailer par confirm karein.\n\n"
             "#TrustFolio #SmartShopping #ProductComparison")

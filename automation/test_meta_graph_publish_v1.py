@@ -20,7 +20,7 @@ def qa_manifest():
         "size":[1080,1350],
         "ranked_product_ids":["p1","p2","p3","p4","p5"],
         "campaign_id":"tfauto-"+"b"*18,
-        "mode":"budget",
+        "mode":"budget", "category":"smart-phones", "budget_inr":15000, "brand":"",
         "landing_url":"https://www.trustfolio.in/category/smart-phones/products?budget=15000",
         "caption":"✨ Best Smartphones Under ₹15,000. "
                   "Compare the real Top 5 website picks; latest prices can change. "
@@ -198,6 +198,58 @@ class DirectMetaSafetyTests(unittest.TestCase):
                 m.reserve(cfg,"instagram","tfauto-"+"c"*18,
                           "https://media.trustfolio.in/trustfolio-auto/x.jpg",max_posts=2)
             h.assert_not_called()
+
+    def test_independent_instagram_and_facebook_ctas_preserve_filters(self):
+        item=qa_manifest()
+        ig=m.network_caption(item,"instagram")
+        fb=m.network_caption(item,"facebook")
+        self.assertIn(item["landing_url"],ig)
+        self.assertIn(item["landing_url"],fb)
+        self.assertIn("Apna budget daalo, Best 5 paao!",fb)
+        self.assertIn("Shop / Compare Now",fb)
+        self.assertIn("links tappable nahi",ig)
+        self.assertNotIn("links tappable nahi",fb)
+        self.assertNotEqual(ig,fb)
+        self.assertIn("play.google.com/store/apps/details?id=com.trustfolio.app",ig)
+
+        item=dict(item,mode="brand_budget",brand="Samsung",
+                  landing_url=item["landing_url"]+"&brand=Samsung")
+        for network in ("instagram","facebook"):
+            text=m.network_caption(item,network)
+            self.assertIn("Samsung",text)
+            self.assertIn("brand=Samsung",text)
+        item=dict(item,mode="comparison",brand="",
+                  landing_url=qa_manifest()["landing_url"])
+        self.assertIn("5 alag-alag products",m.network_caption(item,"facebook"))
+
+    def test_wrong_brand_or_budget_cta_is_blocked_before_any_meta_write(self):
+        bad=qa_manifest()
+        bad["budget_inr"]=20000
+        with patch.object(m,"_check_media") as check:
+            with self.assertRaisesRegex(m.PublishingBlocked,"CTA"):
+                m.publish_verified(bad,"https://media.trustfolio.in/x.jpg","x.jpg")
+            check.assert_not_called()
+        other=dict(qa_manifest(),mode="brand_budget",brand="Samsung")
+        with self.assertRaisesRegex(m.PublishingBlocked,"CTA"):
+            m.network_caption(other,"instagram")
+
+    def test_network_specific_captions_are_used_by_real_publisher(self):
+        item=qa_manifest()
+        cfg={"networks":("instagram","facebook"),"max_posts":3}
+        with patch.object(m,"load_env",return_value=cfg), \
+             patch.object(m,"_check_media"), \
+             patch.object(m,"confirm_page_token_type"), \
+             patch.object(m,"confirm_page_identity",return_value="1791"), \
+             patch.object(m,"check_instagram_quota",
+                          return_value={"quota_usage":0,"quota_total":100}), \
+             patch.object(m,"prepare_instagram_media",return_value="123"), \
+             patch.object(m,"reserve",return_value="a"*40), \
+             patch.object(m,"publish_instagram",return_value={"network":"instagram","status":"api_accepted_published"}) as ig, \
+             patch.object(m,"publish_facebook",return_value={"network":"facebook","status":"api_accepted_published"}) as fb:
+            results=m.publish_verified(item,"https://media.trustfolio.in/x.jpg","x.jpg")
+            self.assertEqual(len(results),2)
+            self.assertEqual(ig.call_args.args[3],m.network_caption(item,"instagram"))
+            self.assertEqual(fb.call_args.args[2],m.network_caption(item,"facebook"))
 
     def test_facebook_publish_uses_only_page_photo_endpoint(self):
         cfg={"version":"v25.0","page_id":m.EXPECTED_PAGE_ID,"page_token":"t"}
