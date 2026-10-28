@@ -16,6 +16,10 @@ on:
     - cron: '0 14 * * *'
     - cron: '0 15 * * *'
     - cron: '45 16 * * *'
+    # Final same-day rescue runs for modes not yet published.
+    - cron: '0 16 * * *'
+    - cron: '30 16 * * *'
+    - cron: '30 17 * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -97,9 +101,19 @@ jobs:
               '0 8 * * *':'brand_budget','30 10 * * *':'brand_budget',
               '30 13 * * *':'comparison','30 15 * * *':'comparison',
               '0 14 * * *':'budget','0 15 * * *':'brand_budget',
-              '45 16 * * *':'comparison'
+              '45 16 * * *':'comparison',
+              '0 16 * * *':'budget','30 16 * * *':'brand_budget',
+              '30 17 * * *':'comparison'
           }[os.environ['CRON_TRIGGER']]
-          day=datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()
+          local_now=datetime.now(ZoneInfo('Asia/Kolkata'))
+          day=local_now.date().isoformat()
+          # Do not let yesterday's delayed GitHub cron consume today's quota
+          # just after midnight. No normal TrustFolio posting slot is before 08:30.
+          if local_now.hour < 8:
+              print('META_SCHEDULE_OVERNIGHT_DELAY_SKIPPED=YES IST_DATE='+day)
+              with open(os.environ['GITHUB_OUTPUT'],'a') as out:
+                  out.write('skip=true\n')
+              raise SystemExit(0)
           complete=[]
           for network in ('instagram','facebook'):
               path=f"meta-publication-ledger/{day}/{network}-mode-{mode}.json"
@@ -146,6 +160,9 @@ jobs:
               '30 13 * * *':('comparison',0), '30 15 * * *':('comparison',0),
               '0 14 * * *':('budget',0), '0 15 * * *':('brand_budget',0),
               '45 16 * * *':('comparison',0),
+              '0 16 * * *':('budget',0),
+              '30 16 * * *':('brand_budget',0),
+              '30 17 * * *':('comparison',0),
           }
           event=os.getenv('EVENT_TYPE')
           if event=='schedule':
@@ -289,7 +306,7 @@ jobs:
         # Each schedule call may produce at most one IG and one FB post.
         # Website must return all five same-brand products or brand slot skips.
         # Old Oct 20-25 Metricool queue was canceled into drafts; no duplicate posting.
-        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '0 5 * * *' || github.event.schedule == '0 8 * * *' || github.event.schedule == '30 10 * * *' || github.event.schedule == '30 13 * * *' || github.event.schedule == '30 15 * * *' || github.event.schedule == '0 14 * * *' || github.event.schedule == '0 15 * * *' || github.event.schedule == '45 16 * * *')
+        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '0 5 * * *' || github.event.schedule == '0 8 * * *' || github.event.schedule == '30 10 * * *' || github.event.schedule == '30 13 * * *' || github.event.schedule == '30 15 * * *' || github.event.schedule == '0 14 * * *' || github.event.schedule == '0 15 * * *' || github.event.schedule == '45 16 * * *' || github.event.schedule == '0 16 * * *' || github.event.schedule == '30 16 * * *' || github.event.schedule == '30 17 * * *')
         env:
           TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -321,7 +338,7 @@ jobs:
             # Fail closed if the website remains unstable or genuine Top-5 missing.
             python automation/rebuild_stale_meta_campaign_v1.py \
               --folder campaign --run-key "$RUN_KEY" \
-              --host "$HOST" --user "$USER" --max-rebuilds 2
+              --host "$HOST" --user "$USER" --max-rebuilds 3
           fi
           ID="$(python -c 'import json;print(json.load(open("campaign/plan.json"))["campaign_id"])')"
           [[ "$ID" =~ ^tfauto-[a-f0-9]{18}$ ]]

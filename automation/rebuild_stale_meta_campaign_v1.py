@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from automation.auto_campaign_v1 import package_assets
 from automation.meta_graph_publish_v1 import validate_approved_manifest
 from automation.metricool_publish_v1 import _check_media
-from automation.render_with_brand_fallback_v1 import render_with_fallback
+from automation.render_with_brand_fallback_v1 import render_with_fallback, select_alternative
 from automation.verify_price_before_meta_publish_v1 import verify_fresh_snapshot, PriceAuditBlocked
 
 MEDIA_ROOT="https://media.trustfolio.in/trustfolio-auto/"
@@ -74,10 +74,16 @@ def stage_verified_media(plan,report,*,folder,host,user,runner=subprocess.run,
 def rebuild_until_stable(plan, *, folder,run_key,host,user,max_rebuilds=2,
                          render=render_with_fallback,
                          stage=stage_verified_media,
-                         audit=verify_fresh_snapshot):
+                         audit=verify_fresh_snapshot,
+                         alternative_selector=select_alternative):
+    """Retry changed rankings once; switch verified candidates on repeated drift
+    or a brand-fallback response, BEFORE any Meta public posting request.
+    """
     if not 1<=max_rebuilds<=3:
         raise ValueError("Unbounded ad refresh denied")
     current=dict(plan)
+    stale_once=set()
+    excluded=set()
     for cycle in range(1,max_rebuilds+1):
         print("FRESH_AD_REBUILD_ATTEMPT="+str(cycle)+"/"+str(max_rebuilds),flush=True)
         current,report=render(current,run_key=run_key,folder=folder,host=host,user=user,
@@ -87,11 +93,33 @@ def rebuild_until_stable(plan, *, folder,run_key,host,user,max_rebuilds=2,
             audit(current,report)
             print("META_PREPUBLISH_PRICE_PARITY=PASS_AFTER_REBUILD",flush=True)
             return current,manifest,url
-        except PriceAuditBlocked as err:
-            # Do not advertise outdated ranks/prices, even after rebuilding.
-            print("FRESH_AD_REBUILD_STALE="+str(err),flush=True)
+        except (PriceAuditBlocked, ValueError) as err:
+            # Meta has not been called yet, so choosing a different *genuine*
+            # website-ranked campaign is safe. Never reuse the stale JPG.
+            print("FRESH_AD_REBUILD_STALE="+type(err).__name__+": "+str(err),flush=True)
             if cycle==max_rebuilds:
                 raise
+            identity=(current["category"],int(current["budget"]),
+                      str(current.get("brand") or ""))
+            # A price/rank drift can stabilize on an immediate fresh render.
+            # A brand-fallback is not a valid brand ad: switch right away.
+            # If the same campaign keeps drifting, switch to another candidate.
+            switch_candidate=(not isinstance(err, PriceAuditBlocked)
+                              or identity in stale_once)
+            if switch_candidate:
+                excluded.add(identity)
+                current=alternative_selector(current,excluded=excluded)
+                if current.get("status")!="eligible":
+                    raise PriceAuditBlocked("No verified fallback campaign available")
+                new_identity=(current["category"],int(current["budget"]),
+                              str(current.get("brand") or ""))
+                if new_identity in excluded or new_identity==identity:
+                    raise PriceAuditBlocked("Fallback repeated a rejected campaign")
+                print("FRESH_AD_REBUILD_NEXT_VERIFIED_CATEGORY="+current["category"],flush=True)
+                print("FRESH_AD_REBUILD_NEXT_VERIFIED_BUDGET="+str(current["budget"]),flush=True)
+            else:
+                stale_once.add(identity)
+                print("FRESH_AD_REBUILD_RETRY_SAME_FRESH_CANDIDATE=true",flush=True)
     raise PriceAuditBlocked("No stable genuine website Top-5 snapshot found")
 
 
@@ -101,7 +129,7 @@ def main():
     p.add_argument("--run-key",required=True)
     p.add_argument("--host",required=True)
     p.add_argument("--user",required=True)
-    p.add_argument("--max-rebuilds",type=int,default=2)
+    p.add_argument("--max-rebuilds",type=int,default=3)
     args=p.parse_args()
     if not re.fullmatch(r"[0-9]+",args.run_key):
         raise ValueError("Invalid workflow run ID")

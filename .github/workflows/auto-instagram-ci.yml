@@ -36,7 +36,7 @@ jobs:
               data=yaml.load(Path(path).read_text('utf8'),Loader=yaml.BaseLoader)
               assert 'on' in data and 'jobs' in data,path
               if path.endswith('auto-instagram-campaigns.yml'):
-                  assert len(data['on']['schedule'])==9
+                  assert len(data['on']['schedule'])==12
           PY
       - name: Smoke test direct Python CLI invocation of rebuilt ad pipeline
         run: |

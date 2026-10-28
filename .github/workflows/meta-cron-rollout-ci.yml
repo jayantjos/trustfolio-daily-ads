@@ -45,7 +45,9 @@ jobs:
               {'cron':'0 8 * * *'},{'cron':'30 10 * * *'},
               {'cron':'30 13 * * *'},{'cron':'30 15 * * *'},
               {'cron':'0 14 * * *'},{'cron':'0 15 * * *'},
-              {'cron':'45 16 * * *'}]
+              {'cron':'45 16 * * *'},
+              {'cron':'0 16 * * *'},{'cron':'30 16 * * *'},
+              {'cron':'30 17 * * *'}]
           job=data['jobs']['render-qa-schedule']
           env=job['env']
           assert "vars.TF_META_DIRECT_PUBLISH_ENABLED" in env['TF_META_DIRECT_PUBLISH_ENABLED']
@@ -63,9 +65,13 @@ jobs:
           assert "'30 10 * * *':('brand_budget',0)" in planner['run']
           assert "'30 15 * * *':('comparison',0)" in planner['run']
           assert any(s.get('id')=='already_done' for s in job['steps'] )
+          recovery=next(s for s in job['steps'] if s.get('id')=='already_done')
+          assert 'META_SCHEDULE_OVERNIGHT_DELAY_SKIPPED' in recovery['run']
+          assert '--max-rebuilds 3' in publish['run']
           for cron in ('0 3 * * *','0 5 * * *','0 8 * * *',
                        '30 10 * * *','30 13 * * *','30 15 * * *',
-                       '0 14 * * *','0 15 * * *','45 16 * * *'):
+                       '0 14 * * *','0 15 * * *','45 16 * * *',
+                       '0 16 * * *','30 16 * * *','30 17 * * *'):
               assert "github.event.schedule == '"+cron+"'" in cond
           assert "workflow_dispatch" not in cond
           assert 'if [[ "$today_ist" < "2026-10-21" ]]' in publish['run']
