@@ -45,7 +45,7 @@ class RecoveryTests(unittest.TestCase):
         meta.assert_called_once_with("GH",self.original)
         audit.assert_called_once()
         self.assertEqual(result["campaign_id"],self.new["campaign_id"])
-        data=json.loads((self.dst/"linkedin-recovery-source.json").read_text())
+        data=json.loads((self.dst/"post"/"linkedin-recovery-source.json").read_text())
         self.assertEqual(data["meta_original"]["campaign_id"],self.original["campaign_id"])
         self.assertEqual(data["new_campaign_id"],self.new["campaign_id"])
         self.assertEqual(json.loads((self.src/"plan.json").read_text()),self.plan)
