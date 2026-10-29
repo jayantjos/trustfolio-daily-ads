@@ -1,4 +1,4 @@
-name: Test worker parser on real POCO HTML
+name: VPS browser price-source capability audit
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check audit syntax
-        run: node --test ops/price-worker-diagnostics/WorkerPriceExtractionRules.test.mjs
+        run: bash -n ops/price-worker-diagnostics/audit_browser_fallback.sh
       - name: Prepare SSH
         env:
           KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
@@ -35,6 +35,5 @@ jobs:
           USER: ${{ secrets.TF_DEPLOY_USER }}
         run: |
           set -euo pipefail
-          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/WorkerPriceExtractionRules.mjs "$USER@$HOST:~/WorkerPriceExtractionRules.mjs"
-          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/probe_real_flipkart_html.mjs "$USER@$HOST:~/probe_real_flipkart_html.mjs"
-          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && node "$HOME/probe_real_flipkart_html.mjs"'
+          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/audit_browser_fallback.sh "$USER@$HOST:~/audit-browser-fallback.sh"
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && bash "$HOME/audit-browser-fallback.sh"'
