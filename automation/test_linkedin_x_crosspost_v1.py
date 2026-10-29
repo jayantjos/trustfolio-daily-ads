@@ -99,6 +99,29 @@ class SocialTests(unittest.TestCase):
             self.assertEqual(calls[4][1]["payload"]["media"]["media_ids"],["888"])
             self.assertIn(sample()["landing_url"],calls[4][1]["payload"]["text"])
 
+    def test_long_meta_utm_link_is_compacted_without_losing_filters(self):
+        p=dict(sample(),mode="budget",category="smart-phones",budget_inr=15000)
+        p["landing_url"]=(
+            "https://www.trustfolio.in/category/smart-phones/products?"
+            "utm_source=social&utm_medium=paid_social&utm_campaign=trustfolio_daily_ads"
+            "&utm_content=tf-c39ad9c5a72e&ad_type=budget_recommendation"
+            "&budget=15000&"+("ref="+"x"*150)
+        )
+        caption=social.x_post_text(p)
+        self.assertLessEqual(len(caption),280)
+        self.assertIn("/category/smart-phones/products?budget=15000",caption)
+        self.assertNotIn("utm_source",caption)
+
+    def test_long_wrong_link_fails_instead_of_claiming_verified_budget(self):
+        p=dict(sample(),mode="brand_budget",category="smart-phones",
+               brand="Samsung",budget_inr=20000)
+        p["landing_url"]=(
+            "https://www.trustfolio.in/category/smart-phones/products?"
+            "budget=25000&brand=Samsung&"+"utm_source="+"x"*180
+        )
+        with self.assertRaisesRegex(social.ExtraSocialBlocked,"filters"):
+            social.x_post_text(p)
+
     def test_x_wrong_token_identity_blocks_before_media_write(self):
         calls=[]
         def fake(url,token,**kw):
