@@ -29,8 +29,8 @@ function variantCompatible(expectedName,actualName) {
   const colorA=COLORS.find(c=>new RegExp('\\b'+c+'\\b').test(a));
   const colorB=COLORS.find(c=>new RegExp('\\b'+c+'\\b').test(b));
   if(colorA && colorB && colorA!==colorB)return false;
-  const capacityA=/\\b(64|128|256|512|1024) gb\\b/.exec(a);
-  const capacityB=/\\b(64|128|256|512|1024) gb\\b/.exec(b);
+  const capacityA=/\b(64|128|256|512|1024) gb\b/.exec(a);
+  const capacityB=/\b(64|128|256|512|1024) gb\b/.exec(b);
   if(capacityA && capacityB && capacityA[1]!==capacityB[1])return false;
   return true;
 }
