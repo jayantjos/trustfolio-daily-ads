@@ -1,0 +1,56 @@
+name: Video handoff API parity smoke - budget and IFB
+on:
+  push:
+    paths:
+      - '.github/workflows/video-live-budget-ifb-test.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: budget
+            brand: ''
+          - mode: brand_budget
+            brand: IFB
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch authoritative Top 5 and refresh price using existing Ads client
+        env:
+          BRAND: ${{ matrix.brand }}
+          MODE: ${{ matrix.mode }}
+        run: |
+          mkdir -p handoff
+          python - <<'PY'
+          import json,os
+          from datetime import datetime,timezone
+          from pathlib import Path
+          from site_top5_ads_v1 import build_site_ads_payload
+          data=build_site_ads_payload('washing-machines',25000,os.environ['BRAND'])
+          ad=data['ads'][0]
+          rows=ad['products']
+          assert len(rows)==5 and [x['rank'] for x in rows]==[1,2,3,4,5]
+          for row in rows:
+              assert row['price_source']=='website_live_price_api'
+              assert row['live_price_status']=='ok'
+              assert 0<float(row['price_inr'])<=25000
+              if os.environ['BRAND']:
+                  assert row['brand'].casefold()==os.environ['BRAND'].casefold()
+              dt=datetime.fromisoformat(row['live_checked_at'].replace('Z','+00:00'))
+              assert -60<=(datetime.now(timezone.utc)-dt).total_seconds()<=900
+          Path('handoff/live_ad_'+os.environ['MODE']+'.json').write_text(json.dumps(data,ensure_ascii=False,indent=2))
+          print('VIDEO_HANDOFF_TOP5_LIVE_PRICE_VERIFIED '+os.environ['MODE'])
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: washing-25000-${{ matrix.mode }}-${{ github.run_id }}
+          path: handoff/
+          retention-days: 3
+          if-no-files-found: warn
+# No SSH, no publishing. Manual authorized artifact retrieval required for another repository.
