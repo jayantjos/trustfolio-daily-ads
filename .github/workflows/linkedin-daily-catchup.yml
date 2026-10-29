@@ -1,5 +1,8 @@
 name: TrustFolio LinkedIn 3-mode independent same-day catch-up
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/linkedin-daily-catchup.yml']
   schedule:
     # 21:00 and 22:30 IST, after Meta publication slots.
     - cron: '30 15 * * *'
