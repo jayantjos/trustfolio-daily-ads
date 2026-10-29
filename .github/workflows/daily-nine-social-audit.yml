@@ -45,8 +45,9 @@ jobs:
                       # Buffer queued is NOT evidence of actual publication.
                       ok=(entry is not None and entry.get('network')==network
                           and entry.get('mode')==mode
-                          and entry.get('status')=='api_accepted_published'
-                          and bool(entry.get('external_post_id')))
+                          and entry.get('status')=='buffer_confirmed_sent'
+                          and bool(entry.get('buffer_post_id'))
+                          and bool(entry.get('buffer_sent_at')))
                   else:
                       entry=read('trustfolio-meta-publishing-ledger',
                                  f'meta-publication-ledger/{day}/{network}-mode-{mode}.json')
