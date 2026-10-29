@@ -205,7 +205,10 @@ class TwentyCategoryRotationTests(unittest.TestCase):
                '0 16 * * *','30 16 * * *','30 17 * * *']
         for item in cron:
             self.assertIn("cron: '"+item+"'",workflow)
-            self.assertIn("github.event.schedule == '"+item+"'",workflow)
+            self.assertIn('"'+item+'": ',(ROOT/"automation/schedule_recovery_v1.py").read_text("utf8"))
+        self.assertIn("cron: '17,47 3-17 * * *'",workflow)
+        self.assertIn("from automation.schedule_recovery_v1 import select_due_mode",workflow)
+        self.assertIn("github.event_name == 'schedule' && steps.already_done.outputs.skip != 'true'",workflow)
         self.assertIn("'--slot',str(slot)",workflow)
         # Each mode's second cron is recovery, never an extra published mode.
         self.assertIn("'0 5 * * *':('budget',0)",workflow)
