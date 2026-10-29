@@ -4,5 +4,8 @@
   "mode": "comparison",
   "network": "facebook",
   "recorded_at": "2026-10-29T19:07:50.253738+05:30",
-  "status": "api_accepted_published"
+  "status": "api_accepted_published",
+  "category": "washing-machines",
+  "budget_inr": 25000,
+  "brand": ""
 }
