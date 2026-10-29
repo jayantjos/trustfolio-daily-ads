@@ -16,7 +16,7 @@ const mongoUri=['MONGODB_URI','MONGO_URI','MONGO_URL','MONGODB_URL','DB_URI','DA
    const item=workerItem(d);
    console.log('TEST_SKU='+JSON.stringify({pid:d.platform_product_id,
      title:String(d.title||'').slice(0,100),canonical_product_url:typeof item==='string'?item:null}));
-   if(typeof item!=='string'||!item.startsWith('https://www.flipkart.com/'))continue;
+   if(typeof item!=='string'||!/^https:\/\/(?:www\.)?flipkart\.com\//.test(item))continue;
    try {
      const response=await fetch(item,{headers:{
        accept:'text/html,application/xhtml+xml','accept-language':'en-IN,en;q=0.9',
