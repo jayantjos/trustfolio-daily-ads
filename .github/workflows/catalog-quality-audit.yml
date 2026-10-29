@@ -1,4 +1,4 @@
-name: Inspect exact Flipkart URLs and signed Worker access without secret disclosure
+name: Real HTML source audit for two Mongo Flipkart SKUs
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check audit syntax
-        run: node --check ops/price-worker-diagnostics/probe_old_worker_two_mongo_skus.cjs
+        run: node --check ops/price-worker-diagnostics/audit_real_flipkart_raw_html.cjs
       - name: Prepare SSH
         env:
           KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
@@ -35,5 +35,5 @@ jobs:
           USER: ${{ secrets.TF_DEPLOY_USER }}
         run: |
           set -euo pipefail
-          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/probe_old_worker_two_mongo_skus.cjs "$USER@$HOST:~/probe_old_worker_two_mongo_skus.cjs"
-          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && node "$HOME/probe_old_worker_two_mongo_skus.cjs"'
+          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/audit_real_flipkart_raw_html.cjs "$USER@$HOST:~/audit_real_flipkart_raw_html.cjs"
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && node "$HOME/audit_real_flipkart_raw_html.cjs"'
