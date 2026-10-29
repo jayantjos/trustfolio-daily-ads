@@ -1,0 +1,44 @@
+name: TrustFolio new Worker health and authentication check
+on:
+  push:
+    branches: [diagnostics/croma-direct-live-price-20261027]
+    paths:
+      - .github/workflows/check-new-worker-health.yml
+permissions:
+  contents: read
+jobs:
+  verify-new-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe Worker health and key protection (no secrets)
+        run: |
+          set -euo pipefail
+          url='https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev'
+          code=$(curl -sS -L --max-time 15 -o health.json -w '%{http_code}' "$url/health")
+          echo "WORKER_HEALTH_HTTP=$code"
+          python3 - <<'PY'
+          import json
+          x=json.load(open('health.json'))
+          print('HEALTH_RESPONSE='+json.dumps(x))
+          assert x.get('worker')=='trustfolio-live-price-worker'
+          assert x.get('ready') is True
+          assert x.get('ok') is True
+          print('WORKER_PUBLIC_HEALTH=PASS')
+          PY
+          test "$code" = "200"
+          code=$(curl -sS --max-time 15 -X POST -H 'content-type: application/json' \
+            -o unauth.json -w '%{http_code}' \
+            --data '{"items":["https://www.flipkart.com/poco-x8-pro-max-blue-512-gb/p/itmfc8cc712fe4a5?pid=MOBHH2KYWG8UBBAF"]}' \
+            "$url/api/check")
+          echo "WORKER_NO_KEY_HTTP=$code"
+          python3 - <<'PY'
+          import json
+          x=json.load(open('unauth.json'))
+          print('NO_KEY_RESPONSE='+json.dumps(x))
+          assert x.get('error')=='unauthorized'
+          print('WORKER_AUTH_PROTECTION=PASS')
+          PY
+          test "$code" = "401"
+          echo "WORKER_NEW_URL_READY=YES"
+          echo "NO_LIVE_PRICE_ASSERTION=YES"
