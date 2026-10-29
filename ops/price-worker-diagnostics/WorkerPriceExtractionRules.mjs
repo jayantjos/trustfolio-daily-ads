@@ -23,10 +23,22 @@ const result=(status,priceNum=null,source=null,availability=null,error=null)=>({
   inStock:availability==='in_stock'?true:availability==='out_of_stock'?false:null,
   availability,source,error
 });
+const COLORS=['black','blue','white','green','red','silver','gold','grey','gray','purple','violet','pink','orange','yellow','brown'];
+function variantCompatible(expectedName,actualName) {
+  const a=norm(expectedName), b=norm(actualName);
+  const colorA=COLORS.find(c=>new RegExp('\\b'+c+'\\b').test(a));
+  const colorB=COLORS.find(c=>new RegExp('\\b'+c+'\\b').test(b));
+  if(colorA && colorB && colorA!==colorB)return false;
+  const capacityA=/\\b(64|128|256|512|1024) gb\\b/.exec(a);
+  const capacityB=/\\b(64|128|256|512|1024) gb\\b/.exec(b);
+  if(capacityA && capacityB && capacityA[1]!==capacityB[1])return false;
+  return true;
+}
 function productIdentityOK(html,expected) {
   const htmlTitle=(/<title[^>]*>([^<]{1,250})<\/title>/i.exec(html)||[])[1]||'';
   if (!htmlTitle || /captcha|access denied|something went wrong|robot check/i.test(htmlTitle)) return false;
   const expectedTitle=norm(expected?.title);
+  if(expected?.title&&!variantCompatible(expected.title,htmlTitle))return false;
   if (!expectedTitle) return true;
   const words=expectedTitle.split(' ').filter(w=>w.length>2&&
       !['smartphone','mobile','online','best','price','ram','storage'].includes(w));
@@ -52,6 +64,7 @@ function priceFromJSONLD(html,expected) {
     for(const p of products){
       // Never use an unrelated recommendation's Offer.
       if(expected?.title){
+        if(!variantCompatible(expected.title,p.name))continue;
         const pageName=norm(p.name);
         const expectedTokens=norm(expected.title).split(' ').filter(w=>w.length>2);
         if(expectedTokens.length && expectedTokens.slice(0,4).filter(w=>pageName.includes(w)).length<2)continue;
