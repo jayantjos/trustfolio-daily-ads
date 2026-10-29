@@ -1,4 +1,4 @@
-name: Confirm new Cloudflare Worker v0.4 after GitHub commit
+name: Recheck Cloudflare v0.4 deployment after CI failures
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
