@@ -45,6 +45,7 @@ jobs:
           python -m py_compile automation/rebuild_stale_meta_campaign_v1.py
           python automation/rebuild_stale_meta_campaign_v1.py --help
           python automation/render_with_brand_fallback_v1.py --help
+          python -m unittest -v automation.test_posting_history_v1
           python -m unittest -v automation.test_rebuild_stale_meta_v1
       - name: No-network regression suite for images, site ranking and publishing gate
         run: |
