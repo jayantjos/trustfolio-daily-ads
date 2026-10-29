@@ -5,5 +5,8 @@
   "mode": "budget",
   "network": "instagram",
   "recorded_at": "2026-10-29T12:03:21.938260+05:30",
-  "status": "api_accepted_published"
+  "status": "api_accepted_published",
+  "category": "smart-phones",
+  "budget_inr": 15000,
+  "brand": ""
 }
