@@ -1,0 +1,67 @@
+name: TrustFolio audit daily 9 verified network posts
+on:
+  schedule:
+    - cron: '15 18 * * *' # 23:45 IST, after all three campaign modes
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  daily-nine-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Verify IG, FB and LinkedIn separately, including Buffer scheduled vs published
+        run: |
+          python - <<'PY'
+          import base64,json,os
+          from datetime import datetime
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError
+          from zoneinfo import ZoneInfo
+          day=datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()
+          repo='jayantjos/trustfolio-daily-ads'
+          modes=('budget','brand_budget','comparison')
+          def read(branch,path):
+              url=f'https://api.github.com/repos/{repo}/contents/{path}?ref={branch}'
+              req=Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                        'Accept':'application/vnd.github+json'})
+              try:
+                  with urlopen(req,timeout=20) as res:
+                      obj=json.load(res)
+              except HTTPError as exc:
+                  if exc.code==404:return None
+                  raise
+              return json.loads(base64.b64decode(obj['content']).decode())
+          counts={}
+          missing=[]
+          for network in ('instagram','facebook','linkedin'):
+              counts[network]=0
+              for mode in modes:
+                  if network=='linkedin':
+                      entry=read('trustfolio-extra-social-ledger',
+                                 f'extra-social-ledger/{day}/{network}-mode-{mode}.json')
+                      # Buffer queued is NOT evidence of actual publication.
+                      ok=(entry is not None and entry.get('network')==network
+                          and entry.get('mode')==mode
+                          and entry.get('status')=='api_accepted_published'
+                          and bool(entry.get('external_post_id')))
+                  else:
+                      entry=read('trustfolio-meta-publishing-ledger',
+                                 f'meta-publication-ledger/{day}/{network}-mode-{mode}.json')
+                      ok=(entry is not None and entry.get('network')==network
+                          and entry.get('mode')==mode
+                          and entry.get('status')=='api_accepted_published')
+                  if ok:counts[network]+=1
+                  else:
+                      status=entry.get('status','absent') if entry else 'absent'
+                      missing.append(f'{network}/{mode}: {status}')
+          print('IST_DATE='+day)
+          for network in counts:
+              print(network.upper()+'_VERIFIED='+str(counts[network])+'/3')
+          for failure in missing:print('MISSING_VERIFIED='+failure)
+          if missing:
+              raise SystemExit('Daily 9/9 publishing not verified. Inspect workflow and provider receipts.')
+          print('DAILY_9_OF_9_VERIFIED')
+          PY
