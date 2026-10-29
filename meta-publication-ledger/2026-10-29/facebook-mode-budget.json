@@ -4,5 +4,8 @@
   "mode": "budget",
   "network": "facebook",
   "recorded_at": "2026-10-29T12:03:30.797616+05:30",
-  "status": "api_accepted_published"
+  "status": "api_accepted_published",
+  "category": "smart-phones",
+  "budget_inr": 15000,
+  "brand": ""
 }
