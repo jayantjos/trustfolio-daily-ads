@@ -1,0 +1,50 @@
+name: TrustFolio Cloudflare Worker automatic health QA
+on:
+  schedule:
+    - cron: '15 */6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/trustfolio-cloudflare-worker-monitor.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: trustfolio-cloudflare-worker-health
+  cancel-in-progress: false
+jobs:
+  check-live-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify new Worker live version, secret readiness, authentication
+        run: |
+          set -euo pipefail
+          url='https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev'
+          code=$(curl -sSL --max-time 20 -o health.json -w '%{http_code}' "$url/health")
+          echo "WORKER_HEALTH_HTTP=$code"
+          test "$code" = "200"
+          python3 - <<'PY'
+          import json
+          x=json.load(open('health.json'))
+          report={k:x.get(k) for k in ('worker','version','ok','ready','monitoring')}
+          print('WORKER_MONITOR_STATUS='+json.dumps(report))
+          assert x.get('ok') and x.get('ready')
+          assert x.get('worker')=='trustfolio-live-price-worker'
+          assert x.get('version')=='0.5.0'
+          assert x.get('monitoring',{}).get('cronUTC')=='5 */6 * * *'
+          print('HEALTH_AND_SCHEDULE=PASS')
+          PY
+          auth_code=$(curl -sS --max-time 15 -o no-key.json -w '%{http_code}' \
+            -X POST "$url/api/check" -H 'content-type: application/json' \
+            --data '{"items":["https://www.amazon.in/dp/B0FNCLVRW5"],"useCache":false}')
+          echo "NO_KEY_HTTP=$auth_code"
+          test "$auth_code" = "401"
+          python3 - <<'PY'
+          import json
+          x=json.load(open('no-key.json'))
+          assert x.get('error')=='unauthorized'
+          print('SECRET_PROTECTION=PASS')
+          PY
+          echo 'TRUSTFOLIO_AUTOMATIC_HEALTH_QA=PASS'
+          echo 'NOTE: real per-SKU prices are checked by Cloudflare Cron; see Workers Logs'
