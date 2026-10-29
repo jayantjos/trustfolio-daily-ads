@@ -1,4 +1,4 @@
-name: Verify Cloudflare v0.7.1 actual Amazon Flipkart prices
+name: Cloudflare v0.7.2 real Amazon Flipkart price extraction test
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -18,10 +18,10 @@ jobs:
             curl -sSL --max-time 12 "$base/health" > health.json
             version=$(python3 -c 'import json;print(json.load(open("health.json")).get("version"))')
             echo "WORKER_VERSION=$version"
-            if [ "$version" = '0.7.1' ]; then break; fi
+            if [ "$version" = '0.7.2' ]; then break; fi
             sleep 8
           done
-          test "$version" = '0.7.1'
+          test "$version" = '0.7.2'
           python3 - <<'PY'
           import json
           x=json.load(open('health.json'))
