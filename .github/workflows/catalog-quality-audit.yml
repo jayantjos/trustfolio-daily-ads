@@ -1,4 +1,4 @@
-name: TrustFolio live Mongo Flipkart SKU read-only audit
+name: TrustFolio live Mongo Flipkart SKU read-only audit v2
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
