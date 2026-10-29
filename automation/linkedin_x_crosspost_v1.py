@@ -111,7 +111,22 @@ def validate_source(folder,*,gh_token=None,verify_live=False):
     public_url=MEDIA_ROOT+post["campaign_id"]+".jpg"
     if verify_live:
         if not gh_token:raise ExtraSocialBlocked("Missing GitHub token for published-mode check")
-        check_meta_success(gh_token,post)
+        recovery_file=posts[0].parent/"linkedin-recovery-source.json"
+        if recovery_file.exists():
+            try:
+                origin=json.loads(recovery_file.read_text("utf8"))
+                original=origin["meta_original"]
+                if (origin["new_campaign_id"]!=post["campaign_id"]
+                        or original["date_ist"]!=post["date_ist"]
+                        or original["mode"]!=post["mode"]
+                        or original["campaign_id"]==post["campaign_id"]):
+                    raise ExtraSocialBlocked("Invalid LinkedIn recovery provenance")
+                validate_approved_manifest(original)
+            except (KeyError,ValueError,TypeError,PublishingBlocked) as exc:
+                raise ExtraSocialBlocked("Invalid LinkedIn recovery provenance") from exc
+            check_meta_success(gh_token,original)
+        else:
+            check_meta_success(gh_token,post)
         _check_media(public_url,str(candidate))
         try:verify_fresh_snapshot(plan,report)
         except PriceAuditBlocked as e:raise ExtraSocialBlocked("Website rankings/prices changed; no crosspost") from e
