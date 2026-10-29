@@ -4,7 +4,7 @@ on:
     branches: [main]
     paths: ['.github/workflows/linkedin-daily-catchup.yml']
   schedule:
-    # 21:00 and 22:30 IST, after Meta publication slots.
+    # 21:00 and 22:30 IST, after Meta publication slots; recover only missing modes.
     - cron: '30 15 * * *'
     - cron: '0 17 * * *'
   workflow_dispatch:
