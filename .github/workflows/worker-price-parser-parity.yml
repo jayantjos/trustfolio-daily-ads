@@ -1,4 +1,4 @@
-name: TrustFolio Worker price-parser exact-variant release tests
+name: TrustFolio Worker and official price source fallback tests
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -15,3 +15,5 @@ jobs:
           set -euo pipefail
           node --check ops/price-worker-diagnostics/WorkerPriceExtractionRules.mjs
           node --test ops/price-worker-diagnostics/WorkerPriceExtractionRules.test.mjs
+          node ops/price-worker-diagnostics/FlipkartOfficialPrice.test.js
+          python3 -m py_compile ops/price-worker-diagnostics/install_official_flipkart_fallback.py
