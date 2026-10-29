@@ -1,4 +1,4 @@
-name: TrustFolio catalog quality inventory audit v2
+name: TrustFolio POCO X8 Flipkart Worker exact-price diagnostics
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check audit syntax
-        run: node --check ops/catalog-quality/audit_catalog_quality.js
+        run: node --check ops/price-worker-diagnostics/audit_poco_x8_exact.js
       - name: Prepare SSH
         env:
           KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
@@ -29,11 +29,11 @@ jobs:
           printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
           ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
-      - name: Read-only Mongo catalog inventory
+      - name: Read-only POCO variant Mongo and Worker diagnostics
         env:
           HOST: ${{ secrets.TF_DEPLOY_HOST }}
           USER: ${{ secrets.TF_DEPLOY_USER }}
         run: |
           set -euo pipefail
-          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/catalog-quality/audit_catalog_quality.js "$USER@$HOST:~/trustfolio-catalog-quality-audit.js"
+          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/audit_poco_x8_exact.js "$USER@$HOST:~/trustfolio-catalog-quality-audit.js"
           ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && node "$HOME/trustfolio-catalog-quality-audit.js"'
