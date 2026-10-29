@@ -6,6 +6,8 @@ on:
       - 'automation/test_linkedin_x_crosspost_v1.py'
       - 'automation/buffer_free_crosspost_v1.py'
       - 'automation/test_buffer_free_crosspost_v1.py'
+      - 'automation/linkedin_fresh_recovery_v1.py'
+      - 'automation/test_linkedin_fresh_recovery_v1.py'
       - '.github/workflows/linkedin-x-crosspost.yml'
   workflow_run:
     workflows: ['TrustFolio automated Instagram campaigns']
@@ -41,7 +43,7 @@ jobs:
           set -euo pipefail
           python -m py_compile automation/linkedin_x_crosspost_v1.py
           python automation/linkedin_x_crosspost_v1.py --help
-          python -m unittest -v automation.test_linkedin_x_crosspost_v1 automation.test_buffer_free_crosspost_v1
+          python -m unittest -v automation.test_linkedin_x_crosspost_v1 automation.test_buffer_free_crosspost_v1 automation.test_linkedin_fresh_recovery_v1
           python automation/buffer_free_crosspost_v1.py --help
           python - <<'PY'
           import pathlib
@@ -138,34 +140,94 @@ jobs:
           path: source-social-ad
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ env.SOURCE_RUN_ID }}
+      - name: Check LinkedIn source freshness without weakening live-price rules
+        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run'
+        id: freshness
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          from automation.linkedin_x_crosspost_v1 import validate_source, ExtraSocialBlocked
+          try:
+              validate_source("source-social-ad",gh_token=os.environ["GITHUB_TOKEN"],verify_live=True)
+              drift=False
+          except ExtraSocialBlocked as exc:
+              if str(exc)!="Website rankings/prices changed; no crosspost":
+                  raise
+              drift=True
+          with open(os.environ["GITHUB_OUTPUT"],"a") as output:
+              output.write("rebuild="+str(drift).lower()+"\n")
+              output.write("folder="+("linkedin-fresh-ad" if drift else "source-social-ad")+"\n")
+          print("LINKEDIN_SOURCE_PRICE_DRIFT="+str(drift))
+          PY
+      - name: Install existing verified JPEG packaging dependency for fresh recovery
+        if: steps.freshness.outputs.rebuild == 'true'
+        run: python -m pip install --disable-pip-version-check Pillow==11.3.0
+      - name: Authenticate existing ads-only VPS renderer for LinkedIn recovery
+        if: steps.freshness.outputs.rebuild == 'true'
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Rebuild LinkedIn-only verified Top-5 and public JPEG after price drift
+        if: steps.freshness.outputs.rebuild == 'true'
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          python -m unittest -v automation.test_linkedin_fresh_recovery_v1
+          python -m automation.linkedin_fresh_recovery_v1 \
+            --source source-social-ad --destination linkedin-fresh-ad \
+            --run-key "$GITHUB_RUN_ID" --host "$HOST" --user "$USER"
+      - name: Archive isolated LinkedIn recovery for audit
+        if: steps.freshness.outputs.rebuild == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-linkedin-fresh-${{ github.run_id }}
+          path: linkedin-fresh-ad/
+          retention-days: 30
       - name: Verify approved source and LinkedIn preview independently of X
         if: steps.source.outputs.available == 'true'
         run: |
           set -euo pipefail
-          python automation/linkedin_x_crosspost_v1.py --network linkedin --folder source-social-ad
-          python automation/buffer_free_crosspost_v1.py --network linkedin --folder source-social-ad
+          python automation/linkedin_x_crosspost_v1.py --network linkedin --folder ${{ steps.freshness.outputs.folder || 'source-social-ad' }}
+          python automation/buffer_free_crosspost_v1.py --network linkedin --folder ${{ steps.freshness.outputs.folder || 'source-social-ad' }}
       - name: Preview X only when enabled without blocking LinkedIn
         id: x_preview
         if: steps.source.outputs.available == 'true' && (env.TF_X_DIRECT_PUBLISH_ENABLED == 'true' || (env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_X_CHANNEL_ID != ''))
         continue-on-error: true
         run: |
           set -euo pipefail
-          python automation/linkedin_x_crosspost_v1.py --network x --folder source-social-ad
-          python automation/buffer_free_crosspost_v1.py --network x --folder source-social-ad
+          python automation/linkedin_x_crosspost_v1.py --network x --folder ${{ steps.freshness.outputs.folder || 'source-social-ad' }}
+          python automation/buffer_free_crosspost_v1.py --network x --folder ${{ steps.freshness.outputs.folder || 'source-social-ad' }}
       - name: Buffer Free - LinkedIn image schedule (zero X developer API fees)
         if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_LINKEDIN_CHANNEL_ID != ''
-        run: python automation/buffer_free_crosspost_v1.py --network linkedin --folder source-social-ad --live
+        run: python automation/buffer_free_crosspost_v1.py --network linkedin --folder ${{ steps.freshness.outputs.folder || 'source-social-ad' }} --live
       - name: Buffer Free - X image schedule (zero X developer API fees)
         if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_X_CHANNEL_ID != '' && steps.x_preview.outcome == 'success'
         continue-on-error: true
-        run: python automation/buffer_free_crosspost_v1.py --network x --folder source-social-ad --live
+        run: python automation/buffer_free_crosspost_v1.py --network x --folder ${{ steps.freshness.outputs.folder || 'source-social-ad' }} --live
       - name: LinkedIn approved feed publish (separate per-mode lock)
         if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_LINKEDIN_DIRECT_PUBLISH_ENABLED == 'true'
-        run: python automation/linkedin_x_crosspost_v1.py --network linkedin --folder source-social-ad --live
+        run: python automation/linkedin_x_crosspost_v1.py --network linkedin --folder ${{ steps.freshness.outputs.folder || 'source-social-ad' }} --live
       - name: X approved feed publish (requires paid API opt-in and separate lock)
         if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_X_DIRECT_PUBLISH_ENABLED == 'true' && steps.x_preview.outcome == 'success'
         continue-on-error: true
-        run: python automation/linkedin_x_crosspost_v1.py --network x --folder source-social-ad --live
+        run: python automation/linkedin_x_crosspost_v1.py --network x --folder ${{ steps.freshness.outputs.folder || 'source-social-ad' }} --live
       - name: Summarize LinkedIn source and independent X checks
         if: always() && github.event_name == 'workflow_run'
         run: |
