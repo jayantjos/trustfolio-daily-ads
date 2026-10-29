@@ -1,4 +1,4 @@
-name: TrustFolio live Worker v0.4 deployment and protection audit
+name: Confirm new Cloudflare Worker v0.4 after GitHub commit
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -26,6 +26,7 @@ jobs:
           assert x.get('worker')=='trustfolio-live-price-worker'
           assert x.get('ready') is True
           assert x.get('ok') is True
+          assert x.get('version')=='0.4.0', 'Cloudflare still running old version'
           print('WORKER_PUBLIC_HEALTH=PASS')
           PY
           test "$code" = "200"
