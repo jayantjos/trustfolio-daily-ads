@@ -115,14 +115,20 @@ jobs:
           found=[]
           for name in names:
               matches=[x for x in candidates if x.get('name')==name and not x.get('expired')]
-              if len(matches)>1:raise SystemExit('Ambiguous original ad artifact')
               if matches:
-                  found=matches
+                  # A rerun may upload multiple artifacts with the SAME
+                  # name. Pick the latest, then strict published-ID, exact
+                  # JPEG and current Top-5 checks guard against wrong media.
+                  matches.sort(key=lambda a:(a.get('created_at') or '',
+                                              int(a.get('id') or 0)),reverse=True)
+                  found=matches[:1]
                   break
           with open(os.environ['GITHUB_OUTPUT'],'a') as out:
               out.write('available='+str(bool(found)).lower()+'\n')
               if found:out.write('artifact='+found[0]['name']+'\n')
           print('ORIGINAL_APPROVED_ARTIFACT_AVAILABLE='+str(bool(found)))
+          if found:
+              print('SOURCE_ARTIFACT_SELECTED_LATEST_ID='+str(found[0]['id']))
           PY
       - name: Download original immutable approved ad artifact
         if: steps.source.outputs.available == 'true'
