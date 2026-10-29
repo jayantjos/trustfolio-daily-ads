@@ -1,4 +1,4 @@
-name: TrustFolio Worker price-parser and exact-variant parity tests
+name: TrustFolio Worker price-parser exact-variant release tests
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
