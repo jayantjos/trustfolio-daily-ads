@@ -1,4 +1,4 @@
-name: Real HTML source audit for two Mongo Flipkart SKUs
+name: Real HTML source audit for two Mongo Flipkart SKUs including bare domain
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
