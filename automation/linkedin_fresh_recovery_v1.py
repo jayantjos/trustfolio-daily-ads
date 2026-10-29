@@ -48,7 +48,7 @@ def recover(source, destination, *, token, run_key, host, user,
         raise ExtraSocialBlocked("Recovered campaign changed authorized date/mode")
     report=json.loads((destination/"website-top5-render-qa.json").read_text("utf8"))
     verify_fresh_snapshot(selected,report)
-    (destination/"linkedin-recovery-source.json").write_text(
+    (destination/"post"/"linkedin-recovery-source.json").write_text(
         json.dumps({"meta_original":original,
                     "new_campaign_id":post["campaign_id"],
                     "source":"verified_same_day_meta_ledgers"},indent=2)+"\n",
