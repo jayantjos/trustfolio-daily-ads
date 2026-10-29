@@ -26,7 +26,7 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GITHUB_REPOSITORY: ${{ github.repository }}
-      GITHUB_EVENT_NAME: workflow_run
+      TF_LINKEDIN_CATCHUP_APPROVED: 'true'
       TF_BUFFER_FREE_PUBLISH_ENABLED: ${{ vars.TF_BUFFER_FREE_PUBLISH_ENABLED || 'false' }}
       TF_BUFFER_LINKEDIN_CHANNEL_ID: ${{ vars.TF_BUFFER_LINKEDIN_CHANNEL_ID || '6ae212582f1f5ed648fd63b5' }}
       TF_BUFFER_API_KEY: ${{ secrets.TF_BUFFER_API_KEY }}
