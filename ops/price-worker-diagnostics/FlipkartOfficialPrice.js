@@ -33,7 +33,7 @@ function parseProduct(body,doc) {
     return {status:'not_available',availability:'not_available',in_stock:false,
       source:'flipkart_affiliate_product',http_status:200};
   }
-  return {status:'ok',priceNum:price,in_stock:p.inStock===true?true:null,
+  return {status:'ok',priceNum:price,inStock:p.inStock===true?true:null,in_stock:p.inStock===true?true:null,
     availability:p.inStock===true?'in_stock':null,
     source:'flipkart_affiliate_product',http_status:200};
 }
