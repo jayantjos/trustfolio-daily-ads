@@ -1,8 +1,10 @@
 'use strict';
 /* TrustFolio READ-ONLY catalog sample audit, no private variables printed.
    Run from ~/apps/trustfolio/node-backend with node <this script>. */
-const mongoose=require('mongoose');
-require('dotenv').config();
+const {createRequire}=require('module');
+const appRequire=createRequire(process.cwd()+'/package.json');
+const mongoose=appRequire('mongoose');
+appRequire('dotenv').config();
 const dburi=['MONGODB_URI','MONGO_URI','MONGO_URL','MONGODB_URL','DB_URI','DATABASE_URL'].map(k=>process.env[k]).find(Boolean);
 const pids=['MOBH2AHZH779MGYF','MOBHQFDZKKM7EEFZ','MOBHH2KYWG8UBBAF'];
 const brief=doc=>({
