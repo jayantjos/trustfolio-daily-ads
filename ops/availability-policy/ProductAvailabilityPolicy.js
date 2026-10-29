@@ -40,6 +40,11 @@ function classify(result) {
       errorRegex.test(detail)) return 'transient';
   // A transport error cannot assert product availability, even with a stale label.
   if (status !== 'no_price' && TRANSIENT.has(status)) return 'transient';
+  // An HTTP-200 page where the parser merely failed to locate a listing is not
+  // a product-unavailability signal. Flipkart may deliver a valid PDP shell
+  // while price/offer data is hydrated in the browser. Never delete on this alone.
+  if (http === 200 && !availability &&
+      ['not_listed','not_found','not_available'].includes(status)) return 'transient';
   if (PERMANENT.has(status) || PERMANENT.has(availabilityStatus) || permanentRegex.test(statusRaw) || permanentRegex.test(availability))
     return 'permanent';
   if (AMBIGUOUS.has(status) || AMBIGUOUS.has(availabilityStatus) || ambiguousRegex.test(statusRaw) ||
