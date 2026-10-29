@@ -116,7 +116,7 @@ def rotation_candidates(mode, policy, day, *, slot=0):
     return candidates
 
 
-def choose_campaign(mode, policy, *, day, slot=0, overrides=None, fetcher=build_site_ads_payload):
+def choose_campaign(mode, policy, *, day, slot=0, overrides=None, fetcher=build_site_ads_payload, excluded_budget_pairs=None):
     if mode not in MODES:
         raise ValueError("Unsupported campaign type")
     day = date.fromisoformat(str(day))
@@ -137,6 +137,12 @@ def choose_campaign(mode, policy, *, day, slot=0, overrides=None, fetcher=build_
             offset = day.toordinal() % len(candidates)
             candidates = candidates[offset:] + candidates[:offset]
 
+    # Reuse a category only with a NEW budget; never re-advertise the same
+    # category/budget pair in the published lookback window, across all modes.
+    excluded = set(excluded_budget_pairs or ())
+    if excluded:
+        candidates = [candidate for candidate in candidates
+                      if (str(candidate["category"]).strip(), int(candidate["budget"])) not in excluded]
     failures = []
     max_attempts = int((policy.get("rotation") or {}).get("max_website_attempts_per_run", 48))
     if not 1 <= max_attempts <= 120:
@@ -316,6 +322,7 @@ def main():
     p.add_argument("--budget",default="")
     p.add_argument("--brand",default="")
     p.add_argument("--output",required=True)
+    p.add_argument("--used-budgets-file",default="",help="Published category/budget history for automatic schedule")
     q=subs.add_parser("package")
     for arg in ("plan","report","image","output_dir"):
         q.add_argument("--"+arg.replace("_","-"),required=True)
@@ -323,7 +330,14 @@ def main():
     if args.action=="select":
         policy=json.loads(Path(args.policy).read_text("utf8"))
         overrides={"category":args.category,"budget":args.budget,"brand":args.brand}
-        plan=choose_campaign(args.mode,policy,day=args.day,slot=args.slot,overrides=overrides)
+        used = set()
+        if args.used_budgets_file:
+            history = json.loads(Path(args.used_budgets_file).read_text("utf8"))
+            if history.get("generated_for") != args.day or not isinstance(history.get("used"), list):
+                raise ValueError("Published budget history missing or stale")
+            used = {(entry["category"], int(entry["budget"])) for entry in history["used"]}
+        plan=choose_campaign(args.mode,policy,day=args.day,slot=args.slot,
+                             overrides=overrides,excluded_budget_pairs=used)
         Path(args.output).write_text(json.dumps(plan,indent=2)+"\n",encoding="utf8")
         print("CAMPAIGN_STATUS="+plan["status"])
         if plan["status"]=="eligible":
