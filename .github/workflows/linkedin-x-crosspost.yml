@@ -10,6 +10,9 @@ on:
       - 'automation/test_linkedin_fresh_recovery_v1.py'
       - 'automation/linkedin_find_published_source_v1.py'
       - 'automation/test_linkedin_find_published_source_v1.py'
+      - 'automation/buffer_verify_linkedin_sent_v1.py'
+      - 'automation/test_buffer_verify_linkedin_sent_v1.py'
+      - '.github/workflows/linkedin-buffer-sent-audit.yml'
       - '.github/workflows/linkedin-daily-catchup.yml'
       - '.github/workflows/linkedin-x-crosspost.yml'
   workflow_run:
@@ -51,7 +54,7 @@ jobs:
           set -euo pipefail
           python -m py_compile automation/linkedin_x_crosspost_v1.py
           python automation/linkedin_x_crosspost_v1.py --help
-          python -m unittest -v automation.test_linkedin_x_crosspost_v1 automation.test_buffer_free_crosspost_v1 automation.test_linkedin_fresh_recovery_v1 automation.test_linkedin_find_published_source_v1
+          python -m unittest -v automation.test_linkedin_x_crosspost_v1 automation.test_buffer_free_crosspost_v1 automation.test_linkedin_fresh_recovery_v1 automation.test_linkedin_find_published_source_v1 automation.test_buffer_verify_linkedin_sent_v1
           python automation/buffer_free_crosspost_v1.py --help
           python - <<'PY'
           import pathlib
