@@ -1,4 +1,4 @@
-name: Recheck Cloudflare v0.4 deployment after CI failures
+name: Verify scheduled Cloudflare v0.5 live endpoint
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -22,11 +22,12 @@ jobs:
           x=json.load(open('health.json'))
           print('HEALTH_RESPONSE='+json.dumps(x))
           print('LIVE_VERSION='+str(x.get('version')))
-          print('V04_DEPLOYED='+('YES' if x.get('version')=='0.4.0' else 'NO'))
+          print('V05_DEPLOYED='+('YES' if x.get('version')=='0.5.0' else 'NO'))
           assert x.get('worker')=='trustfolio-live-price-worker'
           assert x.get('ready') is True
           assert x.get('ok') is True
-          assert x.get('version')=='0.4.0', 'Cloudflare still running old version'
+          assert x.get('version')=='0.5.0', 'Cloudflare still running old version'
+          assert x.get('monitoring',{}).get('cronUTC')=='5 */6 * * *'
           print('WORKER_PUBLIC_HEALTH=PASS')
           PY
           test "$code" = "200"
