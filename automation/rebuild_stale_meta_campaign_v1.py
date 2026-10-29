@@ -75,7 +75,8 @@ def rebuild_until_stable(plan, *, folder,run_key,host,user,max_rebuilds=2,
                          render=render_with_fallback,
                          stage=stage_verified_media,
                          audit=verify_fresh_snapshot,
-                         alternative_selector=select_alternative):
+                         alternative_selector=select_alternative,
+                         excluded_budget_pairs=None):
     """Retry changed rankings once; switch verified candidates on repeated drift
     or a brand-fallback response, BEFORE any Meta public posting request.
     """
@@ -83,11 +84,13 @@ def rebuild_until_stable(plan, *, folder,run_key,host,user,max_rebuilds=2,
         raise ValueError("Unbounded ad refresh denied")
     current=dict(plan)
     stale_once=set()
-    excluded=set()
+    excluded={(category,int(budget),"*") for category,budget in (excluded_budget_pairs or ())}
     for cycle in range(1,max_rebuilds+1):
         print("FRESH_AD_REBUILD_ATTEMPT="+str(cycle)+"/"+str(max_rebuilds),flush=True)
+        extra={} if excluded_budget_pairs is None else {
+            "excluded_budget_pairs":excluded_budget_pairs}
         current,report=render(current,run_key=run_key,folder=folder,host=host,user=user,
-                              max_renders=2)
+                              max_renders=2,**extra)
         current,manifest,url=stage(current,report,folder=folder,host=host,user=user)
         try:
             audit(current,report)
@@ -130,14 +133,22 @@ def main():
     p.add_argument("--host",required=True)
     p.add_argument("--user",required=True)
     p.add_argument("--max-rebuilds",type=int,default=3)
+    p.add_argument("--used-budgets-file",default="")
     args=p.parse_args()
     if not re.fullmatch(r"[0-9]+",args.run_key):
         raise ValueError("Invalid workflow run ID")
     folder=Path(args.folder)
     plan=json.loads((folder/"plan.json").read_text("utf8"))
+    used=None
+    if args.used_budgets_file:
+        history=json.loads(Path(args.used_budgets_file).read_text("utf8"))
+        if history.get("generated_for")!=plan["date_ist"]:
+            raise ValueError("Publication history is not current")
+        used={(x["category"],int(x["budget"])) for x in history["used"]}
     result,manifest,url=rebuild_until_stable(
         plan,folder=folder,run_key=args.run_key,
-        host=args.host,user=args.user,max_rebuilds=args.max_rebuilds)
+        host=args.host,user=args.user,max_rebuilds=args.max_rebuilds,
+        excluded_budget_pairs=used)
     print("FINAL_CAMPAIGN_ID="+result["campaign_id"])
     print("FINAL_CAMPAIGN_MEDIA_URL="+url)
     print("PUBLICATION_STILL_PENDING_META=true")

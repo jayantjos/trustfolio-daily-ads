@@ -55,21 +55,26 @@ def select_alternative(plan, *, excluded, policy_path="automation/campaigns.json
                        fetcher=build_site_ads_payload):
     policy=json.loads(Path(policy_path).read_text("utf8"))
     def filtered(category,budget,brand):
-        if (str(category),int(budget),str(brand or "")) in excluded:
+        if ((str(category),int(budget),str(brand or "")) in excluded
+                or (str(category),int(budget),"*") in excluded):
             raise ValueError("Previously failed remote render")
         return fetcher(category,budget,brand)
     candidate=choose_campaign(plan["mode"],policy,day=plan["date_ist"],
-                              slot=plan.get("slot",0),fetcher=filtered)
+                              slot=plan.get("slot",0),fetcher=filtered,
+                              excluded_budget_pairs={(category,budget)
+                                  for category,budget,brand in excluded if brand=="*"})
     if candidate.get("status")!="eligible":
         raise ValueError("No verified alternative after VPS render failed")
     return candidate
 
 
 def render_with_fallback(plan, *, run_key, folder, host, user, max_renders=3,
-                         renderer=attempt_render, selector=select_alternative):
+                         renderer=attempt_render, selector=select_alternative,
+                         excluded_budget_pairs=None):
     if not 1<=max_renders<=4:
         raise ValueError("Invalid bounded render attempts")
-    excluded=set()
+    excluded={(category,int(budget),"*") for category,budget
+              in (excluded_budget_pairs or ())}
     current=dict(plan)
     for attempt in range(1,max_renders+1):
         print(f"REMOTE_RENDER_ATTEMPT={attempt}/{max_renders}",flush=True)
@@ -97,10 +102,18 @@ def main():
     parser.add_argument("--host",required=True)
     parser.add_argument("--user",required=True)
     parser.add_argument("--max-renders",type=int,default=3)
+    parser.add_argument("--used-budgets-file",default="")
     args=parser.parse_args()
     plan=json.loads(Path(args.plan).read_text("utf8"))
+    used=set()
+    if args.used_budgets_file:
+        data=json.loads(Path(args.used_budgets_file).read_text("utf8"))
+        if data.get("generated_for")!=plan["date_ist"]:
+            raise ValueError("Incorrect publication history date")
+        used={(x["category"],int(x["budget"])) for x in data["used"]}
     selected,report=render_with_fallback(plan,run_key=args.run_key,folder=args.folder,
-                              host=args.host,user=args.user,max_renders=args.max_renders)
+                              host=args.host,user=args.user,max_renders=args.max_renders,
+                              excluded_budget_pairs=used)
     Path(args.plan).write_text(json.dumps(selected,indent=2)+"\n",encoding="utf8")
     print("REMOTE_RENDER_QA_AND_RANK_CHECK=PASS")
     print("FINAL_CAMPAIGN_ID="+selected["campaign_id"])
