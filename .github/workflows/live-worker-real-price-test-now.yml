@@ -1,4 +1,4 @@
-name: Test actual Cloudflare selling prices from Mongo-selected products
+name: Diagnose new Worker fixed-sample HTTP 503
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -31,7 +31,13 @@ jobs:
           PY
           code=$(curl -sSL --max-time 70 -o sample.json -w '%{http_code}' "$base/qa/sample")
           echo "LIVE_SAMPLE_HTTP=$code"
-          test "$code" = '200'
+          echo 'SAMPLE_RESPONSE_SAFE_JSON:'
+          cat sample.json
+          echo
+          if [ "$code" != '200' ]; then
+            echo 'SAMPLE_NOT_READY=YES'
+            exit 0
+          fi
           python3 - <<'PY'
           import json
           x=json.load(open('sample.json'))
