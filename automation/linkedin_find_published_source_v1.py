@@ -7,7 +7,7 @@ import argparse,base64,io,json,os,re,zipfile
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
-from urllib.request import Request,urlopen
+from urllib.request import Request,urlopen,build_opener,HTTPRedirectHandler
 from urllib.error import HTTPError
 from zoneinfo import ZoneInfo
 
@@ -16,12 +16,26 @@ BRANCH="trustfolio-meta-publishing-ledger"
 MODES=("budget","brand_budget","comparison")
 IST=ZoneInfo("Asia/Kolkata")
 
+class NoCrossHostAuthRedirect(HTTPRedirectHandler):
+    """Prevent GitHub Bearer headers reaching signed artifact storage hosts."""
+    def redirect_request(self,req,fp,code,msg,headers,newurl):
+        from urllib.parse import urlsplit
+        redirected=super().redirect_request(req,fp,code,msg,headers,newurl)
+        if redirected is not None and urlsplit(newurl).hostname!=urlsplit(req.full_url).hostname:
+            redirected.remove_header("Authorization")
+            redirected.remove_unredirected_header("Authorization")
+        return redirected
+
 def gh(path,token,*,read_bytes=False):
     req=Request("https://api.github.com/repos/"+REPO+"/"+path,
        headers={"Authorization":"Bearer "+token,"Accept":"application/vnd.github+json",
                 "User-Agent":"TrustFolio-LinkedIn-Recovery/1"})
-    with urlopen(req,timeout=35) as res:
+    # Artifact ZIPs redirect to a temporary signed blob URL. Sending the GitHub
+    # Authorization header to that DIFFERENT host produces HTTP 401.
+    with build_opener(NoCrossHostAuthRedirect).open(req,timeout=35) as res:
         raw=res.read(30000000 if read_bytes else 1500000)
+        if read_bytes and len(raw)>=30000000:
+            raise ValueError("Artifact ZIP exceeds permitted download size")
     return raw if read_bytes else json.loads(raw)
 
 def meta_identity(mode,day,token,fetch=gh):
