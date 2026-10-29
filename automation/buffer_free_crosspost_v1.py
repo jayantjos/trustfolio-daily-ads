@@ -161,8 +161,16 @@ def main():
     parser.add_argument("--network",required=True,choices=NETWORKS)
     parser.add_argument("--live",action="store_true")
     args=parser.parse_args()
+    trusted_catchup=(
+        args.network=="linkedin"
+        and os.getenv("TF_LINKEDIN_CATCHUP_APPROVED")=="true"
+        and os.getenv("GITHUB_WORKFLOW")=="TrustFolio LinkedIn 3-mode independent same-day catch-up"
+        and os.getenv("GITHUB_REF")=="refs/heads/main"
+        and os.getenv("GITHUB_REPOSITORY")==REPO
+        and os.getenv("GITHUB_EVENT_NAME") in ("push","schedule","workflow_dispatch")
+    )
     if args.live and not (
-        os.getenv("GITHUB_EVENT_NAME")=="workflow_run" or (
+        os.getenv("GITHUB_EVENT_NAME")=="workflow_run" or trusted_catchup or (
             args.network=="linkedin"
             and os.getenv("GITHUB_EVENT_NAME")=="workflow_dispatch"
             and os.getenv("TF_MANUAL_LINKEDIN_RECOVERY_APPROVED")=="true"

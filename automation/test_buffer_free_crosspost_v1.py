@@ -70,6 +70,32 @@ class TestBufferFree(unittest.TestCase):
         self.assertEqual(result,"duplicate")
         submit.assert_not_called()
 
+    def test_only_pinned_main_linkedin_catchup_can_use_live_buffer(self):
+        import os,sys
+        env={"GITHUB_EVENT_NAME":"push",
+             "GITHUB_WORKFLOW":"TrustFolio LinkedIn 3-mode independent same-day catch-up",
+             "GITHUB_REF":"refs/heads/main",
+             "GITHUB_REPOSITORY":buffer.REPO,
+             "TF_LINKEDIN_CATCHUP_APPROVED":"true",
+             "GITHUB_TOKEN":"test-token"}
+        post=manifest()
+        with patch.dict(os.environ,env,clear=True), \
+             patch.object(sys,"argv",["buffer","--network","linkedin","--live"]), \
+             patch.object(buffer,"validate_source",return_value=(post,None,"https://media.invalid/test")), \
+             patch.object(buffer,"schedule_if_enabled",return_value="scheduled") as schedule:
+            buffer.main()
+            schedule.assert_called_once()
+        env["GITHUB_WORKFLOW"]="Untrusted PR workflow"
+        with patch.dict(os.environ,env,clear=True), \
+             patch.object(sys,"argv",["buffer","--network","linkedin","--live"]):
+            with self.assertRaisesRegex(buffer.BufferBlocked,"Live Buffer requires"):
+                buffer.main()
+        env["GITHUB_WORKFLOW"]="TrustFolio LinkedIn 3-mode independent same-day catch-up"
+        with patch.dict(os.environ,env,clear=True), \
+             patch.object(sys,"argv",["buffer","--network","x","--live"]):
+            with self.assertRaisesRegex(buffer.BufferBlocked,"Live Buffer requires"):
+                buffer.main()
+
     def test_no_accepted_response_means_no_false_success(self):
         p=manifest()
         def graphql(token,query,variables=None):
