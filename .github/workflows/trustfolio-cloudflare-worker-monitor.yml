@@ -1,4 +1,4 @@
-name: TrustFolio Worker automatic live-price QA status
+name: TrustFolio test - inspect fresh Cloudflare monitor state
 on:
   schedule:
     - cron: '15 */6 * * *'
