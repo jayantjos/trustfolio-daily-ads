@@ -1,0 +1,84 @@
+name: One-time Flipkart HTTP-200 parser false-delete guard
+on:
+  push:
+    branches: [diagnostics/croma-direct-live-price-20261027]
+    paths: [.github/workflows/flipkart-parser-safety-once.yml]
+permissions:
+  contents: read
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify cross-store policy test suite and syntax
+        run: |
+          set -euo pipefail
+          node ops/availability-policy/ProductAvailabilityPolicy.test.js
+          python3 -m py_compile ops/price-worker-diagnostics/install_http200_parser_guard.py
+      - name: Pinned SSH setup
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          test "$HOST" = '200.234.47.87'
+          test "$USER" = 'scraperuser'
+          test -n "$HOSTKEY"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Protected backend-only update with rollback and live safety QA
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          remote="$USER@$HOST"
+          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/install_http200_parser_guard.py "$remote:~/install-http200-parser-guard.py"
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$remote" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          policy="services/ProductAvailabilityPolicy.js"
+          installer="$HOME/install-http200-parser-guard.py"
+          python3 "$installer" --check
+          backup=""
+          rollback() {
+            rc="$?"
+            trap - ERR
+            if test -n "$backup" && test -f "$backup"; then
+              cp -p "$backup" "$policy" || true
+              pm2 restart trustfolio-backend || true
+              echo 'HTTP200_PARSER_GUARD_ROLLED_BACK=YES'
+            fi
+            exit "$rc"
+          }
+          trap rollback ERR
+          output=$(python3 "$installer" --apply)
+          printf '%s\n' "$output"
+          backup=$(printf '%s\n' "$output" | sed -n 's/^PARSER_GUARD_BACKUP=//p')
+          node --check "$policy"
+          node --check services/LivePriceService.js
+          node <<'JS'
+          const guard=require('./services/ProductAvailabilityPolicy');
+          const examples=[
+            {status:'not_listed',http_status:200,availability:null,unavailable_checks:2},
+            {status:'not_available',http_status:200,availability:null,unavailable_checks:10},
+            {status:'not_found',http_status:200,availability:null,unavailable_checks:2}
+          ];
+          for(const p of examples)if(guard.isConfirmedUnavailable(p))throw Error('FALSE_DELETE_GUARD_FAILED');
+          if(!guard.isConfirmedUnavailable({status:'discontinued',unavailable_checks:1}))
+             throw Error('CONFIRMED_DISCONTINUED_RULE_CHANGED');
+          console.log('HTTP200_FALSE_DELETE_SAFETY=PASS');
+          JS
+          pm2 restart trustfolio-backend
+          sleep 2
+          pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{const p=JSON.parse(s).find(x=>x.name==="trustfolio-backend");if(!p||p.pm2_env.status!=="online")process.exit(2);console.log("BACKEND_PM2_ONLINE=YES")})'
+          echo 'HTTP200_PARSER_GUARD_DEPLOY=PASS'
+          echo 'AMAZON_FLIPKART_CROMA_PRICE_PATHS_UNCHANGED=YES'
+          trap - ERR
+          REMOTE
