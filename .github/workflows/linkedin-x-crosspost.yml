@@ -132,29 +132,44 @@ jobs:
           path: source-social-ad
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ env.SOURCE_RUN_ID }}
-      - name: Verify source image and generate safe previews without publishing
+      - name: Verify approved source and LinkedIn preview independently of X
         if: steps.source.outputs.available == 'true'
         run: |
           set -euo pipefail
           python automation/linkedin_x_crosspost_v1.py --network linkedin --folder source-social-ad
-          python automation/linkedin_x_crosspost_v1.py --network x --folder source-social-ad
           python automation/buffer_free_crosspost_v1.py --network linkedin --folder source-social-ad
+      - name: Preview X only when enabled without blocking LinkedIn
+        id: x_preview
+        if: steps.source.outputs.available == 'true' && (env.TF_X_DIRECT_PUBLISH_ENABLED == 'true' || (env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_X_CHANNEL_ID != ''))
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python automation/linkedin_x_crosspost_v1.py --network x --folder source-social-ad
           python automation/buffer_free_crosspost_v1.py --network x --folder source-social-ad
       - name: Buffer Free - LinkedIn image schedule (zero X developer API fees)
         if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_LINKEDIN_CHANNEL_ID != ''
         run: python automation/buffer_free_crosspost_v1.py --network linkedin --folder source-social-ad --live
       - name: Buffer Free - X image schedule (zero X developer API fees)
-        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_X_CHANNEL_ID != ''
+        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_X_CHANNEL_ID != '' && steps.x_preview.outcome == 'success'
         continue-on-error: true
         run: python automation/buffer_free_crosspost_v1.py --network x --folder source-social-ad --live
       - name: LinkedIn approved feed publish (separate per-mode lock)
         if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_LINKEDIN_DIRECT_PUBLISH_ENABLED == 'true'
-        continue-on-error: true
         run: python automation/linkedin_x_crosspost_v1.py --network linkedin --folder source-social-ad --live
       - name: X approved feed publish (requires paid API opt-in and separate lock)
-        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_X_DIRECT_PUBLISH_ENABLED == 'true'
+        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_X_DIRECT_PUBLISH_ENABLED == 'true' && steps.x_preview.outcome == 'success'
         continue-on-error: true
         run: python automation/linkedin_x_crosspost_v1.py --network x --folder source-social-ad --live
+      - name: Summarize LinkedIn source and independent X checks
+        if: always() && github.event_name == 'workflow_run'
+        run: |
+          echo "LINKEDIN_APPROVED_META_ARTIFACT=${{ steps.source.outputs.available || 'false' }}"
+          echo "X_PREVIEW_OUTCOME=${{ steps.x_preview.outcome || 'not_run' }}"
+          echo "LINKEDIN_BUFFER_ENABLED=${{ env.TF_BUFFER_FREE_PUBLISH_ENABLED }}"
+          echo "LINKEDIN_DIRECT_ENABLED=${{ env.TF_LINKEDIN_DIRECT_PUBLISH_ENABLED }}"
+          if [[ "${{ steps.source.outputs.available }}" != "true" ]]; then
+            echo "::notice::No approved Meta creative attached to this run; LinkedIn and X were not posted."
+          fi
       - name: Preserve original Meta auto-posting configuration and limits
         run: |
           echo "META_DAILY_INSTAGRAM_CAP_UNCHANGED=3"
