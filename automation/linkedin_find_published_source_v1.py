@@ -23,7 +23,8 @@ class NoCrossHostAuthRedirect(HTTPRedirectHandler):
         redirected=super().redirect_request(req,fp,code,msg,headers,newurl)
         if redirected is not None and urlsplit(newurl).hostname!=urlsplit(req.full_url).hostname:
             redirected.remove_header("Authorization")
-            redirected.unredirected_hdrs = {k:v for k,v in redirected.unredirected_hdrs.items()\n                                         if k.lower() != "authorization"}
+            redirected.unredirected_hdrs = {k:v for k,v in redirected.unredirected_hdrs.items()
+                                         if k.lower() != "authorization"}
         return redirected
 
 def gh(path,token,*,read_bytes=False):
