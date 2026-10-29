@@ -34,6 +34,18 @@ assert.equal(classify({status:'ok',http_status:502,availability:'out of stock'})
 assert.equal(classify({status:'no_price',availability:null}),'transient');
 assert.equal(classify({status:'no_price',availability:'this item is discontinued'}),'permanent');
 assert.equal(classify({status:'no_price',availability:'N/A'}),'ambiguous');
+// Flipkart's Worker incorrectly says not_listed after fetching a real PDP (HTTP 200).
+// A parser-only miss must not archive a real product, even after many requests.
+for(const st of ['not_listed','not_found','not_available']) {
+  const x={status:st,http_status:200,availability:null,unavailable_checks:100};
+  assert.equal(classify(x),'transient',st+' on HTTP-200 page');
+  assert.equal(isConfirmedUnavailable(x),false,st+' must never delete');
+  assert.equal(toAvailabilityState(x,x).unavailable_checks,0);
+}
+assert.equal(classify({status:'not_available',http_status:200,availability:'not available'}),'ambiguous');
+assert.equal(classify({status:'sold_out',http_status:200}),'permanent');
+assert.equal(classify({status:'not_found',http_status:404}),'ambiguous');
+console.log('WORKER_FALSE_NOT_LISTED_DELETE_GUARD=PASS');
 console.log('AVAILABILITY_POLICY_TEST=PASS');
 console.log('HTTP_502_MASS_DELETE_GUARD=PASS');
 console.log('NA_TWO_FRESH_CHECKS=PASS');
