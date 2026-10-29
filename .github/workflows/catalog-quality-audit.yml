@@ -1,4 +1,4 @@
-name: Two real Mongo Flipkart SKU price checks against existing Worker
+name: Two real Mongo Flipkart SKU signed PM2 Worker checks
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
