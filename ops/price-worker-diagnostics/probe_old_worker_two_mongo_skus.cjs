@@ -15,7 +15,7 @@ const key=process.env.PRICE_WORKER_KEY||pm2env.PRICE_WORKER_KEY;
 const uri=['MONGODB_URI','MONGO_URI','MONGO_URL','MONGODB_URL','DB_URI','DATABASE_URL'].map(k=>process.env[k]).find(Boolean);
 const pids=['MOBHQFDZKKM7EEFZ','MOBH2AHZH779MGYF'];
 (async()=>{
- if(!uri||!url||!key){console.log('WORKER_BASELINE_CONFIG_MISSING');return;}
+ if(!uri){console.log('MONGO_CONFIG_MISSING');return;}
  await mongoose.connect(uri,{serverSelectionTimeoutMS:8000});
  const coll=mongoose.connection.client.db('trustfolio').collection('my_products');
  const docs=await coll.find({platform:'flipkart',platform_product_id:{$in:pids}}).toArray();
@@ -23,6 +23,7 @@ const pids=['MOBHQFDZKKM7EEFZ','MOBH2AHZH779MGYF'];
  const arr=docs.map(d=>({id:d.platform_product_id,stored:d.price_inr,item:workerItem(d)})).filter(d=>d.item);
  console.log('MONGO_WORKER_ITEM_FORMAT='+JSON.stringify(arr.map(d=>({id:d.id,fields:Object.keys(d.item),url:String(d.item.url||d.item.link||'').slice(0,160)}))));
  if(!arr.length)return;
+ if(!url||!key){console.log('WORKER_BASELINE_CONFIG_MISSING');return;}
  const target=url.replace(/\/+$/,'')+'/api/check';
  const response=await fetch(target,{
    method:'POST',headers:{'content-type':'application/json','x-api-key':key},
