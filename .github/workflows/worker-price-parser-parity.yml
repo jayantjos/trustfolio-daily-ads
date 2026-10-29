@@ -1,4 +1,4 @@
-name: TrustFolio legacy Scrape.do Worker price-rule parity tests
+name: TrustFolio Worker price-parser and exact-variant parity tests
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
