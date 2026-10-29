@@ -1,4 +1,4 @@
-name: TrustFolio Cloudflare Worker automatic health QA
+name: TrustFolio Cloudflare Worker v0.5 scheduled monitor verification
 on:
   schedule:
     - cron: '15 */6 * * *'
