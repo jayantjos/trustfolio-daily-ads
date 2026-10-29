@@ -4,5 +4,8 @@
   "mode": "brand_budget",
   "network": "facebook",
   "recorded_at": "2026-10-29T18:59:15.650487+05:30",
-  "status": "api_accepted_published"
+  "status": "api_accepted_published",
+  "category": "induction-cooktop",
+  "budget_inr": 5000,
+  "brand": "Pigeon"
 }
