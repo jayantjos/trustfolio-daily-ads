@@ -1,4 +1,4 @@
-name: TrustFolio Cloudflare Worker v0.5 scheduled monitor verification
+name: TrustFolio Worker automatic live-price QA status
 on:
   schedule:
     - cron: '15 */6 * * *'
@@ -31,7 +31,7 @@ jobs:
           print('WORKER_MONITOR_STATUS='+json.dumps(report))
           assert x.get('ok') and x.get('ready')
           assert x.get('worker')=='trustfolio-live-price-worker'
-          assert x.get('version')=='0.5.0'
+          assert x.get('version')=='0.6.0'
           assert x.get('monitoring',{}).get('cronUTC')=='5 */6 * * *'
           print('HEALTH_AND_SCHEDULE=PASS')
           PY
@@ -45,6 +45,25 @@ jobs:
           x=json.load(open('no-key.json'))
           assert x.get('error')=='unauthorized'
           print('SECRET_PROTECTION=PASS')
+          PY
+          state_code=$(curl -sSL --max-time 20 -o monitor.json -w '%{http_code}' "$url/monitor/latest")
+          echo "MONITOR_STORAGE_HTTP=$state_code"
+          test "$state_code" = "200"
+          python3 - <<'PY'
+          import json,datetime,sys
+          x=json.load(open('monitor.json'))
+          assert x.get('ready') is True
+          latest=x.get('latest')
+          if latest is None:
+              print('TRUSTFOLIO_LAST_PRICE_QA=PENDING_FIRST_SCHEDULED_RUN')
+          else:
+              safe={k:latest.get(k) for k in ('checkedAt','result','total','verified','checks')}
+              print('TRUSTFOLIO_LAST_PRICE_QA='+json.dumps(safe,ensure_ascii=False))
+              checked=datetime.datetime.fromisoformat(latest['checkedAt'].replace('Z','+00:00'))
+              age=(datetime.datetime.now(datetime.timezone.utc)-checked).total_seconds()/3600
+              print('LAST_PRICE_QA_AGE_HOURS='+str(round(age,2)))
+              assert age<10, 'Cloudflare Cron price monitor is stale'
+              assert latest.get('result')=='PASS', 'At least one real price is unverified'
           PY
           echo 'TRUSTFOLIO_AUTOMATIC_HEALTH_QA=PASS'
           echo 'NOTE: real per-SKU prices are checked by Cloudflare Cron; see Workers Logs'
