@@ -47,7 +47,8 @@ jobs:
               {'cron':'0 14 * * *'},{'cron':'0 15 * * *'},
               {'cron':'45 16 * * *'},
               {'cron':'0 16 * * *'},{'cron':'30 16 * * *'},
-              {'cron':'30 17 * * *'}]
+              {'cron':'30 17 * * *'},
+              {'cron':'17,47 3-17 * * *'}]
           job=data['jobs']['render-qa-schedule']
           env=job['env']
           assert "vars.TF_META_DIRECT_PUBLISH_ENABLED" in env['TF_META_DIRECT_PUBLISH_ENABLED']
@@ -66,14 +67,17 @@ jobs:
           assert "'30 15 * * *':('comparison',0)" in planner['run']
           assert any(s.get('id')=='already_done' for s in job['steps'] )
           recovery=next(s for s in job['steps'] if s.get('id')=='already_done')
-          assert 'META_SCHEDULE_OVERNIGHT_DELAY_SKIPPED' in recovery['run']
+          assert 'from automation.schedule_recovery_v1 import select_due_mode' in recovery['run']
+          assert 'select_due_mode(cron,now,both_published)' in recovery['run']
           assert '--max-rebuilds 3' in publish['run']
           for cron in ('0 3 * * *','0 5 * * *','0 8 * * *',
                        '30 10 * * *','30 13 * * *','30 15 * * *',
                        '0 14 * * *','0 15 * * *','45 16 * * *',
                        '0 16 * * *','30 16 * * *','30 17 * * *'):
-              assert "github.event.schedule == '"+cron+"'" in cond
+              assert '"'+cron+'": ' in Path('automation/schedule_recovery_v1.py').read_text('utf8')
           assert "workflow_dispatch" not in cond
+          assert "steps.already_done.outputs.skip != 'true'" in cond
+          assert "RESOLVED_MODE: ${{ steps.already_done.outputs.mode }}" in flow_path.read_text('utf8')
           assert 'if [[ "$today_ist" < "2026-10-21" ]]' in publish['run']
           assert 'exit 0' in publish['run']
           assert 'export TF_META_POST_NETWORKS=instagram,facebook' in publish['run']

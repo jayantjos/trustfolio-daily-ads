@@ -20,6 +20,8 @@ on:
     - cron: '0 16 * * *'
     - cron: '30 16 * * *'
     - cron: '30 17 * * *'
+    # Off-minute watchdog: one missed slot cannot silently stop all daily posts.
+    - cron: '17,47 3-17 * * *'
   workflow_dispatch:
     inputs:
       mode:
@@ -73,16 +75,6 @@ jobs:
     steps:
       - name: Check out reviewed ads source
         uses: actions/checkout@v4
-      - name: Set up Python and image processing
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install image dependency and run tests
-        run: |
-          python -m pip install --disable-pip-version-check Pillow==11.3.0
-          python automation/rebuild_stale_meta_campaign_v1.py --help >/dev/null
-          python -m unittest -v automation.test_auto_campaign_v1 automation.test_20_category_rotation automation.test_live_price_before_publish_v1 automation.test_verify_price_before_meta_publish_v1 automation.test_rebuild_stale_meta_v1
-          python -m unittest -v test_campaign_link_contract_v1 test_site_top5_ads_v1 test_ads_spec_sanity
       - name: Skip recovery rendering when both platforms already published this mode
         id: already_done
         if: github.event_name == 'schedule'
@@ -92,50 +84,61 @@ jobs:
         run: |
           python - <<'PY'
           import base64,json,os
-          from urllib.request import Request,urlopen
-          from urllib.error import HTTPError
           from datetime import datetime
+          from urllib.error import HTTPError
+          from urllib.request import Request,urlopen
           from zoneinfo import ZoneInfo
-          mode={
-              '0 3 * * *':'budget','0 5 * * *':'budget',
-              '0 8 * * *':'brand_budget','30 10 * * *':'brand_budget',
-              '30 13 * * *':'comparison','30 15 * * *':'comparison',
-              '0 14 * * *':'budget','0 15 * * *':'brand_budget',
-              '45 16 * * *':'comparison',
-              '0 16 * * *':'budget','30 16 * * *':'brand_budget',
-              '30 17 * * *':'comparison'
-          }[os.environ['CRON_TRIGGER']]
-          local_now=datetime.now(ZoneInfo('Asia/Kolkata'))
-          day=local_now.date().isoformat()
-          # Do not let yesterday's delayed GitHub cron consume today's quota
-          # just after midnight. No normal TrustFolio posting slot is before 08:30.
-          if local_now.hour < 8:
-              print('META_SCHEDULE_OVERNIGHT_DELAY_SKIPPED=YES IST_DATE='+day)
-              with open(os.environ['GITHUB_OUTPUT'],'a') as out:
-                  out.write('skip=true\n')
-              raise SystemExit(0)
-          complete=[]
-          for network in ('instagram','facebook'):
-              path=f"meta-publication-ledger/{day}/{network}-mode-{mode}.json"
-              url=("https://api.github.com/repos/jayantjos/trustfolio-daily-ads/contents/"
-                   +path+"?ref=trustfolio-meta-publishing-ledger")
-              req=Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
-                                       'Accept':'application/vnd.github+json'})
-              try:
-                  with urlopen(req,timeout=20) as response:
-                      content=json.load(response)['content']
-                  record=json.loads(base64.b64decode(content).decode('utf8'))
-                  complete.append(record.get('status')=='api_accepted_published')
-              except HTTPError as error:
-                  if error.code!=404:
-                      raise
-                  complete.append(False)
-          done=all(complete)
-          print('DAILY_MODE='+mode+' IST_DATE='+day+' BOTH_NETWORKS_DONE='+str(done))
+          from automation.schedule_recovery_v1 import select_due_mode
+
+          now=datetime.now(ZoneInfo('Asia/Kolkata'))
+          day=now.date().isoformat()
+          cache={}
+          def both_published(mode):
+              if mode in cache:
+                  return cache[mode]
+              completed=[]
+              for network in ('instagram','facebook'):
+                  path=f"meta-publication-ledger/{day}/{network}-mode-{mode}.json"
+                  url=("https://api.github.com/repos/jayantjos/trustfolio-daily-ads/contents/"
+                       +path+"?ref=trustfolio-meta-publishing-ledger")
+                  req=Request(url,headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                                           'Accept':'application/vnd.github+json'})
+                  try:
+                      with urlopen(req,timeout=20) as response:
+                          content=json.load(response)['content']
+                      record=json.loads(base64.b64decode(content).decode('utf8'))
+                      completed.append(record.get('status')=='api_accepted_published')
+                  except HTTPError as error:
+                      if error.code!=404:
+                          raise
+                      completed.append(False)
+              cache[mode]=all(completed)
+              return cache[mode]
+
+          cron=os.environ['CRON_TRIGGER']
+          mode=select_due_mode(cron,now,both_published)
+          skipped=(mode is None)
+          print('META_SCHEDULE_CRON='+cron+' IST_DATE='+day+
+                ' MODE='+str(mode)+' SKIP='+str(skipped))
           with open(os.environ['GITHUB_OUTPUT'],'a') as out:
-              out.write('skip='+str(done).lower()+'\n')
+              out.write('skip='+str(skipped).lower()+'\n')
+              if mode:
+                  out.write('mode='+mode+'\n')
           PY
 
+      - name: Set up Python and image processing
+        if: steps.already_done.outputs.skip != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install image dependency and run tests
+        if: steps.already_done.outputs.skip != 'true'
+        run: |
+          python -m pip install --disable-pip-version-check Pillow==11.3.0
+          python automation/rebuild_stale_meta_campaign_v1.py --help >/dev/null
+          python -m unittest -v automation.test_schedule_recovery_v1
+          python -m unittest -v automation.test_auto_campaign_v1 automation.test_20_category_rotation automation.test_live_price_before_publish_v1 automation.test_verify_price_before_meta_publish_v1 automation.test_rebuild_stale_meta_v1
+          python -m unittest -v test_campaign_link_contract_v1 test_site_top5_ads_v1 test_ads_spec_sanity
       - name: Pick eligible site-ranked campaign deterministically
         if: steps.already_done.outputs.skip != 'true'
         id: plan
@@ -143,6 +146,7 @@ jobs:
           EVENT_TYPE: ${{ github.event_name }}
           CRON_TRIGGER: ${{ github.event.schedule }}
           INPUT_MODE: ${{ inputs.mode }}
+          RESOLVED_MODE: ${{ steps.already_done.outputs.mode }}
           INPUT_CATEGORY: ${{ inputs.category }}
           INPUT_BUDGET: ${{ inputs.budget }}
           INPUT_BRAND: ${{ inputs.brand }}
@@ -166,9 +170,10 @@ jobs:
           }
           event=os.getenv('EVENT_TYPE')
           if event=='schedule':
-              pair=cron_modes.get(os.getenv('CRON_TRIGGER'))
-              if pair is None: raise SystemExit('Unrecognized scheduled cron trigger')
-              mode,slot=pair
+              mode=os.getenv('RESOLVED_MODE')
+              if mode not in ('budget','brand_budget','comparison'):
+                  raise SystemExit('No safely due scheduled mode selected')
+              slot=0
           else:
               mode='budget' if event=='push' else os.getenv('INPUT_MODE')
               slot=0
@@ -306,7 +311,7 @@ jobs:
         # Each schedule call may produce at most one IG and one FB post.
         # Website must return all five same-brand products or brand slot skips.
         # Old Oct 20-25 Metricool queue was canceled into drafts; no duplicate posting.
-        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && (github.event.schedule == '0 3 * * *' || github.event.schedule == '0 5 * * *' || github.event.schedule == '0 8 * * *' || github.event.schedule == '30 10 * * *' || github.event.schedule == '30 13 * * *' || github.event.schedule == '30 15 * * *' || github.event.schedule == '0 14 * * *' || github.event.schedule == '0 15 * * *' || github.event.schedule == '45 16 * * *' || github.event.schedule == '0 16 * * *' || github.event.schedule == '30 16 * * *' || github.event.schedule == '30 17 * * *')
+        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && steps.already_done.outputs.skip != 'true'
         env:
           TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
