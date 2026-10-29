@@ -1,4 +1,4 @@
-name: VPS browser price-source capability audit
+name: VPS cached browser executable investigation
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
