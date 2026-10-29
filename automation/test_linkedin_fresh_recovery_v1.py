@@ -35,6 +35,7 @@ class RecoveryTests(unittest.TestCase):
     def test_provenance_records_original_meta_not_falsified_new_id(self):
         def build(plan,**kwargs):
             dest=kwargs["folder"]
+            (dest/"post").mkdir(exist_ok=True)
             (dest/"website-top5-render-qa.json").write_text(json.dumps(self.report))
             return self.new,dict(self.new), "https://media.trustfolio.in/trustfolio-auto/"+self.new["campaign_id"]+".jpg"
         with patch.object(recovery,"validate_source",return_value=(self.original,None,None)),\
