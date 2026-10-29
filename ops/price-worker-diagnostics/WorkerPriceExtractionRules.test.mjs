@@ -23,6 +23,12 @@ for(const c of cases){
  if(c.source)assert.equal(got.source,c.source,c.name+': source');
  console.log('RULE_TEST_PASS='+c.name);
 }
+const wrongVariantTitle=header.replace('Blue, 512 GB','White, 256 GB');
+const wrongVariant=run({...f,html:wrongVariantTitle+
+  '<meta itemprop="price" content="45999">'+filler+footer});
+assert.equal(wrongVariant.status,'error');
+assert.equal(wrongVariant.priceNum,null);
+console.log('RULE_TEST_PASS=Wrong color and capacity rejected');
 const amazonHtml='<html><head><title>Apple iPhone 16 (128 GB) - Amazon.in</title></head><body><div id="corePriceDisplay_desktop_feature_div"><span class="a-price"><span class="a-offscreen">₹69,900</span></span></div><p>MRP ₹79,900</p>'+filler+'</body></html>';
 const a=run({platform:'amazon',title:'Apple iPhone 16 (128 GB)',id:'B0D1234567',html:amazonHtml});
 assert.equal(a.priceNum,69900);
