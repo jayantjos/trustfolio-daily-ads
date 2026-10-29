@@ -103,7 +103,7 @@ jobs:
         run: |
           python -m automation.linkedin_fresh_recovery_v1 \
             --source source-social-ad --destination linkedin-fresh-ad \
-            --run-key "$GITHUB_RUN_ID${{ strategy.job-index }}" --host "$HOST" --user "$USER"
+            --run-key "${GITHUB_RUN_ID}${{ strategy.job-index }}" --host "$HOST" --user "$USER"
       - name: Schedule verified LinkedIn post through existing Buffer Free account
         if: steps.missing.outputs.proceed == 'true'
         run: |
