@@ -15,9 +15,14 @@ on:
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: "Completed Meta scheduled workflow run ID (dry-run ONLY)"
+        description: "Completed same-day Meta scheduled run ID"
         required: true
         type: string
+      publish_linkedin:
+        description: "Explicit opt-in for live LinkedIn Buffer recovery of this verified Meta run"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -52,6 +57,8 @@ jobs:
           assert "github.event.workflow_run.event == 'schedule'" in src
           assert "github.event.workflow_run.head_branch == 'main'" in src
           assert '--live' in src
+          assert 'publish_linkedin:' in src
+          assert 'TF_MANUAL_LINKEDIN_RECOVERY_APPROVED' in src
           assert "TF_X_PAID_API_APPROVED" in src
           assert "TF_LINKEDIN_DIRECT_PUBLISH_ENABLED" in src
           assert "TF_X_DIRECT_PUBLISH_ENABLED" in src
@@ -73,6 +80,7 @@ jobs:
     timeout-minutes: 15
     env:
       SOURCE_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.event.workflow_run.id }}
+      TF_MANUAL_LINKEDIN_RECOVERY_APPROVED: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_linkedin && 'true' || 'false' }}
       TF_LINKEDIN_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_LINKEDIN_DIRECT_PUBLISH_ENABLED || 'false' }}
       TF_X_DIRECT_PUBLISH_ENABLED: ${{ vars.TF_X_DIRECT_PUBLISH_ENABLED || 'false' }}
       TF_X_PAID_API_APPROVED: ${{ vars.TF_X_PAID_API_APPROVED || 'false' }}
@@ -109,6 +117,17 @@ jobs:
               'Authorization':'Bearer '+os.environ['GH_TOKEN'],
               'Accept':'application/vnd.github+json'}),timeout=25) as r:
               obj=json.load(r)
+          # Never let manual input impersonate an arbitrary push/test artifact.
+          run_url='https://api.github.com/repos/jayantjos/trustfolio-daily-ads/actions/runs/'+n
+          with urlopen(Request(run_url,headers={
+              'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+              'Accept':'application/vnd.github+json'}),timeout=25) as resp:
+              source_run=json.load(resp)
+          if (source_run.get('event')!='schedule'
+                  or source_run.get('conclusion')!='success'
+                  or source_run.get('head_branch')!='main'
+                  or source_run.get('name')!='TrustFolio automated Instagram campaigns'):
+              raise SystemExit('Source must be successful original main scheduled Meta workflow')
           candidates=obj.get('artifacts',[])
           # The original artifact is captured before Meta publishing. If a
           # price drift rerenders the creative during publishing, only the
@@ -141,7 +160,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ env.SOURCE_RUN_ID }}
       - name: Check LinkedIn source freshness without weakening live-price rules
-        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run'
+        if: steps.source.outputs.available == 'true' && (github.event_name == 'workflow_run' || inputs.publish_linkedin == true)
         id: freshness
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -215,7 +234,7 @@ jobs:
           python automation/linkedin_x_crosspost_v1.py --network x --folder ${{ steps.freshness.outputs.folder || 'source-social-ad' }}
           python automation/buffer_free_crosspost_v1.py --network x --folder ${{ steps.freshness.outputs.folder || 'source-social-ad' }}
       - name: Buffer Free - LinkedIn image schedule (zero X developer API fees)
-        if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_LINKEDIN_CHANNEL_ID != ''
+        if: steps.source.outputs.available == 'true' && (github.event_name == 'workflow_run' || inputs.publish_linkedin == true) && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_LINKEDIN_CHANNEL_ID != ''
         run: python automation/buffer_free_crosspost_v1.py --network linkedin --folder ${{ steps.freshness.outputs.folder || 'source-social-ad' }} --live
       - name: Buffer Free - X image schedule (zero X developer API fees)
         if: steps.source.outputs.available == 'true' && github.event_name == 'workflow_run' && env.TF_BUFFER_FREE_PUBLISH_ENABLED == 'true' && env.TF_BUFFER_X_CHANNEL_ID != '' && steps.x_preview.outcome == 'success'
