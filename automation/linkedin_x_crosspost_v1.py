@@ -14,7 +14,7 @@ import re
 import sys
 import uuid
 from urllib.error import HTTPError,URLError
-from urllib.parse import urlsplit,urlencode
+from urllib.parse import urlsplit,urlencode,urlunsplit,parse_qs
 from urllib.request import Request,urlopen
 from zoneinfo import ZoneInfo
 
@@ -247,8 +247,28 @@ def x_post_text(post):
     label=post["category"].replace("-"," ").title()
     brand=(" | "+post["brand"]) if mode=="brand_budget" else ""
     text=f"TrustFolio {kind}: {label}{brand} under ₹{post['budget_inr']:,}. Live Top-5 picks, prices & details:\n{post['landing_url']}"
-    # X treats URLs as 23 weighted characters, but enforce a strict conservative 280-char cap too.
-    if len(text)>280:raise ExtraSocialBlocked("X caption too long; no truncated or incorrect URL")
+    # Preserve the original full tracking URL whenever it fits. A long
+    # Meta UTM URL can exceed the conservative 280-character guard; only
+    # then construct a compact URL with the SAME category, budget and brand.
+    if len(text)>280:
+        raw=urlsplit(post["landing_url"])
+        category=str(post["category"])
+        params=parse_qs(raw.query)
+        amount=str(int(post["budget_inr"]))
+        expected_brand=str(post.get("brand") or "")
+        if (raw.scheme!="https" or raw.hostname not in ("trustfolio.in","www.trustfolio.in")
+                or raw.path!="/category/"+category+"/products"
+                or params.get("budget")!=[amount]
+                or (params.get("brand",[""])[0] if mode=="brand_budget" else "")!=
+                   (expected_brand if mode=="brand_budget" else "")):
+            raise ExtraSocialBlocked("X landing filters do not match approved campaign")
+        filters={"budget":amount}
+        if mode=="brand_budget":
+            filters["brand"]=expected_brand
+        compact=urlunsplit((raw.scheme,raw.netloc,raw.path,urlencode(filters),""))
+        text=f"TrustFolio Top 5 {label}{brand} under ₹{amount}: {compact}"
+    if len(text)>280:
+        raise ExtraSocialBlocked("X caption too long even with verified short filtered link")
     return text
 
 def x_image_post(post,jpg,token,expected_user_id,requester=api_request):
