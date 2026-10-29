@@ -1,4 +1,4 @@
-name: Croma frontend patch static checks
+name: Cross-store availability and Flipkart false-delete safety tests
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
