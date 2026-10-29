@@ -4,8 +4,14 @@ const {createRequire}=require('node:module');
 const appRequire=createRequire(process.cwd()+'/package.json');
 const mongoose=appRequire('mongoose');
 appRequire('dotenv').config();
-const url=process.env.PRICE_WORKER_URL;
-const key=process.env.PRICE_WORKER_KEY;
+const {execFileSync}=require('child_process');
+let pm2env={};
+try {
+ const pm2=JSON.parse(execFileSync('pm2',['jlist'],{encoding:'utf8',maxBuffer:1024*1024*6,timeout:5000}));
+ pm2env=pm2.find(p=>p.name==='trustfolio-backend')?.pm2_env||{};
+} catch (_) { /* test must never leak env */ }
+const url=process.env.PRICE_WORKER_URL||pm2env.PRICE_WORKER_URL;
+const key=process.env.PRICE_WORKER_KEY||pm2env.PRICE_WORKER_KEY;
 const uri=['MONGODB_URI','MONGO_URI','MONGO_URL','MONGODB_URL','DB_URI','DATABASE_URL'].map(k=>process.env[k]).find(Boolean);
 const pids=['MOBHQFDZKKM7EEFZ','MOBH2AHZH779MGYF'];
 (async()=>{
