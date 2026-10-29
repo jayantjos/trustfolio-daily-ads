@@ -369,6 +369,10 @@ def record_status(cfg,network,key,sha,status,extra=None):
     if cfg.get("campaign_mode"):
         value["mode"]=cfg["campaign_mode"]
     value.update(extra or {})
+    # Publish only verified campaign metadata, for cross-day category+budget
+    # deduplication. Prior records lacking these fields are SHA-resolved.
+    if status=="api_accepted_published" and cfg.get("campaign_metadata"):
+        value.update(cfg["campaign_metadata"])
     obj={"branch":LEDGER_BRANCH,"sha":sha,
          "message":"Meta "+network+" campaign "+key+" "+status,
          "content":base64.b64encode(
@@ -455,6 +459,11 @@ def publish_verified(manifest,media_url,local_jpg,*,env=None):
     if mode not in ("budget","brand_budget","comparison"):
         raise PublishingBlocked("Missing valid campaign mode for daily publication lock")
     cfg["campaign_mode"]=mode
+    cfg["campaign_metadata"]={
+        "category":manifest["category"],
+        "budget_inr":int(manifest["budget_inr"]),
+        "brand":manifest.get("brand") or "",
+    }
     # Common preflight must succeed before attempting either network.
     _check_media(media_url,local_jpg)
     confirm_page_token_type(cfg)
