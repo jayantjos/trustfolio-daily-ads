@@ -1,4 +1,4 @@
-name: TrustFolio new Worker health and authentication check
+name: TrustFolio live Worker v0.4 deployment and protection audit
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -21,6 +21,8 @@ jobs:
           import json
           x=json.load(open('health.json'))
           print('HEALTH_RESPONSE='+json.dumps(x))
+          print('LIVE_VERSION='+str(x.get('version')))
+          print('V04_DEPLOYED='+('YES' if x.get('version')=='0.4.0' else 'NO'))
           assert x.get('worker')=='trustfolio-live-price-worker'
           assert x.get('ready') is True
           assert x.get('ok') is True
