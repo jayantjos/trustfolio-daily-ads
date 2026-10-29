@@ -139,6 +139,14 @@ jobs:
           python -m unittest -v automation.test_schedule_recovery_v1
           python -m unittest -v automation.test_auto_campaign_v1 automation.test_20_category_rotation automation.test_live_price_before_publish_v1 automation.test_verify_price_before_meta_publish_v1 automation.test_rebuild_stale_meta_v1
           python -m unittest -v test_campaign_link_contract_v1 test_site_top5_ads_v1 test_ads_spec_sanity
+      - name: Build published category/budget history before new campaign
+        if: github.event_name == 'schedule' && steps.already_done.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python automation/posting_history_v1.py --output campaign/history.json --lookback-days 45
+
       - name: Pick eligible site-ranked campaign deterministically
         if: steps.already_done.outputs.skip != 'true'
         id: plan
@@ -185,6 +193,8 @@ jobs:
               for name in ('category','budget','brand'):
                   value=os.getenv('INPUT_'+name.upper())
                   if value: cmd.extend(('--'+name,value))
+          if event=='schedule':
+              cmd.extend(('--used-budgets-file','campaign/history.json'))
           subprocess.run(cmd,check=True)
           plan=json.load(open('campaign/plan.json'))
           status=plan['status']
@@ -240,12 +250,16 @@ jobs:
           USER: ${{ secrets.TF_DEPLOY_USER }}
         run: |
           set -euo pipefail
+          HISTORY_ARGS=()
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" ]]; then
+            HISTORY_ARGS=(--used-budgets-file campaign/history.json)
+          fi
           python automation/render_with_brand_fallback_v1.py \
             --plan campaign/plan.json \
             --folder campaign \
             --run-key "$RUN_KEY" \
             --host "$HOST" --user "$USER" \
-            --max-renders 3
+            --max-renders 3 "${HISTORY_ARGS[@]}"
 
       - name: Validate exact rank mapping and create full-size Instagram 4:5 JPG/caption
         if: steps.plan.outputs.eligible == 'true'
@@ -343,7 +357,8 @@ jobs:
             # Fail closed if the website remains unstable or genuine Top-5 missing.
             python automation/rebuild_stale_meta_campaign_v1.py \
               --folder campaign --run-key "$RUN_KEY" \
-              --host "$HOST" --user "$USER" --max-rebuilds 3
+              --host "$HOST" --user "$USER" --max-rebuilds 3 \
+              --used-budgets-file campaign/history.json
           fi
           ID="$(python -c 'import json;print(json.load(open("campaign/plan.json"))["campaign_id"])')"
           [[ "$ID" =~ ^tfauto-[a-f0-9]{18}$ ]]
