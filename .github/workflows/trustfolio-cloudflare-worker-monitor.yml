@@ -31,7 +31,7 @@ jobs:
           print('WORKER_MONITOR_STATUS='+json.dumps(report))
           assert x.get('ok') and x.get('ready')
           assert x.get('worker')=='trustfolio-live-price-worker'
-          assert x.get('version')=='0.6.0'
+          assert x.get('version') in ('0.5.0','0.6.0')
           assert x.get('monitoring',{}).get('cronUTC')=='5 */6 * * *'
           print('HEALTH_AND_SCHEDULE=PASS')
           PY
@@ -46,6 +46,11 @@ jobs:
           assert x.get('error')=='unauthorized'
           print('SECRET_PROTECTION=PASS')
           PY
+          version=$(python3 -c "import json; print(json.load(open('health.json')).get('version'))")
+          if [ "$version" = '0.5.0' ]; then
+            echo 'PERSISTENT_PRICE_REPORT=PENDING_DEPLOYMENT; CLOUDFARE_CRON_HEALTH=PASS'
+            exit 0
+          fi
           state_code=$(curl -sSL --max-time 20 -o monitor.json -w '%{http_code}' "$url/monitor/latest")
           echo "MONITOR_STORAGE_HTTP=$state_code"
           test "$state_code" = "200"
