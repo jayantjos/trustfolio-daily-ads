@@ -1,0 +1,17 @@
+name: TrustFolio legacy Scrape.do Worker price-rule parity tests
+on:
+  push:
+    branches: [diagnostics/croma-direct-live-price-20261027]
+    paths: [.github/workflows/worker-price-parser-parity.yml]
+permissions: {contents: read}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check and product-scoped price evidence tests
+        run: |
+          set -euo pipefail
+          node --check ops/price-worker-diagnostics/WorkerPriceExtractionRules.mjs
+          node --test ops/price-worker-diagnostics/WorkerPriceExtractionRules.test.mjs
