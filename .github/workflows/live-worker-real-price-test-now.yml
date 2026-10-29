@@ -1,0 +1,50 @@
+name: Test actual Cloudflare selling prices from Mongo-selected products
+on:
+  push:
+    branches: [diagnostics/croma-direct-live-price-20261027]
+    paths: [.github/workflows/live-worker-real-price-test-now.yml]
+permissions:
+  contents: read
+jobs:
+  real-cloudflare-price-sample:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wait for version 0.7 and test three real Mongo SKUs without any keys
+        run: |
+          set -euo pipefail
+          base='https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev'
+          for i in 1 2 3 4 5 6 7; do
+            curl -sSL --max-time 12 "$base/health" > health.json
+            version=$(python3 -c 'import json;print(json.load(open("health.json")).get("version"))')
+            echo "WORKER_VERSION=$version"
+            if [ "$version" = '0.7.0' ]; then break; fi
+            sleep 8
+          done
+          test "$version" = '0.7.0'
+          python3 - <<'PY'
+          import json
+          x=json.load(open('health.json'))
+          assert x['ready'] is True
+          assert x['monitoring']['testUrl']=='/qa/sample'
+          print('WORKER_V07_READY=YES')
+          PY
+          code=$(curl -sSL --max-time 70 -o sample.json -w '%{http_code}' "$base/qa/sample")
+          echo "LIVE_SAMPLE_HTTP=$code"
+          test "$code" = '200'
+          python3 - <<'PY'
+          import json
+          x=json.load(open('sample.json'))
+          print('SAMPLE_FRESH='+str(x.get('fresh')))
+          print('SAMPLE_RATE_LIMITED='+str(x.get('rateLimited')))
+          report=x.get('report') or {}
+          print('REPORT_DATE='+str(report.get('checkedAt')))
+          print('REPORT_RESULT='+str(report.get('result')))
+          print('REPORT_VERIFIED='+str(report.get('verified'))+'/'+str(report.get('total')))
+          for item in report.get('checks',[]):
+              print('LIVE_PRODUCT='+json.dumps(item,ensure_ascii=False))
+          assert report.get('total')==3
+          print('MONGO_WRITES=NONE')
+          print('BROWSER_RUN=DISABLED')
+          print('NO_SECRETS_USED_FROM_GITHUB=YES')
+          PY
