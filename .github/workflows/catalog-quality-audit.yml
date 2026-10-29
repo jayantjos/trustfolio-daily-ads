@@ -1,4 +1,4 @@
-name: Two real Mongo Flipkart SKU signed PM2 Worker checks
+name: Inspect exact Flipkart URLs and signed Worker access without secret disclosure
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
