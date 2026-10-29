@@ -161,8 +161,14 @@ def main():
     parser.add_argument("--network",required=True,choices=NETWORKS)
     parser.add_argument("--live",action="store_true")
     args=parser.parse_args()
-    if args.live and os.getenv("GITHUB_EVENT_NAME")!="workflow_run":
-        raise BufferBlocked("Buffer live scheduling allowed only after successful Meta schedule")
+    if args.live and not (
+        os.getenv("GITHUB_EVENT_NAME")=="workflow_run" or (
+            args.network=="linkedin"
+            and os.getenv("GITHUB_EVENT_NAME")=="workflow_dispatch"
+            and os.getenv("TF_MANUAL_LINKEDIN_RECOVERY_APPROVED")=="true"
+        )
+    ):
+        raise BufferBlocked("Live Buffer requires automatic Meta event or explicit LinkedIn recovery approval")
     token=os.getenv("GITHUB_TOKEN") or ""
     post,jpg,url=validate_source(args.folder,gh_token=token if args.live else None,
                                   verify_live=args.live)
