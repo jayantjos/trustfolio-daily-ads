@@ -32,6 +32,6 @@ jobs:
           set -euo pipefail
           python -m unittest -v automation.test_buffer_verify_linkedin_sent_v1
           for mode in budget brand_budget comparison; do
-            python automation/buffer_verify_linkedin_sent_v1.py --mode "$mode"
+            python -m automation.buffer_verify_linkedin_sent_v1 --mode "$mode"
           done
           echo "LINKEDIN_DELIVERY_CHECK_DONE=YES"
