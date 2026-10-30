@@ -1,4 +1,4 @@
-name: Isolated MongoDB 20k price change and Top5 replacement integration QA
+name: Shadow MongoDB 20k price update and replacement QA rerun
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
