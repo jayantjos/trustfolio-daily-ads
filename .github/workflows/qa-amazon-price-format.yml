@@ -1,0 +1,27 @@
+name: Diagnose five Amazon price format anomalies
+on:
+  push:
+    branches: [diagnostics/croma-direct-live-price-20261027]
+    paths: [.github/workflows/qa-amazon-price-format.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wait for own Worker v1.1.1 and inspect exact price tokens
+        run: |
+          set -euo pipefail
+          base='https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev'
+          for i in 1 2 3 4 5 6 7 8 9; do
+            version=$(curl -sSL --max-time 12 "$base/health" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("version"))')
+            echo "WORKER_VERSION=$version"
+            [ "$version" = '1.1.1' ] && break
+            sleep 6
+          done
+          test "$version" = '1.1.1'
+          for sku in B0H75M7JKH B0CGDBR9DC B0FMS18RZ2 B0H2F9KKP9 B0H44SBX2T; do
+            curl -sSL --max-time 16 "$base/qa/amazon-format?sku=$sku" |
+              python3 -c 'import json,sys;d=json.load(sys.stdin);print("AMAZON_RAW_PRICE_TOKEN="+json.dumps(d,ensure_ascii=False))'
+          done
