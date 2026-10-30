@@ -7,7 +7,7 @@ const uri=['MONGODB_URI','MONGO_URI','MONGO_URL','MONGODB_URL','DB_URI','DATABAS
 const ranker=appRequire('./services/ProductRecommendationService');
 (async()=>{
  if(!uri) throw Error('MONGODB_URI_NOT_FOUND');
- await mongoose.connect(uri,{serverSelectionTimeoutMS:9000});
+ await mongoose.connect(uri,{dbName:'trustfolio',serverSelectionTimeoutMS:9000});
  const col=mongoose.connection.client.db('trustfolio').collection('my_products');
  const groups=await col.aggregate([
   {$match:{price_inr:{$gt:0,$lte:20000},platform:{$in:['flipkart','amazon','croma']}}},
