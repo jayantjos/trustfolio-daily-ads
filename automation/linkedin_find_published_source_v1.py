@@ -66,7 +66,7 @@ def source_candidates(token,fetch=gh):
         for run in runs:
             if (run.get("name")=="TrustFolio automated Instagram campaigns"
                 and run.get("head_branch")=="main" and run.get("conclusion")=="success"
-                and run.get("event") in ("schedule",)):
+                and run.get("event") in ("schedule","workflow_dispatch")):
                 yield run
         if len(runs)<100:break
 
