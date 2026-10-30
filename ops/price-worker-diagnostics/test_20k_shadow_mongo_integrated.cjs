@@ -61,6 +61,9 @@ let shadow=null,shadowDeleted=null,originalCollection=null;
   mk('flipkart','MOBTESTSKU0000004',14999,'G HTTP502 should not delete')
  ];
  await shadow.insertMany(docs);
+ // Preload real controller/model definitions before temporarily redirecting test collections.
+ // Otherwise Mongoose model compilation may receive native collection instead of its adapter.
+ appRequire('./controllers/ProductController');
  originalCollection=mongoose.connection.collection.bind(mongoose.connection);
  mongoose.connection.collection=function(name){
    if(name==='my_products')return shadow;
