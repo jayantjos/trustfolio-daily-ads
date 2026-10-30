@@ -1,4 +1,4 @@
-name: Diagnose five Amazon price format anomalies
+name: Confirm five 100x Amazon prices safely after v1.2.1 parser fix
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -6,22 +6,23 @@ on:
 permissions:
   contents: read
 jobs:
-  diagnose:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Wait for own Worker v1.1.1 and inspect exact price tokens
+      - name: Verify five exact stored Amazon examples again, no secret entry
         run: |
           set -euo pipefail
           base='https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev'
-          for i in 1 2 3 4 5 6 7 8 9; do
+          version=''
+          for i in 1 2 3 4 5 6 7 8 9 10; do
             version=$(curl -sSL --max-time 12 "$base/health" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("version"))')
-            echo "WORKER_VERSION=$version"
-            [ "$version" = '1.1.1' ] && break
+            echo "CURRENT_WORKER_VERSION=$version"
+            [ "$version" = '1.2.1' ] && break
             sleep 6
           done
-          test "$version" = '1.1.1'
-          for sku in B0H75M7JKH B0CGDBR9DC B0FMS18RZ2 B0H2F9KKP9 B0H44SBX2T; do
-            curl -sSL --max-time 16 "$base/qa/amazon-format?sku=$sku" |
-              python3 -c 'import json,sys;d=json.load(sys.stdin);print("AMAZON_RAW_PRICE_TOKEN="+json.dumps(d,ensure_ascii=False))'
+          test "$version" = '1.2.1'
+          for index in 0 22 37 39 99; do
+            curl -sSL --max-time 20 "$base/qa/check-100?platform=amazon&index=$index&rev=v2" |
+              python3 -c 'import sys,json;v=json.load(sys.stdin);r=v.get("report") or {};print("STRICT_AMAZON_RECHECK="+json.dumps({k:r.get(k) for k in ("sku","storedPrice","priceINR","status","error","identityVerified","source")},ensure_ascii=False))'
           done
