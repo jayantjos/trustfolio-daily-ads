@@ -23,12 +23,16 @@ const ranker=appRequire('./services/ProductRecommendationService');
  }
  const choices=Object.entries(categoryGroups).filter(([k,v])=>['amazon','flipkart','croma'].every(p=>(v[p]||0)>0));
  console.log('ALL_THREE_20K_CATEGORIES='+JSON.stringify(choices.slice(0,12)));
- const picked=choices.find(([k])=>/smart.*phone|mobile/i.test(k))||choices[0]||null;
- if(!picked){console.log('THREE_PLATFORM_TEST_CATEGORY=NOT_FOUND');return;}
- const category=picked[0];
- console.log('SELECTED_CATEGORY='+category);
- const rec=await ranker.getTopProductsForCategoryAndBudget(category,20000,{limit:5});
- const summarize=r=>({id:String(r.id||''),platform:r.platform,title:String(r.title||'').slice(0,100),price_inr:r.price_inr,rank:r.rank,brand:r.brand,product_url:String(r.product_url||r.url||'').slice(0,160)});
- console.log('RANKER_20K_RESPONSE='+JSON.stringify({category,productCount:rec.products?.length||0,totalMatches:rec.totalMatches,products:(rec.products||[]).map(summarize)}));
+ console.log('MONGOOSE_DEFAULT_DB_NAME='+mongoose.connection.name);
+ console.log('MONGOOSE_DEFAULT_DB_CATALOG_COUNT='+await mongoose.connection.collection('my_products').estimatedDocumentCount());
+ const categories=['smartwatches','headphones-earbuds','ceiling-fans','smart-phones','washing-machines','speakers'];
+ const summarize=r=>({id:String(r.id||''),platform:r.platform,title:String(r.title||'').slice(0,90),price_inr:r.price_inr,rank:r.rank,brand:r.brand,product_url:String(r.product_url||r.url||'').slice(0,160)});
+ for(const category of categories){
+  try{
+   const rec=await ranker.getTopProductsForCategoryAndBudget(category,20000,{limit:5});
+   console.log('RANKER_20K_RESPONSE='+JSON.stringify({category,productCount:rec.products?.length||0,totalMatches:rec.totalMatches,products:(rec.products||[]).map(summarize)}));
+  }catch(e){console.log('RANKER_CATEGORY_ERROR='+JSON.stringify({category,error:String(e?.message||e).slice(0,90)}))}
+ }
+
  console.log('RANKER_DB_MUTATION=NONE');
 })().catch(e=>{console.log('RANKER_AUDIT_ERROR='+String(e?.name||'error')+':'+String(e?.message||'').replace(/mongodb(?:\+srv)?:\/\/\S+/ig,'[REDACTED]').slice(0,150));process.exitCode=1}).finally(()=>mongoose.disconnect());
