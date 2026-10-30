@@ -1,4 +1,4 @@
-name: Confirm five 100x Amazon prices safely after v1.2.1 parser fix
+name: Verify five Amazon 100x price anomalies are never shown as live
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -18,11 +18,11 @@ jobs:
           for i in 1 2 3 4 5 6 7 8 9 10; do
             version=$(curl -sSL --max-time 12 "$base/health" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("version"))')
             echo "CURRENT_WORKER_VERSION=$version"
-            [ "$version" = '1.2.1' ] && break
+            [ "$version" = '1.2.2' ] && break
             sleep 6
           done
-          test "$version" = '1.2.1'
+          test "$version" = '1.2.2'
           for index in 0 22 37 39 99; do
-            curl -sSL --max-time 20 "$base/qa/check-100?platform=amazon&index=$index&rev=v2" |
-              python3 -c 'import sys,json;v=json.load(sys.stdin);r=v.get("report") or {};print("STRICT_AMAZON_RECHECK="+json.dumps({k:r.get(k) for k in ("sku","storedPrice","priceINR","status","error","identityVerified","source")},ensure_ascii=False))'
+            curl -sSL --max-time 20 "$base/qa/check-100?platform=amazon&index=$index&rev=v3" |
+              python3 -c 'import sys,json;v=json.load(sys.stdin);r=v.get("report") or {};print("STRICT_AMAZON_RECHECK="+json.dumps({k:r.get(k) for k in ("sku","storedPrice","priceINR","rawExtractedPriceINR","status","error","identityVerified","source")},ensure_ascii=False))'
           done
