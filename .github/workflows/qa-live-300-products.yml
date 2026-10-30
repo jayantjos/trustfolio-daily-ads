@@ -1,0 +1,56 @@
+name: TrustFolio - Fresh prices for 300 real products
+on:
+  push:
+    branches: [diagnostics/croma-direct-live-price-20261027]
+    paths: [.github/workflows/qa-live-300-products.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate report builder syntax
+        run: python3 -m py_compile ops/price-worker-diagnostics/generate_300_report.py
+      - name: Confirm new Cloudflare test Worker is live
+        run: |
+          set -euo pipefail
+          base='https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev'
+          v=''
+          for t in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            curl -sSL --max-time 12 "$base/health" > /tmp/tf-health.json
+            v=$(python3 -c 'import json;print(json.load(open("/tmp/tf-health.json")).get("version"))')
+            echo "OWN_WORKER_LIVE_VERSION=$v"
+            if [ "$v" = '1.1.0' ]; then break; fi
+            sleep 8
+          done
+          test "$v" = '1.1.0'
+      - name: Retrieve actual Mongo sampling and Croma audit evidence
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          base='https://api.github.com/repos/jayantjos/trustfolio-daily-ads/actions/jobs'
+          curl -fLsS --retry 3 --max-time 45 \
+            -H "Authorization: Bearer $GH_API_TOKEN" \
+            -H 'Accept: application/vnd.github+json' "$base/124096427603/logs" \
+            -o qa-export.log
+          curl -fLsS --retry 3 --max-time 45 \
+            -H "Authorization: Bearer $GH_API_TOKEN" \
+            -H 'Accept: application/vnd.github+json' "$base/124096156081/logs" \
+            -o qa-croma.log
+          echo "SOURCE_LOGS_READY=YES"
+      - name: Fresh 200 Cloudflare product checks plus 100 Croma saved results
+        run: python3 ops/price-worker-diagnostics/generate_300_report.py
+      - name: Publish clickable manual review report and CSV to QA branch only
+        run: |
+          set -euo pipefail
+          git config user.name "trustfolio-qa-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add qa-reports/2026-10-30-300-product-price-check.*
+          git commit -m "qa: 300 real product fresh-price results with manual marketplace links"
+          git push origin HEAD:diagnostics/croma-direct-live-price-20261027
+          echo 'PRICE_300_REPORT_PUBLISHED=YES'
