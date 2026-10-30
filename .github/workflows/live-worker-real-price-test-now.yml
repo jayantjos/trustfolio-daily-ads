@@ -1,4 +1,4 @@
-name: Live test of legacy Amazon ASIN contract and Flipkart price Worker v0.9.1
+name: Real INR 20000 smartphone Amazon Flipkart live Worker budget QA
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -6,51 +6,40 @@ on:
 permissions:
   contents: read
 jobs:
-  real-cloudflare-price-sample:
+  live-budget-20k:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Wait for version 0.7 and test three real Mongo SKUs without any keys
+      - name: Probe exact 20k ranker candidates from user-owned Cloudflare Worker
         run: |
           set -euo pipefail
           base='https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev'
-          for i in 1 2 3 4 5 6 7 8 9 10; do
-            curl -sSL --max-time 12 "$base/health" > health.json
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            curl -sSL --max-time 12 "$base/health" -o health.json
             version=$(python3 -c 'import json;print(json.load(open("health.json")).get("version"))')
             echo "WORKER_VERSION=$version"
-            if [ "$version" = '0.9.1' ]; then break; fi
+            if [ "$version" = '1.0.0' ]; then break; fi
             sleep 8
           done
-          test "$version" = '0.9.1'
-          python3 - <<'PY'
-          import json
-          x=json.load(open('health.json'))
-          assert x['ready'] is True
-          assert x['monitoring']['testUrl']=='/qa/sample'
-          print('WORKER_V07_READY=YES')
-          PY
-          code=$(curl -sSL --max-time 70 -o sample.json -w '%{http_code}' "$base/qa/sample")
-          echo "LIVE_SAMPLE_HTTP=$code"
-          echo 'SAMPLE_RESPONSE_SAFE_JSON:'
-          cat sample.json
-          echo
-          if [ "$code" != '200' ]; then
-            echo 'SAMPLE_NOT_READY=YES'
-            exit 0
-          fi
+          test "$version" = '1.0.0'
+          code=$(curl -sSL --max-time 55 -o sample.json -w '%{http_code}' "$base/qa/budget20k")
+          echo "BUDGET_20K_HTTP=$code"
+          test "$code" = "200"
           python3 - <<'PY'
           import json
           x=json.load(open('sample.json'))
-          print('SAMPLE_FRESH='+str(x.get('fresh')))
-          print('SAMPLE_RATE_LIMITED='+str(x.get('rateLimited')))
           report=x.get('report') or {}
-          print('REPORT_DATE='+str(report.get('checkedAt')))
-          print('REPORT_RESULT='+str(report.get('result')))
-          print('REPORT_VERIFIED='+str(report.get('verified'))+'/'+str(report.get('total')))
-          for item in report.get('checks',[]):
-              print('LIVE_PRODUCT='+json.dumps(item,ensure_ascii=False))
-          assert report.get('total')==3
-          print('MONGO_WRITES=NONE')
-          print('BROWSER_RUN=DISABLED')
-          print('NO_SECRETS_USED_FROM_GITHUB=YES')
+          print('BUDGET_20K_FRESH='+str(x.get('fresh')))
+          print('BUDGET_20K_DATE='+str(report.get('checkedAt')))
+          print('BUDGET_20K_CATEGORY='+str(report.get('category')))
+          print('BUDGET_20K_VERIFIED='+str(report.get('verified')))
+          print('BUDGET_20K_IN_BUDGET='+str(report.get('withinBudget')))
+          print('BUDGET_20K_OVER_BUDGET='+str(report.get('overBudget')))
+          print('BUDGET_20K_UNVERIFIED='+str(report.get('unverified')))
+          for p in report.get('checks',[]):
+            print('BUDGET_20K_PRODUCT='+json.dumps(p,ensure_ascii=False))
+          assert report.get('budgetINR')==20000
+          assert report.get('checked')==4
+          print('PRODUCTION_MONGODB_WRITES=NONE')
+          print('CROMA_PRODUCTION_PATH=UNCHANGED')
           PY
