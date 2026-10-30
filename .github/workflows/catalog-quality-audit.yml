@@ -1,4 +1,4 @@
-name: ₹20000 MongoDB 3-platform actual Top-5 ranker read-only test
+name: Real ₹20000 multi-category Top5 ranking read-only validation
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
