@@ -1,0 +1,39 @@
+name: Cloudflare Croma exact SKU connectivity and BUY price audit
+on:
+  push:
+    branches: [diagnostics/croma-direct-live-price-20261027]
+    paths:
+      - .github/workflows/croma-cloudflare-readonly-test.yml
+permissions:
+  contents: read
+jobs:
+  test-croma-via-cloudflare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wait for test Worker v0.8, then probe fixed Croma Mongo SKU
+        run: |
+          set -euo pipefail
+          base='https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev'
+          version=''
+          for i in 1 2 3 4 5 6 7 8; do
+            curl -sSL --max-time 12 "$base/health" -o health.json
+            version=$(python3 -c 'import json; print(json.load(open("health.json")).get("version"))')
+            echo "WORKER_VERSION=$version"
+            if [ "$version" = '0.8.0' ]; then break; fi
+            sleep 7
+          done
+          test "$version" = '0.8.0'
+          code=$(curl -sSL --max-time 20 -o croma.json -w '%{http_code}' "$base/qa/croma")
+          echo "CROMA_CLOUDFLARE_QA_HTTP=$code"
+          python3 - <<'PY'
+          import json
+          x=json.load(open('croma.json'))
+          print('CROMA_CLOUDFARE_TEST_RESPONSE='+json.dumps(x,ensure_ascii=False))
+          assert x.get('report',{}).get('sku')=='300154', 'Expected exact SKU'
+          assert x.get('fresh') is True or x.get('rateLimited') is True
+          print('TEST_READ_ONLY=YES')
+          print('MONGO_WRITES=NO')
+          print('NEW_WORKER_CROMA_PROD_INTEGRATION=NO')
+          PY
+          test "$code" = '200'
