@@ -1,4 +1,4 @@
-name: Select production Mongo Amazon candidate for automated price checks
+name: Read-only production Live Price fallback and deletion policy audit
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check audit syntax
-        run: node --check ops/price-worker-diagnostics/select_amazon_monitor_candidate.cjs
+        run: bash -n ops/price-worker-diagnostics/audit_live_price_backend_readonly.sh
       - name: Prepare SSH
         env:
           KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
@@ -35,5 +35,5 @@ jobs:
           USER: ${{ secrets.TF_DEPLOY_USER }}
         run: |
           set -euo pipefail
-          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/select_amazon_monitor_candidate.cjs "$USER@$HOST:~/select_amazon_monitor_candidate.cjs"
-          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && node "$HOME/select_amazon_monitor_candidate.cjs"'
+          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/audit_live_price_backend_readonly.sh "$USER@$HOST:~/audit_live_price_backend_readonly.sh"
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && bash "$HOME/audit_live_price_backend_readonly.sh"'
