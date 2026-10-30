@@ -75,7 +75,9 @@ jobs:
                        '0 14 * * *','0 15 * * *','45 16 * * *',
                        '0 16 * * *','30 16 * * *','30 17 * * *'):
               assert '"'+cron+'": ' in Path('automation/schedule_recovery_v1.py').read_text('utf8')
-          assert "workflow_dispatch" not in cond
+          assert "workflow_dispatch" in cond and "inputs.publish == true" in cond
+          assert "github.event_name == 'push'" not in cond
+          assert "github.event_name == 'pull_request'" not in cond
           assert "steps.already_done.outputs.skip != 'true'" in cond
           assert "RESOLVED_MODE: ${{ steps.already_done.outputs.mode }}" in flow_path.read_text('utf8')
           assert 'if [[ "$today_ist" < "2026-10-21" ]]' in publish['run']

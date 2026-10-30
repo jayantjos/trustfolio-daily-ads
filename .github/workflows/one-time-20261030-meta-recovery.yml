@@ -1,0 +1,32 @@
+name: TrustFolio 30 Oct one-time missing Meta recovery dispatch
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/one-time-20261030-meta-recovery.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  dispatch-missing-modes:
+    if: github.repository == 'jayantjos/trustfolio-daily-ads'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Strictly 30 Oct IST, dispatch existing safe workflow for 3 modes
+        run: |
+          set -euo pipefail
+          today="$(TZ=Asia/Kolkata date +%F)"
+          if [[ "$today" != '2026-10-30' ]]; then
+            echo "ONE_TIME_RESCUE_EXPIRED=$today"
+            exit 0
+          fi
+          for mode in budget brand_budget comparison; do
+            echo "DISPATCHING_META_RECOVERY_MODE=$mode"
+            gh api -X POST \
+              repos/jayantjos/trustfolio-daily-ads/actions/workflows/auto-instagram-campaigns.yml/dispatches \
+              -f ref=main -f "inputs[mode]=$mode" -f 'inputs[publish]=true'
+            echo "DISPATCH_ACCEPTED=$mode"
+          done
+          echo 'Actual IG/FB receipts must be verified from immutable ledger; HTTP 204 is dispatch only.'

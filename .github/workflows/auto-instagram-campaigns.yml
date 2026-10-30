@@ -140,7 +140,7 @@ jobs:
           python -m unittest -v automation.test_auto_campaign_v1 automation.test_20_category_rotation automation.test_live_price_before_publish_v1 automation.test_verify_price_before_meta_publish_v1 automation.test_rebuild_stale_meta_v1
           python -m unittest -v test_campaign_link_contract_v1 test_site_top5_ads_v1 test_ads_spec_sanity
       - name: Build published category/budget history before new campaign
-        if: github.event_name == 'schedule' && steps.already_done.outputs.skip != 'true'
+        if: (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)) && steps.already_done.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -193,7 +193,7 @@ jobs:
               for name in ('category','budget','brand'):
                   value=os.getenv('INPUT_'+name.upper())
                   if value: cmd.extend(('--'+name,value))
-          if event=='schedule':
+          if event=='schedule' or (event=='workflow_dispatch' and os.getenv('INPUT_PUBLISH')=='true'):
               cmd.extend(('--used-budgets-file','campaign/history.json'))
           subprocess.run(cmd,check=True)
           plan=json.load(open('campaign/plan.json'))
@@ -325,7 +325,7 @@ jobs:
         # Each schedule call may produce at most one IG and one FB post.
         # Website must return all five same-brand products or brand slot skips.
         # Old Oct 20-25 Metricool queue was canceled into drafts; no duplicate posting.
-        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && github.event_name == 'schedule' && steps.already_done.outputs.skip != 'true'
+        if: steps.plan.outputs.eligible == 'true' && env.TF_META_DIRECT_PUBLISH_ENABLED == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)) && steps.already_done.outputs.skip != 'true'
         env:
           TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -370,7 +370,7 @@ jobs:
       - name: Archive FINAL verified Meta campaign for optional LinkedIn and X reuse
         # After publication, because a ranking drift can rebuild the JPG and ID.
         # This does not publish anything and does not change Meta scheduling.
-        if: always() && github.event_name == 'schedule' && steps.plan.outputs.eligible == 'true'
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.publish == true)) && steps.plan.outputs.eligible == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: trustfolio-social-final-${{ github.run_id }}
