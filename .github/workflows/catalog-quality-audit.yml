@@ -1,4 +1,4 @@
-name: Shadow MongoDB 20k price update and replacement QA rerun
+name: Worker URL-only migration key and legacy API contract check
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check audit syntax
-        run: node --check ops/price-worker-diagnostics/test_20k_shadow_mongo_integrated.cjs
+        run: node --check ops/price-worker-diagnostics/verify_existing_worker_key_url_only.cjs
       - name: Prepare SSH
         env:
           KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
@@ -35,5 +35,5 @@ jobs:
           USER: ${{ secrets.TF_DEPLOY_USER }}
         run: |
           set -euo pipefail
-          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/test_20k_shadow_mongo_integrated.cjs "$USER@$HOST:~/test_20k_shadow_mongo_integrated.cjs"
-          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && node "$HOME/test_20k_shadow_mongo_integrated.cjs"'
+          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/verify_existing_worker_key_url_only.cjs "$USER@$HOST:~/verify_existing_worker_key_url_only.cjs"
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && node "$HOME/verify_existing_worker_key_url_only.cjs"'
