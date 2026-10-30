@@ -1,4 +1,4 @@
-name: Verify Croma API from original TrustFolio VPS versus Cloudflare
+name: Read-only Top 5 live fetch and product DTO fallback audit
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check audit syntax
-        run: bash -n ops/price-worker-diagnostics/test_croma_vps_http_readonly.sh
+        run: bash -n ops/price-worker-diagnostics/audit_search_live_checks_readonly.sh
       - name: Prepare SSH
         env:
           KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
@@ -35,5 +35,5 @@ jobs:
           USER: ${{ secrets.TF_DEPLOY_USER }}
         run: |
           set -euo pipefail
-          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/test_croma_vps_http_readonly.sh "$USER@$HOST:~/test_croma_vps_http_readonly.sh"
-          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && bash "$HOME/test_croma_vps_http_readonly.sh"'
+          scp -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes ops/price-worker-diagnostics/audit_search_live_checks_readonly.sh "$USER@$HOST:~/audit_search_live_checks_readonly.sh"
+          ssh -o BatchMode=yes -o ConnectTimeout=12 -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && bash "$HOME/audit_search_live_checks_readonly.sh"'
