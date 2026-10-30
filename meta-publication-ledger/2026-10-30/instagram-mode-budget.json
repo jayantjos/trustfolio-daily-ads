@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 3000,
   "campaign_id": "tfauto-e6d2530e72b2314510",
+  "category": "headphones-earbuds",
   "container_id": "17918439834530469",
+  "meta_media_id": "17909957820575260",
   "mode": "budget",
   "network": "instagram",
-  "recorded_at": "2026-10-30T18:37:50.591067+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-10-30T18:37:55.385415+05:30",
+  "status": "api_accepted_published"
 }
