@@ -8,10 +8,14 @@ const uri=['MONGODB_URI','MONGO_URI','MONGO_URL','MONGODB_URL','DB_URI','DATABAS
 const {workerItem}=req('./services/LivePriceService');
 (async()=>{
  await mongoose.connect(uri,{dbName:'trustfolio',serverSelectionTimeoutMS:9000});
- const docs=await mongoose.connection.collection('my_products').find(
-  {platform:{$in:['amazon','flipkart','croma']},price_inr:{$gte:250,$lte:150000}},
-  {projection:{platform:1,platform_product_id:1,category:1,title:1,brand:1,product_url:1,original_product_url:1,price_inr:1,live:1}}
- ).sort({'live.checked_at':-1}).limit(12000).toArray();
+ const docs=[];
+ for(const platform of ['amazon','flipkart','croma']){
+  const items=await mongoose.connection.collection('my_products').find(
+   {platform,price_inr:{$gte:250,$lte:150000}},
+   {projection:{platform:1,platform_product_id:1,category:1,title:1,brand:1,product_url:1,original_product_url:1,price_inr:1,live:1}}
+  ).sort({'live.checked_at':-1}).limit(4500).toArray();
+  docs.push(...items);
+ }
  const groups={amazon:[],flipkart:[],croma:[]};
  const skipped={amazon:{},flipkart:{},croma:{}};
  for(const d of docs){
