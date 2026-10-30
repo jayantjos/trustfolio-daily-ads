@@ -34,8 +34,9 @@ class TestSourceDiscovery(unittest.TestCase):
         def fetch(path,token):
             return {"workflow_runs":[
                 {"id":1,"name":"TrustFolio automated Instagram campaigns","event":"push","head_branch":"main","conclusion":"success"},
-                {"id":2,"name":"TrustFolio automated Instagram campaigns","event":"schedule","head_branch":"main","conclusion":"success"}]}
-        self.assertEqual([x["id"] for x in source_candidates("GH",fetch=fetch)],[2])
+                {"id":2,"name":"TrustFolio automated Instagram campaigns","event":"schedule","head_branch":"main","conclusion":"success"},
+                {"id":3,"name":"TrustFolio automated Instagram campaigns","event":"workflow_dispatch","head_branch":"main","conclusion":"success"}]}
+        self.assertEqual([x["id"] for x in source_candidates("GH",fetch=fetch)],[2,3])
 
     def test_fails_closed_if_no_matching_artifact(self):
         with tempfile.TemporaryDirectory() as tmp:
