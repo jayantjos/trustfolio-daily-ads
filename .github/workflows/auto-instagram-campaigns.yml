@@ -145,7 +145,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          python automation/posting_history_v1.py --output campaign/history.json --lookback-days 45
+          python -m automation.posting_history_v1 --output campaign/history.json --lookback-days 45
 
       - name: Pick eligible site-ranked campaign deterministically
         if: steps.already_done.outputs.skip != 'true'
