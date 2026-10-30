@@ -20,7 +20,9 @@ jobs:
           from urllib.request import Request,urlopen
           from urllib.error import HTTPError
           from zoneinfo import ZoneInfo
-          day=datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()
+          now=datetime.now(ZoneInfo('Asia/Kolkata'))
+          from datetime import timedelta
+          day=(now.date()-timedelta(days=1 if now.hour<7 else 0)).isoformat()
           repo='jayantjos/trustfolio-daily-ads'
           modes=('budget','brand_budget','comparison')
           def read(branch,path):
