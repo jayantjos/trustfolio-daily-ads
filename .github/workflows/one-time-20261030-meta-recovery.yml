@@ -10,7 +10,7 @@ jobs:
   dispatch-missing-modes:
     if: github.repository == 'jayantjos/trustfolio-daily-ads'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 180
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -22,11 +22,55 @@ jobs:
             echo "ONE_TIME_RESCUE_EXPIRED=$today"
             exit 0
           fi
-          for mode in budget brand_budget comparison; do
-            echo "DISPATCHING_META_RECOVERY_MODE=$mode"
-            gh api -X POST \
-              repos/jayantjos/trustfolio-daily-ads/actions/workflows/auto-instagram-campaigns.yml/dispatches \
-              -f ref=main -f "inputs[mode]=$mode" -f 'inputs[publish]=true'
-            echo "DISPATCH_ACCEPTED=$mode"
-          done
+          # GitHub Actions concurrency permits just one pending run per group.
+          # Never dispatch the next mode while a prior mode is queued/running.
+          python - <<'PY'
+          import datetime,json,os,time,urllib.request
+          base="https://api.github.com/repos/jayantjos/trustfolio-daily-ads"
+          token=os.environ["GH_TOKEN"]
+          def api(path, payload=None):
+              headers={"Authorization":"Bearer "+token,"Accept":"application/vnd.github+json",
+                       "User-Agent":"TrustFolio-30Oct-Recovery"}
+              req=urllib.request.Request(base+path,headers=headers,
+                  data=json.dumps(payload).encode() if payload is not None else None,
+                  method="POST" if payload is not None else "GET")
+              with urllib.request.urlopen(req,timeout=30) as resp:
+                  body=resp.read()
+              return json.loads(body) if body else {}
+          def active_dispatches():
+              items=api("/actions/workflows/auto-instagram-campaigns.yml/runs?event=workflow_dispatch&per_page=20")
+              return [r for r in items.get("workflow_runs",[]) if r.get("status") in ("queued","pending","in_progress","waiting","requested")]
+          def wait_until_clear(max_seconds):
+              deadline=time.monotonic()+max_seconds
+              while time.monotonic()<deadline:
+                  current=active_dispatches()
+                  if not current:return
+                  print("WAIT_PREVIOUS_DISPATCH="+",".join(str(r["id"]) for r in current),flush=True)
+                  time.sleep(15)
+              raise SystemExit("Existing Meta dispatch still active; no new post started")
+          if datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5,minutes=30))).date().isoformat()!="2026-10-30":
+              raise SystemExit("One-time rescue date expired; no dispatch")
+          wait_until_clear(2400)
+          for mode in ("budget","brand_budget","comparison"):
+              before={r["id"] for r in api("/actions/workflows/auto-instagram-campaigns.yml/runs?event=workflow_dispatch&per_page=20").get("workflow_runs",[])}
+              api("/actions/workflows/auto-instagram-campaigns.yml/dispatches",
+                  {"ref":"main","inputs":{"mode":mode,"publish":"true"}})
+              print("DISPATCH_ACCEPTED="+mode,flush=True)
+              # A job cannot be assumed successful on HTTP 204.
+              time.sleep(8)
+              run=None
+              for attempt in range(12):
+                  matches=[r for r in api("/actions/workflows/auto-instagram-campaigns.yml/runs?event=workflow_dispatch&per_page=20").get("workflow_runs",[]) if r["id"] not in before]
+                  if matches:
+                      run=sorted(matches,key=lambda x:x["id"],reverse=True)[0]
+                      break
+                  time.sleep(5)
+              if run is None:
+                  raise SystemExit("Dispatched mode but cannot identify its run")
+              rid=run["id"]
+              print("DISPATCH_MODE="+mode+" RUN_ID="+str(rid),flush=True)
+              wait_until_clear(2700)
+              status=api("/actions/runs/"+str(rid))
+              print("MODE_COMPLETED="+mode+" CONCLUSION="+str(status.get("conclusion")),flush=True)
+          PY
           echo 'Actual IG/FB receipts must be verified from immutable ledger; HTTP 204 is dispatch only.'
