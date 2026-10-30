@@ -1,4 +1,4 @@
-name: Cloudflare v0.7.2 real Amazon Flipkart price extraction test
+name: Live test of legacy Amazon ASIN contract and Flipkart price Worker v0.9.1
 on:
   push:
     branches: [diagnostics/croma-direct-live-price-20261027]
@@ -14,14 +14,14 @@ jobs:
         run: |
           set -euo pipefail
           base='https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev'
-          for i in 1 2 3 4 5 6 7 8 9; do
+          for i in 1 2 3 4 5 6 7 8 9 10; do
             curl -sSL --max-time 12 "$base/health" > health.json
             version=$(python3 -c 'import json;print(json.load(open("health.json")).get("version"))')
             echo "WORKER_VERSION=$version"
-            if [ "$version" = '0.7.2' ]; then break; fi
+            if [ "$version" = '0.9.1' ]; then break; fi
             sleep 8
           done
-          test "$version" = '0.7.2'
+          test "$version" = '0.9.1'
           python3 - <<'PY'
           import json
           x=json.load(open('health.json'))
