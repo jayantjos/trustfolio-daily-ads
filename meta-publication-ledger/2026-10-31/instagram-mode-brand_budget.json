@@ -1,8 +1,12 @@
 {
+  "brand": "Motorola",
+  "budget_inr": 23213,
   "campaign_id": "tfauto-2f571d3d6c33c7befc",
+  "category": "smart-phones",
   "container_id": "17918647773530469",
+  "meta_media_id": "18109219439215606",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-10-31T19:32:45.423573+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-10-31T19:33:07.052181+05:30",
+  "status": "api_accepted_published"
 }
