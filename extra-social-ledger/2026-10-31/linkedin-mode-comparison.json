@@ -1,1 +1,1 @@
-{"network": "linkedin", "mode": "comparison", "campaign_id": "tfauto-a35d0ea76fde56f080", "status": "reserved", "reserved_at": "2026-10-31T21:05:00.242048+05:30"}
+{"network": "linkedin", "mode": "comparison", "campaign_id": "tfauto-a35d0ea76fde56f080", "status": "buffer_api_accepted_scheduled", "reserved_at": "2026-10-31T21:05:00.242048+05:30", "buffer_post_id": "6ae60aa637c1acd2a0b7fb96", "due_at_utc": "2026-10-31T15:40:01.526Z", "recorded_at": "2026-10-31T21:05:03.481387+05:30"}
