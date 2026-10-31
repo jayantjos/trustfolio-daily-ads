@@ -1,8 +1,11 @@
 {
+  "brand": "Motorola",
+  "budget_inr": 23213,
   "campaign_id": "tfauto-2f571d3d6c33c7befc",
+  "category": "smart-phones",
+  "meta_photo_or_post_id": "122212638998911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-2f571d3d6c33c7befc.jpg",
-  "reserved_at": "2026-10-31T19:33:08.404365+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-10-31T19:33:15.131519+05:30",
+  "status": "api_accepted_published"
 }
