@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 13125,
   "campaign_id": "tfauto-fc1315c0cd41289f2a",
+  "category": "tablets",
+  "meta_photo_or_post_id": "122212822940911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-fc1315c0cd41289f2a.jpg",
-  "reserved_at": "2026-11-01T15:26:38.953068+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-01T15:26:46.842974+05:30",
+  "status": "api_accepted_published"
 }
