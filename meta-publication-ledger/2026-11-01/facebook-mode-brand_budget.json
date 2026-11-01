@@ -1,8 +1,11 @@
 {
+  "brand": "Samsung",
+  "budget_inr": 14322,
   "campaign_id": "tfauto-f2fea8fffdd9307e43",
+  "category": "microwave-oven",
+  "meta_photo_or_post_id": "122212826150911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-f2fea8fffdd9307e43.jpg",
-  "reserved_at": "2026-11-01T16:02:04.994441+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-01T16:02:11.565926+05:30",
+  "status": "api_accepted_published"
 }
