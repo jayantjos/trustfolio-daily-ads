@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 13125,
   "campaign_id": "tfauto-fc1315c0cd41289f2a",
+  "category": "tablets",
   "container_id": "17918855448530469",
+  "meta_media_id": "18075380327754751",
   "mode": "budget",
   "network": "instagram",
-  "recorded_at": "2026-11-01T15:26:33.203483+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-01T15:26:37.276263+05:30",
+  "status": "api_accepted_published"
 }
