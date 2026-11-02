@@ -1,0 +1,86 @@
+name: Remaining mappings and candidate metadata read only
+on:
+  push:
+    branches: [final-live-integration-20261103]
+    paths: ['.github/workflows/final-live-integration-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Authenticate to existing VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Read only four exact records and bounded candidate metadata
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY' > mapping-readonly.json
+          import os,json,re,hashlib,math
+          from pathlib import Path
+          from dotenv import load_dotenv
+          from pymongo import MongoClient
+          from bson import ObjectId
+          load_dotenv(Path.home()/'new_scraper/.env')
+          uri=os.getenv('MONGODB_URI') or os.getenv('MONGO_URI') or os.getenv('MONGODB_URL')
+          assert uri
+          client=MongoClient(uri,serverSelectionTimeoutMS=8000,appname='TrustFolioFinalReadOnlyMappings')
+          db=client[os.getenv('MONGODB_DB','trustfolio')]
+          col=db[os.getenv('PRODUCT_COLLECTION','my_products')]
+          ids={155:'69f419289a622ea2d7ccb608',234:'69f4026f9a622ea2d7ccb2e6','hp':'69f89be69a622ea2d7ce0b9c','lenovo':'69f4192b9a622ea2d7ccb68b'}
+          docs={}
+          for label,id in ids.items():
+           d=col.find_one({'_id':ObjectId(id)},max_time_ms=5000)
+           docs[str(label)]=None if not d else {'_id':str(d['_id']),'allFieldNames':list(d),'identityAndPriceFields':{k:v for k,v in d.items() if re.search(r'id|url|link|title|name|model|variant|brand|spec|asin|pid|sku|category|price|stock|availability',k,re.I)}}
+          pool=[]
+          for category in ['ceiling-fans','washing-machines']:
+           for platform in ['amazon','flipkart','croma']:
+            q={'platform':{'$regex':'^'+platform+'$','$options':'i'},'$or':[{'category':category},{'category_slug':category}], 'isActive':{'$ne':False}}
+            pool.extend(list(col.find(q).sort('_id',1).limit(8).max_time_ms(5000)))
+          def price(d):
+           for k in ['price','price_inr','currentPriceValue','currentPrice']:
+            try:
+             x=float(re.sub(r'[^0-9.]','',str(d.get(k,''))))
+             if x>0:return x
+            except:pass
+           return None
+          def mapping(d):
+           vals=[str(d.get(k,'')) for k in ['platform_product_id','asin','original_product_url','url','clean_url','product_url','productUrl']]
+           p=str(d.get('platform','')).lower()
+           return (p=='amazon' and any(re.search(r'B0[A-Z0-9]{8}',s,re.I) for s in vals)) or (p=='flipkart' and any('flipkart.com/' in s and re.search(r'[?&]pid=[A-Z0-9]{12,24}',s,re.I) for s in vals)) or (p=='croma' and re.fullmatch(r'\d{4,12}',str(d.get('platform_product_id',''))))
+          bands=[]
+          for category in ['ceiling-fans','washing-machines']:
+           ds=[d for d in pool if (d.get('category_slug') or d.get('category'))==category and price(d) and mapping(d)]
+           for budget in sorted({math.ceil(price(d)) for d in ds}):
+            eligible=[d for d in ds if .9*budget<=price(d)<=budget]
+            bands.append({'category':category,'budget':budget,'count':len(eligible),'platforms':list(set(str(d.get('platform')).lower() for d in eligible)),'ids':[str(d['_id']) for d in eligible][:8]})
+          bands.sort(key=lambda b:(min(b['count'],8),len(b['platforms'])) ,reverse=True)
+          root=Path.home()/'apps/trustfolio/node-backend'
+          hashes={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in ['services/LivePriceService.js','services/LiveBudgetRecommendationService.js','services/ProductRecommendationService.js','services/ProductAvailabilityPolicy.js','services/CromaLivePriceDirect.js','services/CategoryService.js','controllers/ProductController.js','scripts/trustfolio-category-price-watcher.js']}
+          client.close()
+          print('READONLY_MAPPING='+json.dumps({'status':'PASS','productionWrites':0,'documents':docs,'boundedCatalogRowsRead':len(pool),'candidateBands':bands[:5],'sourceHashes':hashes},default=str))
+          
+          PY
+          rm -f ~/.ssh/id_ed25519
+          cat mapping-readonly.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-mapping-readonly
+          path: mapping-readonly.json
+          retention-days: 30
