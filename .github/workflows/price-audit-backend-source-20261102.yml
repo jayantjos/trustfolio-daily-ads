@@ -1,0 +1,58 @@
+name: Read-only backend source and runtime configuration review
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/price-audit-backend-source-20261102.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Authenticate to existing VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Inspect existing backend metadata and authentication without DB writes
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=20 "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY' > backend-price-inspection.json
+          import json,re,subprocess
+          from pathlib import Path
+          from dotenv import dotenv_values
+          root=Path.home()/'apps'/'trustfolio'/'node-backend'
+          procs=json.loads(subprocess.check_output(['pm2','jlist'],text=True,stderr=subprocess.DEVNULL))
+          runtime=next((p.get('pm2_env',{}) for p in procs if p.get('name')=='trustfolio-backend'),{})
+          values={**dotenv_values(root/'.env'),**runtime}
+          sources={}
+          for rel in ['services/LivePriceService.js','services/LiveBudgetRecommendationService.js','services/ProductRecommendationService.js','services/CromaLivePriceDirect.js','controllers/LivePriceController.js']:
+              text=(root/rel).read_text()
+              text=re.sub(r'(?i)((?:key|token|secret|password)\s*[:=]\s*)[\'"][^\'"]+[\'"]',r'\1"[REDACTED]"',text)
+              text=re.sub(r'[A-Za-z0-9_-]{40,}', '[LONG_LITERAL_REDACTED]',text)
+              sources[rel]=text
+          worker_vars={k:bool(v) for k,v in values.items() if 'WORKER' in k}
+          print(json.dumps({'sources':sources,'runtime_worker_variables_present':worker_vars,'mongo_writes':0}))
+          PY
+          cat backend-price-inspection.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-price-readonly-inspection
+          path: backend-price-inspection.json
+          retention-days: 30
