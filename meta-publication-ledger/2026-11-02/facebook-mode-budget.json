@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 3177,
   "campaign_id": "tfauto-51af706c6cb98f6057",
+  "category": "headphones-earbuds",
+  "meta_photo_or_post_id": "122213034104911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-51af706c6cb98f6057.jpg",
-  "reserved_at": "2026-11-02T15:51:46.304384+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-02T15:51:57.254130+05:30",
+  "status": "api_accepted_published"
 }
