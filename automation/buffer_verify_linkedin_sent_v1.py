@@ -99,7 +99,7 @@ def main():
     args=p.parse_args()
     now=datetime.now(IST)
     if args.day:
-        if not re.fullmatch(r"20\\d{2}-\\d{2}-\\d{2}",args.day):
+        if not re.fullmatch(r"20\d{2}-\d{2}-\d{2}",args.day):
             p.error("Invalid --day")
         try:
             datetime.strptime(args.day,"%Y-%m-%d")
