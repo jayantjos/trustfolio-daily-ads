@@ -1,0 +1,84 @@
+name: Isolated disposable Mongo staging acceptance
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/final-staging-acceptance.yml']
+permissions:
+  contents: read
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mongodb:
+        image: mongo:7
+        ports: ['27017:27017']
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Authenticate to existing VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Copy source text only; never load production database credentials
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PYSRC' > private-sources.json
+          import json
+          from pathlib import Path
+          root=Path.home()/'apps/trustfolio/node-backend/services'
+          data={n:(root/n).read_text() for n in ['LivePriceService.js','LiveBudgetRecommendationService.js','ProductAvailabilityPolicy.js']}
+          assert not any('mongodb://' in s or 'mongodb+srv://' in s for s in data.values())
+          print(json.dumps(data))
+          PYSRC
+          rm -f ~/.ssh/id_ed25519
+      - name: Observe staging credential readiness without values
+        env:
+          WORKER_KEY: ${{ secrets.TF_STAGING_PRICE_WORKER_KEY }}
+          STAGING_URL: ${{ vars.TF_STAGING_PRICE_WORKER_URL }}
+        run: |
+          python3 - <<'PY'
+          import os,json
+          print('STAGING_AUTH_READINESS='+json.dumps({'matchingKeyConfigured':bool(os.getenv('WORKER_KEY')),'dedicatedStagingWorkerUrlConfigured':bool(os.getenv('STAGING_URL')),'productionSecretRead':False}))
+          PY
+      - name: Real disposable Mongo tests with simulated retailer responses
+        env:
+          STAGING_MONGO_URI: mongodb://127.0.0.1:27017/trustfolio_acceptance_disposable
+        run: |
+          npm install --no-audit --no-fund --ignore-scripts mongoose@8
+          cat > staging.cjs <<'JSTEST'
+          const fs=require('fs'),vm=require('vm'),m=require('mongoose'),assert=require('assert/strict');
+          (async()=>{const uri=process.env.STAGING_MONGO_URI;assert.equal(uri,'mongodb://127.0.0.1:27017/trustfolio_acceptance_disposable');await m.connect(uri);const db=m.connection.db;assert.equal(db.databaseName,'trustfolio_acceptance_disposable');const sources=JSON.parse(fs.readFileSync('private-sources.json'));let live=sources['LivePriceService.js'];live=live.replace("doc.clean_url || doc.url || doc.productUrl","doc.clean_url || doc.product_url || doc.url || doc.productUrl").replace('platform: 1, asin: 1, url: 1, clean_url: 1, productUrl: 1, original_product_url: 1,','platform: 1, asin: 1, url: 1, clean_url: 1, product_url: 1, productUrl: 1, original_product_url: 1,').replace("  const availabilityKind = classify(result);","  if (result.status === 'ok' && (result.inStock === false || result.in_stock === false)) result={...result,status:'error',error:'inconsistent_stock_and_price'};\n  const availabilityKind = classify(result);").replace("const priced = (liveStatus === 'ok' || liveStatus === 'out_of_stock') && result.priceNum > 0;","const priced = liveStatus === 'ok' && result.priceNum > 0;").replace("? result.in_stock : liveStatus === 'ok',","? result.in_stock : Object.prototype.hasOwnProperty.call(result,'inStock') ? result.inStock : null,");
+          function load(src,require){const module={exports:{}};vm.runInNewContext(src,{module,exports:module.exports,require,process:{env:{PRICE_WORKER_URL:'https://staging-fixture.invalid',PRICE_WORKER_KEY:'ephemeral-fixture-key',LIVE_PRICE_FRESH_MS:'-1'}},Date,Number,String,Boolean,Set,Map,Math,Array,Promise,JSON,AbortSignal,fetch:async()=>({ok:true,json:async()=>({results:[{asin:'B074J9SPYX',amazon:response}]})})});return module.exports;}
+          let response={},invalidations=0;const policy=load(sources['ProductAvailabilityPolicy.js'],()=>{throw Error('unexpected dependency')});const service=load(live,n=>n==='mongoose'?m:n==='./ProductAvailabilityPolicy'?policy:n==='./CromaLivePriceDirect'?{canFetchCroma:()=>false}:n==='../controllers/ProductController'?{invalidatePriceCaches:()=>invalidations++}:(()=>{throw Error(n)})());
+          const col=db.collection('my_products'),archive=db.collection('my_products_deleted'),evidence=[];
+          const id=new m.Types.ObjectId();await col.insertOne({_id:id,platform:'amazon',asin:'B074J9SPYX',price:'100',price_inr:100,currentPriceValue:100});response={status:'ok',priceNum:2499,inStock:null};await service.getLivePrices([id]);let doc=await col.findOne({_id:id});assert.equal(doc.price,'2499');assert.equal(doc.price_inr,2499);assert.equal(doc.currentPriceValue,2499);assert.equal(doc.live.in_stock,null);assert.ok(doc.live.checked_at);evidence.push({test:'canonical_price_update',type:'REAL disposable MongoDB + actual patched service; simulated retailer quote',pass:true,productId:String(id),price:2499,stock:null});
+          for(const failure of [{status:'error',error:'store_http_429'},{status:'error',error:'store_http_502'},{status:'error',error:'TimeoutError'},{status:'error',error:'invalid_json'},{status:'error',error:'identity_mismatch'},{status:'error',error:'not_deliverable'},{status:'no_price'}]){response=failure;await service.getLivePrices([id]);doc=await col.findOne({_id:id});assert.equal(doc.price_inr,2499);assert.ok(doc);evidence.push({test:'failure_preserves_price_and_product',type:'REAL MongoDB, simulated retailer failure',error:failure.error||failure.status,pass:true});}
+          for(const status of ['out_of_stock','discontinued']){const oid=new m.Types.ObjectId();await col.insertOne({_id:oid,platform:'amazon',asin:'B074J9SPYX',price_inr:100});response={status,availability:status,in_stock:false,priceNum:null};await service.getLivePrices([oid]);assert.equal(await col.findOne({_id:oid}),null);const saved=await archive.findOne({_id:oid});assert.ok(saved);delete saved.deleted_at;delete saved.deleted_reason;await col.insertOne(saved);assert.ok(await col.findOne({_id:oid}));evidence.push({test:status+'_archive_delete_restore',type:'REAL disposable MongoDB; simulated explicit stock evidence',pass:true});}
+          const amb=new m.Types.ObjectId();await col.insertOne({_id:amb,platform:'amazon',asin:'B074J9SPYX',price_inr:100});response={status:'not_available',availability:'not_available'};await service.getLivePrices([amb]);assert.ok(await col.findOne({_id:amb}));await service.getLivePrices([amb]);assert.equal(await col.findOne({_id:amb}),null);assert.ok(await archive.findOne({_id:amb}));evidence.push({test:'ambiguous_requires_two_checks',type:'REAL disposable MongoDB; simulated evidence',pass:true});
+          const ids=Array.from({length:7},()=>new m.Types.ObjectId());await col.insertMany(ids.map(_id=>({_id,platform:'amazon',asin:'B074J9SPYX',price_inr:100})));response={status:'out_of_stock',in_stock:false};await service.getLivePrices(ids);assert.equal(await archive.countDocuments({_id:{$in:ids}}),5);evidence.push({test:'five_removal_cap',type:'REAL disposable MongoDB; simulated OOS',pass:true});
+          const report={productionWrites:0,disposableDatabase:db.databaseName,retailerNetworkCalls:0,realRetailerIntegration:false,controllerCacheInvalidationCalls:invalidations,minmaxWatcherTested:false,archiveBeforeDelete:'Final archive/delete states verified; operation ordering is source-inspected, not runtime-instrumented',evidence};fs.writeFileSync('mongo-staging-results.json',JSON.stringify(report,null,2));console.log('STAGING_RESULT='+JSON.stringify(report));await m.disconnect();})().catch(e=>{console.error(e.name+': '+e.message);process.exit(1)});
+          JSTEST
+          node staging.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: disposable-mongo-acceptance-results
+          path: mongo-staging-results.json
+          retention-days: 30
