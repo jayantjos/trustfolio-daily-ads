@@ -1,0 +1,26 @@
+name: Remove only final integration encrypted transport artifacts
+on:
+  push:
+    branches: [final-live-integration-20261103]
+    paths: ['.github/workflows/final-integration-cleanup.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Delete exact encrypted-source artifacts after result preservation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for run in 41506362145 41507384017; do
+            ids=$(gh api "repos/$GH_REPO/actions/runs/$run/artifacts" --jq '.artifacts[] | select(.name=="final-real-encrypted-source") | .id')
+            for id in $ids; do
+              gh api -X DELETE "repos/$GH_REPO/actions/artifacts/$id"
+              echo "Removed encrypted source artifact $id from run $run"
+            done
+          done
