@@ -115,7 +115,7 @@ jobs:
           await m.connect(uri);assert.equal(m.connection.db.databaseName,'trustfolio_acceptance_disposable');
           const snapshots=JSON.parse(fs.readFileSync('private-sources.json'));
           const root=require('path').resolve('backend');
-          for(const [p,s] of Object.entries(snapshots.sources)){assert.ok(!p.includes('..'));assert.ok(!/mongodb(?:\\+srv)?:\\/\\//.test(s),'Unexpected Mongo URI in source '+p);const f=require('path').join(root,p);fs.mkdirSync(require('path').dirname(f),{recursive:true});fs.writeFileSync(f,s);}
+          for(const [p,s] of Object.entries(snapshots.sources)){assert.ok(!p.includes('..'));assert.ok(!s.includes('mongodb:') && !s.includes('mongodb+srv:'),'Unexpected Mongo URI in source '+p);const f=require('path').join(root,p);fs.mkdirSync(require('path').dirname(f),{recursive:true});fs.writeFileSync(f,s);}
           fs.mkdirSync(root+'/config',{recursive:true});
           fs.writeFileSync(root+'/config/mongo.js',"module.exports=async()=>require('mongoose').connect(process.env.STAGING_MONGO_URI);");
           let live=fs.readFileSync(root+'/services/LivePriceService.js','utf8');
