@@ -1,0 +1,91 @@
+name: Targeted read-only Croma VPS comparison
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/targeted-croma-vps-20261102.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Authenticate to existing VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Read current sources and compare exact Croma records without writes
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY' > targeted-vps.json
+          import json,os,subprocess,hashlib,re
+          from pathlib import Path
+          from dotenv import load_dotenv,dotenv_values
+          from pymongo import MongoClient
+          root=Path.home()/'apps/trustfolio/node-backend'
+          load_dotenv(Path.home()/'new_scraper/.env')
+          uri=os.getenv('MONGODB_URI') or os.getenv('MONGO_URI') or os.getenv('MONGODB_URL')
+          c=MongoClient(uri,serverSelectionTimeoutMS=8000,appname='TrustFolioTargetedReadOnlyCroma')
+          col=c[os.getenv('MONGODB_DB','trustfolio')][os.getenv('PRODUCT_COLLECTION','my_products')]
+          base={'platform':{'$regex':'^croma$','$options':'i'}}
+          fields={k:1 for k in ['platform','platform_product_id','title','brand','category','price_inr','product_url','url','live.status']}
+          docs=[]
+          def add(d):
+           if d and str(d.get('platform_product_id','')).isdigit() and all(str(x['platform_product_id'])!=str(d['platform_product_id']) for x in docs):docs.append(d)
+          for sku in ['317463','300154']:
+           add(col.find_one({**base,'platform_product_id':{'$in':[sku,int(sku)]}},fields,max_time_ms=5000))
+          for d in col.find({**base,'live.status':{'$in':['no_price','error']}},fields).sort('_id',1).limit(2).max_time_ms(5000):add(d)
+          for cat in ['laptops','washing-machines','smart-phones']:
+           if len(docs)>=6:break
+           add(col.find_one({**base,'category':cat},fields,max_time_ms=5000))
+          for d in col.find(base,fields).sort('_id',1).limit(12).max_time_ms(5000):
+           if len(docs)>=6:break
+           add(d)
+          c.close()
+          for d in docs:d['_id']=str(d['_id'])
+          js=r'''
+          const fs=require('fs'),vm=require('vm'),cp=require('child_process'),crypto=require('crypto');
+          const docs=JSON.parse(fs.readFileSync(0,'utf8')),source=fs.readFileSync('./services/CromaLivePriceDirect.js','utf8');
+          (async()=>{const results=[];for(const doc of docs){const traces=[];const mod={exports:{}};
+          const wrapped={...cp,execFile(file,args,options,callback){const start=Date.now(),at=new Date().toISOString();
+          cp.execFile(file,['-D','-',...args],options,(err,out,stderr)=>{let body=out||'',headers={};const split=body.lastIndexOf('\r\n\r\n');if(split>=0){const h=body.slice(0,split);body=body.slice(split+4);for(const line of h.split(/\r?\n/)){const m=/^([^:]+):\s*(.*)$/.exec(line);if(m&&/^(date|age|cache-control|expires|etag|last-modified|x-cache|content-type|cf-cache-status|vary)$/i.test(m[1]))headers[m[1].toLowerCase()]=m[2];}headers.httpStatus=Number([...h.matchAll(/HTTP\/\S+\s+(\d+)/g)].at(-1)?.[1])||null;}
+          let data;try{data=JSON.parse(body)}catch{}const hit=data?.products?.find(x=>['code','skuId','productCode','id'].some(k=>String(x[k]??'')===String(doc.platform_product_id)));
+          traces.push({at,latencyMs:Date.now()-start,url:args.at(-1),headers,error:err?'curl_failed':null,productCount:data?.products?.length??null,pagination:data?.pagination??null,exactRow:hit??null});callback(err,body,stderr);});}};
+          vm.runInNewContext(source,{require:s=>s==='node:child_process'?wrapped:require(s),module:mod,exports:mod.exports,process:{env:process.env},URLSearchParams,Date,Promise,Map,Number,String,Boolean,Set});
+          const start=Date.now();const result=await mod.exports.fetchCromaDirect(doc);results.push({doc,result,latencyMs:Date.now()-start,traces});}
+          console.log(JSON.stringify(results));})();
+          '''
+          p=subprocess.run(['node','-e',js],input=json.dumps(docs),cwd=root,capture_output=True,text=True,timeout=240)
+          try:comparison=json.loads(p.stdout.strip().splitlines()[-1])
+          except:comparison={'error':'instrumented_direct_no_json','exitCode':p.returncode}
+          sources={}
+          for rel in ['services/CromaLivePriceDirect.js','services/LivePriceService.js','services/LiveBudgetRecommendationService.js','services/ProductAvailabilityPolicy.js']:
+           s=(root/rel).read_text();sources[rel]={'sha256':hashlib.sha256(s.encode()).hexdigest(),'source':s}
+          procs=json.loads(subprocess.check_output(['pm2','jlist'],text=True,stderr=subprocess.DEVNULL));env=next((x.get('pm2_env',{}) for x in procs if x.get('name')=='trustfolio-backend'),{})
+          values={**dotenv_values(root/'.env'),**env};u=str(values.get('PRICE_WORKER_URL') or '')
+          from urllib.parse import urlparse
+          config={'workerHost':urlparse(u).hostname,'keyConfigured':bool(values.get('PRICE_WORKER_KEY')),'timeoutMs':6000}
+          print('TARGETED_VPS='+json.dumps({'productionWrites':0,'restarts':0,'cutover':False,'sources':sources,'config':config,'comparison':comparison},default=str))
+          PY
+          cat targeted-vps.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: targeted-vps-readonly-croma
+          path: targeted-vps.json
+          retention-days: 30
