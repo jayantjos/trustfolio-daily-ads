@@ -50,67 +50,7 @@ jobs:
           products=[]
           for platform in ['amazon','flipkart']:
               groups=defaultdict(list)
-              platform_filter={'platform':{'$regex':'^'+platform+'
-              chosen=[]
-              # Exact known failing listing first; then deterministic category round-robin.
-              if platform=='amazon':
-                  for category in sorted(groups):
-                      found=next((p for p in groups[category] if 'B074J9SPYX' in str(p)),None)
-                      if found:
-                          groups[category].remove(found);chosen.append(found);break
-              while len(chosen)<150:
-                  before=len(chosen)
-                  for category in sorted(groups):
-                      if groups[category] and len(chosen)<150:chosen.append(groups[category].pop(0))
-                  if len(chosen)==before:break
-              for p in chosen:
-                  url=str(p.get('product_url') or p.get('url') or p.get('link') or '')
-                  ident=str(p.get('asin') or p.get('pid') or p.get('product_id') or p.get('id') or '')
-                  if platform=='amazon':
-                      match=re.search(r'/(?:dp|gp/product)/([A-Z0-9]{10})',url,re.I)
-                      ident=match.group(1).upper() if match else ident.upper()
-                      if not re.fullmatch(r'B0[A-Z0-9]{8}',ident):ident=None
-                  else:
-                      ident=(parse_qs(urlparse(url).query).get('pid') or [ident])[0]
-                      if not re.fullmatch(r'[A-Z0-9]{12,24}',ident):ident=None
-                  products.append({'sequence':len(products)+1,'product_id':str(p['_id']),'platform':platform,
-                    'category':p.get('category'),'brand':p.get('brand'),'title':p.get('title'),
-                    'retailer_id':ident,'url':url,'stored_price':p.get('price_inr',p.get('price')),
-                    'availability':p.get('availability',p.get('status')),
-                    'last_verified_at':p.get('last_price_verified_at',p.get('last_price_checked_at')),
-                    'updated_at':p.get('updated_at'),'result':'PENDING'})
-          c.close()
-          # Read process paths and repository origin only; never print PM2 environments.
-          backend={}
-          try:
-              processes=json.loads(subprocess.check_output(['pm2','jlist'],text=True,stderr=subprocess.DEVNULL))
-              for p in processes:
-                  if p.get('name')=='trustfolio-backend':
-                      env=p.get('pm2_env',{});cwd=env.get('pm_cwd')
-                      backend={'cwd':cwd,'script':env.get('pm_exec_path')}
-                      if cwd:
-                          try:
-                              origin=subprocess.check_output(['git','-C',cwd,'remote','get-url','origin'],text=True,stderr=subprocess.DEVNULL).strip()
-                              if re.fullmatch(r'(?:https://github.com/|git@github.com:)[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?',origin):backend['repository']=origin
-                          except Exception:pass
-          except Exception:backend={'metadata':'unavailable'}
-          print(json.dumps({'checked_at':datetime.now(timezone.utc).isoformat(),'mongo_read_only':True,
-             'sampling':'category round-robin, category and _id ascending; known failing ASIN first',
-             'total':len(products),'backend':backend,'products':products},default=str,ensure_ascii=False,indent=2))
-          PY
-          python3 - <<'PY'
-          import json
-          d=json.load(open('price-audit-inventory.json'))
-          print('INVENTORY_TOTAL='+str(d['total']))
-          print('BACKEND='+json.dumps(d['backend']))
-          for p in d['products']:print('INVENTORY_ROW='+json.dumps(p,ensure_ascii=False))
-          PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: price-audit-inventory-20261102
-          path: price-audit-inventory.json
-          retention-days: 30
-,'$options':'i'}}
+              platform_filter={'platform':{'$regex':'^'+platform+'$','$options':'i'}}
               categories=sorted(coll.distinct('category',platform_filter),key=str)
               for category in categories:
                   query=dict(platform_filter,category=category)
