@@ -1,10 +1,23 @@
 """Offline tests: never confuse scheduled with Buffer sent."""
 import base64,json,unittest
+from datetime import datetime
 from unittest.mock import Mock,patch
 from automation import buffer_verify_linkedin_sent_v1 as v
 from automation.buffer_free_crosspost_v1 import BufferBlocked
 
 class TestBufferSent(unittest.TestCase):
+    def test_delayed_cron_rechecks_previous_ist_dates(self):
+        now=datetime(2026,11,2,2,45,tzinfo=v.IST)
+        self.assertEqual(v.audit_days(now),["2026-10-31","2026-11-01","2026-11-02"])
+
+    def test_old_scheduled_requires_attention_but_today_does_not(self):
+        now=datetime(2026,11,2,2,45,tzinfo=v.IST)
+        self.assertTrue(v.delivery_needs_attention("scheduled","2026-11-01",now))
+        self.assertFalse(v.delivery_needs_attention("scheduled","2026-11-02",now))
+        self.assertFalse(v.delivery_needs_attention("sent","2026-11-01",now))
+        self.assertTrue(v.delivery_needs_attention("failed","2026-11-02",now))
+        self.assertFalse(v.delivery_needs_attention("absent","2026-10-31",now))
+
     def test_scheduled_is_not_published(self):
         def fake(token,q,vars):
             return {"post":{"id":"abc123","channelId":"li-1","status":"scheduled","sentAt":None}}
