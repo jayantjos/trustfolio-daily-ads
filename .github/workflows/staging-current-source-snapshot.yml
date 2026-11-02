@@ -37,13 +37,13 @@ jobs:
           from pathlib import Path
           root=Path.home()/'apps/trustfolio/node-backend'
           sources={}
-          for folder in ['services','controllers','models','utils','helpers','lib','scripts']:
+          for folder in ['services','controllers','models','entities','utils','helpers','lib','scripts']:
             base=root/folder
             if base.exists():
               for p in base.rglob('*.js'):
                 if 'node_modules' in p.parts:continue
                 s=p.read_text()
-                if re.search(r'mongodb(?:\+srv)?://[^\s\x27\x22]+',s):continue
+                if re.search(r'mongodb(?:\+srv)?://[^\s\x27\x22]*@',s):raise RuntimeError('credential_literal_in_source')
                 sources[str(p.relative_to(root))]=s
           sources['package.json']=(root/'package.json').read_text()
           print(json.dumps({'sources':sources,'sha256':{k:hashlib.sha256(v.encode()).hexdigest() for k,v in sources.items()},'productionWrites':0}))
