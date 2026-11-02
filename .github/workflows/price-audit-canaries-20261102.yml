@@ -1,0 +1,70 @@
+name: Read-only Croma and catalog ranking canaries
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/price-audit-canaries-20261102.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Authenticate to existing VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Inspect existing backend metadata and authentication without DB writes
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=20 "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY' > backend-price-inspection.json
+          import json,os,re,subprocess
+          from pathlib import Path
+          from dotenv import load_dotenv
+          from pymongo import MongoClient
+          load_dotenv(Path.home()/'new_scraper'/'.env')
+          uri=os.getenv('MONGODB_URI') or os.getenv('MONGO_URI') or os.getenv('MONGODB_URL')
+          root=Path.home()/'apps'/'trustfolio'/'node-backend'
+          report={'production_writes':0,'cutover':False}
+          c=MongoClient(uri,serverSelectionTimeoutMS=8000,appname='TrustFolioReadOnlyIntegrationCanary')
+          coll=c[os.getenv('MONGODB_DB','trustfolio')][os.getenv('PRODUCT_COLLECTION','my_products')]
+          report['mongo_read_only']={'ok':bool(coll.find_one({}, {'_id':1},max_time_ms=5000)),'write_canary_attempted':False}
+          doc=coll.find_one({'platform':{'$regex':'^croma$','$options':'i'},'platform_product_id':{'$in':['317463',317463]}},{'_id':0,'platform':1,'platform_product_id':1,'title':1,'brand':1,'category':1},max_time_ms=5000)
+          if not doc:doc=coll.find_one({'platform':{'$regex':'^croma$','$options':'i'},'platform_product_id':{'$regex':'^[0-9]{4,12}$'}},{'_id':0,'platform':1,'platform_product_id':1,'title':1,'brand':1,'category':1},max_time_ms=5000)
+          if doc:
+              js="const fs=require('fs');const d=JSON.parse(fs.readFileSync(0,'utf8'));require('./services/CromaLivePriceDirect').fetchCromaDirect(d).then(r=>console.log(JSON.stringify({sku:d.platform_product_id,title:d.title,result:r}))).catch(e=>console.log(JSON.stringify({error_type:e.name})))"
+              p=subprocess.run(['node','-e',js],input=json.dumps(doc),cwd=root,capture_output=True,text=True,timeout=65)
+              try:report['croma_direct']=json.loads(p.stdout.strip().splitlines()[-1])
+              except:report['croma_direct']={'error':'no_safe_json_output','exit_code':p.returncode}
+          else:report['croma_direct']={'error':'no_valid_croma_record'}
+          # Actual ranker only: do not invoke LivePriceService or any endpoint that writes.
+          js="const fs=require('fs');const x=JSON.parse(fs.readFileSync(0,'utf8'));const m=require('mongoose');m.connect(x.uri).then(async()=>{try{const r=await require('./services/ProductRecommendationService').getTopProductsForCategoryAndBudget('smart-phones',20000,{limit:5});console.log('RANK_CANARY='+JSON.stringify({mode:'catalog_ranker_read_only',products:(r.products||[]).map(p=>({id:p.id,rank:p.rank,price_inr:p.price_inr,platform:p.platform,title:p.title})),priceWindow:r.priceWindow}));}catch(e){console.log('RANK_CANARY='+JSON.stringify({error_type:e.name}));}finally{await m.disconnect();}}).catch(e=>console.log('RANK_CANARY='+JSON.stringify({error_type:e.name})))"
+          p=subprocess.run(['node','-e',js],input=json.dumps({'uri':uri}),cwd=root,capture_output=True,text=True,timeout=50)
+          try:report['catalog_ranker']=json.loads(next(s.split('RANK_CANARY=',1)[1] for s in p.stdout.splitlines() if s.startswith('RANK_CANARY=')))
+          except:report['catalog_ranker']={'error':'no_safe_json_output','exit_code':p.returncode}
+          report['authenticated_backend_worker']={'attempted':False,'reason':'PRICE_WORKER_KEY absent; no configuration change authorized before cutover approval'}
+          c.close()
+          print(json.dumps(report))
+          PY
+          cat backend-price-inspection.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-price-readonly-inspection
+          path: backend-price-inspection.json
+          retention-days: 30
