@@ -1,0 +1,166 @@
+name: Isolated missing deletion evidence with encrypted source handoff
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/staging-missing-deletion-evidence.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Authenticate to existing VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Wait for public certificate from credential-free Mongo job
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for i in $(seq 1 30); do
+            if gh run download "$GITHUB_RUN_ID" -n staging-source-public-cert; then break; fi
+            sleep 3
+          done
+          test -s staging-cert.pem
+      - name: Read and encrypt current source; no production environment read
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PYSRC' > private-sources.json
+          import json,re,hashlib
+          from pathlib import Path
+          root=Path.home()/'apps/trustfolio/node-backend'
+          sources={}
+          for folder in ['services','controllers','models','entities','utils','helpers','lib','scripts']:
+            base=root/folder
+            if base.exists():
+              for p in base.rglob('*.js'):
+                if 'node_modules' in p.parts:continue
+                s=p.read_text()
+                assert not re.search(r'mongodb(?:\+srv)?://',s)
+                sources[str(p.relative_to(root))]=s
+          print(json.dumps({'sources':sources,'sha256':{k:hashlib.sha256(v.encode()).hexdigest() for k,v in sources.items()}}))
+          PYSRC
+          rm -f ~/.ssh/id_ed25519
+          gzip -c private-sources.json > source.json.gz
+          openssl cms -encrypt -binary -aes256 -in source.json.gz -outform DER -out staging-source.enc staging-cert.pem
+          rm -f private-sources.json source.json.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staging-encrypted-current-source
+          path: staging-source.enc
+          retention-days: 1
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      mongodb:
+        image: mongo:7
+        ports: ['27017:27017']
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Create encryption key inside credential-free staging job
+        run: |
+          openssl req -x509 -newkey rsa:3072 -keyout staging-private.pem -out staging-cert.pem -sha256 -days 1 -nodes -subj '/CN=IsolatedStaging' >/dev/null 2>&1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staging-source-public-cert
+          path: staging-cert.pem
+          retention-days: 1
+      - name: Receive encrypted current source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for i in $(seq 1 50); do
+            if gh run download "$GITHUB_RUN_ID" -n staging-encrypted-current-source; then break; fi
+            sleep 3
+          done
+          test -s staging-source.enc
+          openssl cms -decrypt -binary -inform DER -in staging-source.enc -recip staging-cert.pem -inkey staging-private.pem -out staging-source.json.gz
+          gzip -dc staging-source.json.gz > private-sources.json
+          rm -f staging-private.pem staging-source.json.gz
+      - name: Install isolated runtime dependencies
+        run: npm install --no-audit --no-fund --ignore-scripts mongoose@8 dotenv@16
+      - name: Only missing archive-order and invalid-HTML evidence
+        env:
+          STAGING_MONGO_URI: mongodb://127.0.0.1:27017/trustfolio_acceptance_disposable
+        run: |
+          cat > missing.cjs <<'JS'
+          const fs=require('fs'),assert=require('assert/strict'),m=require('mongoose');
+          (async()=>{
+          const uri='mongodb://127.0.0.1:27017/trustfolio_acceptance_disposable';
+          assert.equal(process.env.STAGING_MONGO_URI,uri);
+          for(const k of ['MONGODB_URI','MONGO_URI','MONGO_URL','DATABASE_URL','TF_DEPLOY_SSH_KEY','CLOUDFLARE_API_TOKEN'])assert.ok(!process.env[k],k+' must be absent');
+          const originalConnect=m.connect.bind(m);m.connect=(u,...a)=>{assert.equal(u,uri);return originalConnect(u,...a)};
+          await m.connect(uri);assert.equal(m.connection.db.databaseName,'trustfolio_acceptance_disposable');
+          const snapshots=JSON.parse(fs.readFileSync('private-sources.json'));
+          const root=require('path').resolve('backend');
+          for(const [p,s] of Object.entries(snapshots.sources)){assert.ok(!p.includes('..'));assert.ok(!/mongodb(?:\\+srv)?:\\/\\//.test(s),'Unexpected Mongo URI in source '+p);const f=require('path').join(root,p);fs.mkdirSync(require('path').dirname(f),{recursive:true});fs.writeFileSync(f,s);}
+          fs.mkdirSync(root+'/config',{recursive:true});
+          fs.writeFileSync(root+'/config/mongo.js',"module.exports=async()=>require('mongoose').connect(process.env.STAGING_MONGO_URI);");
+          let live=fs.readFileSync(root+'/services/LivePriceService.js','utf8');
+          function replace(a,b){assert.ok(live.includes(a),'Source compatibility mismatch');live=live.replace(a,b);}
+          replace("doc.clean_url || doc.url || doc.productUrl","doc.clean_url || doc.product_url || doc.url || doc.productUrl");
+          replace("platform: 1, asin: 1, url: 1, clean_url: 1, productUrl: 1, original_product_url: 1,","platform: 1, asin: 1, url: 1, clean_url: 1, product_url: 1, productUrl: 1, original_product_url: 1,");
+          replace("  const availabilityKind = classify(result);","  if (result.status === 'ok' && (result.inStock === false || result.in_stock === false || !Number.isFinite(result.priceNum) || result.priceNum <= 0)) result={...result,status:'error',error:'invalid_accepted_quote'};\n  const availabilityKind = classify(result);");
+          replace("const priced = (liveStatus === 'ok' || liveStatus === 'out_of_stock') && result.priceNum > 0;","const priced = liveStatus === 'ok' && Number.isFinite(result.priceNum) && result.priceNum > 0;");
+          replace("? result.in_stock : liveStatus === 'ok',","? result.in_stock : Object.prototype.hasOwnProperty.call(result,'inStock') ? result.inStock : null,");
+          replace("const WORKER_TIMEOUT_MS = 6000;","const WORKER_TIMEOUT_MS = 10000;");
+          fs.writeFileSync(root+'/services/LivePriceService.js',live);
+          let budget=fs.readFileSync(root+'/services/LiveBudgetRecommendationService.js','utf8');
+          const start=budget.indexOf('      let displayPrice = candidate.price_inr;'),end=budget.indexOf('      if (!goodPrice(displayPrice, budgetCap)) continue;',start);
+          assert.ok(start>0&&end>start);
+          budget=budget.slice(0,start)+"      if (live?.status !== 'ok' || live.in_stock === false || live.inStock === false) continue;\n      const displayPrice = Number(live.price_inr);\n      const priceSource = 'website_live_price_api';\n"+budget.slice(end);
+          fs.writeFileSync(root+'/services/LiveBudgetRecommendationService.js',budget);
+          process.env.PRICE_WORKER_URL='https://staging-fixture.invalid';process.env.PRICE_WORKER_KEY='simulation-only';process.env.LIVE_PRICE_FRESH_MS='-1';
+          const actualModules=['services/LivePriceService','services/LiveBudgetRecommendationService','services/ProductAvailabilityPolicy','controllers/ProductController','services/CategoryService','controllers/CategoryController','services/ProductRecommendationService','services/CromaLivePriceDirect','scripts/trustfolio-category-price-watcher'];
+          for(const p of actualModules)require(root+'/'+p);
+          const service=require(root+'/services/LivePriceService');const col=m.connection.collection('my_products'),archive=m.connection.collection('my_products_deleted');
+          const events=[],results=[];let quote={};
+          global.fetch=async()=>({ok:true,json:async()=>({results:[{asin:'B074J9SPYX',amazon:quote}]})});
+          const originalArchive=archive.bulkWrite.bind(archive),originalDelete=col.deleteMany.bind(col);
+          archive.bulkWrite=async(...a)=>{events.push({event:'archive_start',at:new Date().toISOString()});const r=await originalArchive(...a);events.push({event:'archive_complete',at:new Date().toISOString()});return r;};
+          col.deleteMany=async(filter,...a)=>{for(const id of filter._id.$in)assert.ok(await archive.findOne({_id:id}));events.push({event:'delete_start',at:new Date().toISOString()});const r=await originalDelete(filter,...a);events.push({event:'delete_complete',at:new Date().toISOString()});return r;};
+          const id=new m.Types.ObjectId(),original={_id:id,platform:'amazon',asin:'B074J9SPYX',title:'Staging archive ordering fixture',price:'100',price_inr:100};
+          await col.insertOne(original);quote={status:'out_of_stock',in_stock:false,availability:'out_of_stock',priceNum:null,httpStatus:200};await service.getLivePrices([id]);
+          assert.equal(await col.findOne({_id:id}),null);assert.ok(await archive.findOne({_id:id}));assert.deepEqual(events.map(x=>x.event),['archive_start','archive_complete','delete_start','delete_complete']);
+          await col.insertOne(original);assert.deepEqual(await col.findOne({_id:id}),original);
+          results.push({test:'archive_order_and_restoration',status:'PASS',kind:'real disposable MongoDB; actual service/policy/controller; simulated explicit OOS quote',fixtureId:String(id),events,restored:true});
+          const iid=new m.Types.ObjectId();await col.insertOne({_id:iid,platform:'amazon',asin:'B074J9SPYX',title:'Staging invalid HTML fixture',price:'2499',price_inr:2499,currentPriceValue:2499});
+          quote={status:'error',error:'invalid_html',httpStatus:200};const beforeEvents=events.length;await service.getLivePrices([iid]);await service.getLivePrices([iid]);const doc=await col.findOne({_id:iid});assert.equal(doc.price_inr,2499);assert.equal(await archive.findOne({_id:iid}),null);assert.equal(events.length,beforeEvents);assert.equal(doc.live.unavailable_checks,0);
+          results.push({test:'invalid_html_two_fresh_failures',status:'PASS',kind:'real disposable MongoDB; actual service/policy/controller; simulated parser failure',fixtureId:String(iid),canonicalPrice:doc.price_inr,unavailableChecks:doc.live.unavailable_checks});
+          const report={status:'PASS',scope:'missing deletion evidence only',sourceSha256:snapshots.sha256,actualModulesLoaded:actualModules,productionCredentialsAvailable:false,productionWrites:0,db:m.connection.db.databaseName,retailerRequests:0,workerQuoteAcceptance:'BLOCKED by unresolved 1042',top5:'UNVERIFIED',watcherExecution:'UNVERIFIED; module loaded only',identityContext:'UNVERIFIED; ordinary Worker contract lacks catalog context',results};
+          fs.writeFileSync('missing-deletion-results.json',JSON.stringify(report,null,2));console.log('MISSING_DELETION_RESULTS='+JSON.stringify(report));
+          await m.connection.dropDatabase();await m.disconnect();console.log('DISPOSABLE_DATABASE_REMOVED=true');
+          })().catch(e=>{console.error(e.stack);process.exit(1)});
+          JS
+          node missing.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: missing-deletion-evidence
+          path: missing-deletion-results.json
+          retention-days: 30
+      - name: Remove isolated source and encryption material
+        if: always()
+        run: rm -rf backend private-sources.json staging-private.pem staging-source.enc
