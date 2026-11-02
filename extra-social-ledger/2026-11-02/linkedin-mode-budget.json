@@ -1,1 +1,1 @@
-{"network": "linkedin", "mode": "budget", "campaign_id": "tfauto-51af706c6cb98f6057", "status": "reserved", "reserved_at": "2026-11-02T15:52:24.800923+05:30"}
+{"network": "linkedin", "mode": "budget", "campaign_id": "tfauto-51af706c6cb98f6057", "status": "buffer_api_accepted_scheduled", "reserved_at": "2026-11-02T15:52:24.800923+05:30", "buffer_post_id": "6ae86463796ca84be0cebe82", "due_at_utc": "2026-11-02T10:27:26.440Z", "recorded_at": "2026-11-02T15:52:28.305276+05:30"}
