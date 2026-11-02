@@ -1,0 +1,47 @@
+name: Read-only historical scraper price selector inspection
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/targeted-scraper-selectors-20261102.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Authenticate to existing VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Read only price selector lines from existing scraper source
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY'
+          import json,re,hashlib
+          from pathlib import Path
+          root=Path.home()/'new_scraper'
+          matches=[]
+          files=[p for p in root.rglob('*.py') if not any(x in p.parts for x in ['venv','.venv','site-packages','__pycache__'])][:300]
+          for p in files:
+              if p.stat().st_size>500000:continue
+              s=p.read_text(errors='replace')
+              lines=[{'line':i+1,'text':line.strip()[:500]} for i,line in enumerate(s.splitlines()) if re.search(r'priceToPay|priceblock_ourprice|priceblock_dealprice|a-price-whole|a-offscreen|\\bfsp\\b|itemprop.{0,10}price|Buy at',line,re.I)]
+              if lines:matches.append({'path':str(p.relative_to(root)),'sha256':hashlib.sha256(s.encode()).hexdigest(),'selector_lines':lines[:25]})
+          print('SCRAPER_SELECTORS='+json.dumps({'productionWrites':0,'filesScanned':len(files),'matches':matches},separators=(',',':')))
+          PY
