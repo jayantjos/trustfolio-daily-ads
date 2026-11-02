@@ -4,7 +4,7 @@ Never create, reschedule, or retry a post here. Mark sent only with provider
 status and timestamp for the exact immutable locked Buffer post ID.
 """
 import argparse,base64,json,os,re
-from datetime import datetime
+from datetime import datetime,timedelta
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 from automation.buffer_free_crosspost_v1 import graphql,BufferBlocked
@@ -78,16 +78,48 @@ def reconcile(mode,day,token,github_token,channel_id,*,request=graphql,github=_g
     print("LINKEDIN_BUFFER_CONFIRMED_SENT="+mode+":"+ident)
     return "sent"
 
+def audit_days(now,lookback_days=2):
+    """Reconcile current and previous IST dates; delayed GH cron must not lose posts."""
+    if not 0 <= lookback_days <= 7:
+        raise ValueError("Invalid LinkedIn lookback")
+    return [(now.date()-timedelta(days=offset)).isoformat()
+            for offset in range(lookback_days,-1,-1)]
+
+def delivery_needs_attention(status,day,now):
+    """Queued is not sent; old-day queued posts need investigation, never a retry."""
+    if status in ("error","failed","locked"):
+        return True
+    return day < now.date().isoformat() and status in ("scheduled","buffer","draft")
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--mode",required=True,choices=MODES)
+    p.add_argument("--day",help="Only reconcile this IST date (YYYY-MM-DD)")
+    p.add_argument("--lookback-days",type=int,default=2)
     args=p.parse_args()
-    day=datetime.now(IST).date().isoformat()
+    now=datetime.now(IST)
+    if args.day:
+        if not re.fullmatch(r"20\d{2}-\d{2}-\d{2}",args.day):
+            p.error("Invalid --day")
+        try:
+            datetime.strptime(args.day,"%Y-%m-%d")
+        except ValueError:
+            p.error("Invalid --day")
+        days=[args.day]
+    else:
+        days=audit_days(now,args.lookback_days)
     key=os.getenv("TF_BUFFER_API_KEY") or ""
     gh=os.getenv("GITHUB_TOKEN") or ""
     channel=os.getenv("TF_BUFFER_LINKEDIN_CHANNEL_ID") or ""
     if len(key)<20 or not gh or not channel:
         raise SystemExit("Missing Buffer/GitHub read credentials")
-    reconcile(args.mode,day,key,gh,channel)
+    issues=[]
+    for day in days:
+        status=reconcile(args.mode,day,key,gh,channel)
+        print("LINKEDIN_DAY_RESULT="+day+"/"+args.mode+":"+status)
+        if delivery_needs_attention(status,day,now):
+            issues.append(day+"/"+args.mode+":"+status)
+    if issues:
+        raise SystemExit("LinkedIn Buffer delivery not confirmed: "+", ".join(issues))
 
 if __name__=="__main__":main()

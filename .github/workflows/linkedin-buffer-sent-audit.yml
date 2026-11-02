@@ -2,12 +2,15 @@ name: TrustFolio verify LinkedIn Buffer delivery for all three modes
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/linkedin-buffer-sent-audit.yml']
+    paths: ['.github/workflows/linkedin-buffer-sent-audit.yml', 'automation/buffer_verify_linkedin_sent_v1.py', 'automation/test_buffer_verify_linkedin_sent_v1.py']
   schedule:
     # Check after 21:00, 22:00 and 23:00 IST to catch delayed delivery.
     - cron: '30 15 * * *'
     - cron: '30 16 * * *'
     - cron: '30 17 * * *'
+    # Morning catch-up: GitHub cron may run after midnight IST.
+    - cron: '15 2 * * *'
+    - cron: '15 6 * * *'
   workflow_dispatch:
 permissions:
   contents: write
@@ -31,7 +34,12 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest -v automation.test_buffer_verify_linkedin_sent_v1
+          failed=0
           for mode in budget brand_budget comparison; do
-            python -m automation.buffer_verify_linkedin_sent_v1 --mode "$mode"
+            python -m automation.buffer_verify_linkedin_sent_v1 --mode "$mode" || failed=1
           done
+          if [[ "$failed" -ne 0 ]]; then
+            echo "::error::LinkedIn delivery not confirmed; review Buffer provider statuses before any retry"
+            exit 1
+          fi
           echo "LINKEDIN_DELIVERY_CHECK_DONE=YES"
