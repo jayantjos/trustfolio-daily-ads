@@ -1,0 +1,89 @@
+name: Read-only encrypted current backend staging snapshot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/staging-current-source-snapshot.yml']
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Authenticate to existing VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Read source only; exclude environment and database credentials
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PYSRC' > private-sources.json
+          import json,re,hashlib
+          from pathlib import Path
+          root=Path.home()/'apps/trustfolio/node-backend'
+          sources={}
+          for folder in ['services','controllers','models','utils','helpers','lib','scripts']:
+            base=root/folder
+            if base.exists():
+              for p in base.rglob('*.js'):
+                if 'node_modules' in p.parts:continue
+                s=p.read_text()
+                if re.search(r'mongodb(?:\+srv)?://[^\s\x27\x22]+',s):continue
+                sources[str(p.relative_to(root))]=s
+          sources['package.json']=(root/'package.json').read_text()
+          print(json.dumps({'sources':sources,'sha256':{k:hashlib.sha256(v.encode()).hexdigest() for k,v in sources.items()},'productionWrites':0}))
+          PYSRC
+          rm -f ~/.ssh/id_ed25519
+          cat > snapshot-cert.pem <<'CERT'
+          -----BEGIN CERTIFICATE-----
+          MIIEKTCCApGgAwIBAgIUKB3x5ZL0JatgdN1bLkiUuXC3TskwDQYJKoZIhvcNAQEL
+          BQAwJDEiMCAGA1UEAwwZVHJ1c3RGb2xpb1N0YWdpbmdTbmFwc2hvdDAeFw0yNjEx
+          MDIxNjI3NDdaFw0yNjExMDQxNjI3NDdaMCQxIjAgBgNVBAMMGVRydXN0Rm9saW9T
+          dGFnaW5nU25hcHNob3QwggGiMA0GCSqGSIb3DQEBAQUAA4IBjwAwggGKAoIBgQDB
+          AZ5cqkN0dzoft6hXMN903BOfkzsJN76wFaYDFSVVsiuZ8j1TTJ1SK5B23tI3MToj
+          lj3zROVpU/Rsng72Kf4S64T8F+9376kEfjWnKUe6V+zvZvMvPWZ+m4OSrEhXzm4/
+          QMP0mdFrXr0L47TJ2YMo+sjP3cobpFM+auX/31ND5OzH71LqoHeaWie7W4s0Wh+b
+          hfzCaWDFafq5Qq7tABPsSEgm8EgUC0kCiMFC5uYeSvvGeq+e7sui+eMIWHV6tshP
+          Io8nWxM0xPFMuVB0bP1WMmOA7A9iXn3PgTb3ZpYIUgKaFQFwqQ/ci9O31ICYoU3X
+          YudHukoa7R/WWU3dnEgb2Y2pxin/0k550vCN2sK6A2+a01XiZrPaU4PgbGKcZUxy
+          2WBY3ULWp+gBKfmSU9k+0awoEzVM+0YlhlQGV9SOLv+H7yEOQcyEHTcFbl2eTYe7
+          G9vhKNhUPkjq94nF48czGxiq//r4pU3ZUgntO150822VltiIaisvxsD2972tBx0C
+          AwEAAaNTMFEwHQYDVR0OBBYEFPYYp+ZdxaaaX7cIwSZGRrV75a2rMB8GA1UdIwQY
+          MBaAFPYYp+ZdxaaaX7cIwSZGRrV75a2rMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI
+          hvcNAQELBQADggGBAAY/7r+hxH2M1v+1DrORQI0UMwxdkVOqe4m4OS4j/KyZSX5Z
+          LVdH5sX+kBOXbo1qKT/ALzjkmYYq2XI9UMpgYj6qfsMFsj6DyGtnxLmy/FAaJU/b
+          QZ39Y3nrbawBjfLPhv6mrouj/MoqXSoaoGDtA+O/1eqHnqlScpzTuTrCDQXYcDMa
+          9Vs/CURwW1JeOB6G2E6eLUK3zus1yht7VFz+Rp3HL32TtQ4lRkoIlLpu1BwfLRnY
+          AIYlxXWlb73TFwgBtP3v4/o6Y8TN3ikHGps0YKx/m1oUfSZ6+Ga+jKkua4Bw/eQ/
+          4jw3DxgcBm6Ma0rO/45Ds6J9anJQlwVX06bWrjpqUEc/m05khT/Zk1uK3HIq0syC
+          qMD5abXUzdz1oToeQhwCJ1hLnNLfdi1188dRrbSy7MqfOmh2L/W3BDtr6OrGraBe
+          OSxrCfsYm7P5gtnKKrZ+giYDcKL0xiSCPwbfJA4Tsu7pa4gTmT5eVWbHMCWBTzvM
+          yEBFhD8Abvpx2m77vQ==
+          -----END CERTIFICATE-----
+          CERT
+          gzip -c private-sources.json > source.json.gz
+          openssl cms -encrypt -binary -aes256 -in source.json.gz -outform DER -out snapshot.enc snapshot-cert.pem
+          python3 - <<'PY'
+          import base64,json
+          from pathlib import Path
+          s=json.loads(Path('private-sources.json').read_text())
+          print('SOURCE_MANIFEST='+json.dumps({'sha256':s['sha256'],'productionWrites':0,'credentialsRead':False}))
+          b=base64.b64encode(Path('snapshot.enc').read_bytes()).decode()
+          for i in range(0,len(b),8000):print('ENCRYPTED_SOURCE='+b[i:i+8000])
+          PY
+          rm -f private-sources.json source.json.gz snapshot.enc
