@@ -39,12 +39,12 @@ jobs:
           root=Path.home()/'apps'/'trustfolio'/'node-backend'
           source=(root/'controllers'/'ProductController.js').read_text()
           functions=[]
-          for m in re.finditer(r'^(?:async\s+)?function\s+([A-Za-z0-9_]+)\s*\(',source,re.M):
+          for m in re.finditer(r'^(?:async[ ]+)?function[ ]+([A-Za-z0-9_]+)[ ]*[(]',source,re.M):
               if not re.search(r'price|bound|range|invalidate',m[1],re.I):continue
-              end=re.search(r'^\}',source[m.start():],re.M)
+              end=re.search(r'^[}]',source[m.start():],re.M)
               body=source[m.start():m.start()+end.end()] if end else ''
               functions.append({'name':m[1],'source':body})
-          caches=[s for s in source.splitlines() if re.search(r'cache|CACHE',s) and re.search(r'const |let |\\.clear\\(|\\.delete\\(',s)]
+          caches=[s for s in source.splitlines() if re.search(r'cache|CACHE',s) and re.search(r'const |let |[.]clear[(]|[.]delete[(]',s)]
           procs=json.loads(subprocess.check_output(['pm2','jlist'],text=True,stderr=subprocess.DEVNULL))
           watcher=next((p.get('pm2_env',{}) for p in procs if p.get('name')=='trustfolio-price-watcher'),{})
           path=Path(watcher.get('pm_exec_path','/nonexistent'))
