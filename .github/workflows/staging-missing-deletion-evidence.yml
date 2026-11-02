@@ -48,7 +48,7 @@ jobs:
           from pathlib import Path
           root=Path.home()/'apps/trustfolio/node-backend'
           sources={}
-          for folder in ['services','controllers','models','entities','utils','helpers','lib','scripts']:
+          for folder in ['services','controllers','models','entities','utils','helpers','lib','data','scripts']:
             base=root/folder
             if base.exists():
               for p in base.rglob('*.js'):
@@ -146,7 +146,7 @@ jobs:
           assert.equal(await col.findOne({_id:id}),null);assert.ok(await archive.findOne({_id:id}));assert.deepEqual(events.map(x=>x.event),['archive_start','archive_complete','delete_start','delete_complete']);
           await col.insertOne(original);assert.deepEqual(await col.findOne({_id:id}),original);
           results.push({test:'archive_order_and_restoration',status:'PASS',kind:'real disposable MongoDB; actual service/policy/controller; simulated explicit OOS quote',fixtureId:String(id),events,restored:true});
-          const iid=new m.Types.ObjectId();await col.insertOne({_id:iid,platform:'amazon',asin:'B074J9SPYX',title:'Staging invalid HTML fixture',price:'2499',price_inr:2499,currentPriceValue:2499});
+          const iid=new m.Types.ObjectId();await col.insertOne({_id:iid,platform:'amazon',asin:'B0DVH1HDVQ',title:'Staging invalid HTML fixture',price:'2499',price_inr:2499,currentPriceValue:2499});
           quote={status:'error',error:'invalid_html',httpStatus:200};const beforeEvents=events.length;await service.getLivePrices([iid]);await service.getLivePrices([iid]);const doc=await col.findOne({_id:iid});assert.equal(doc.price_inr,2499);assert.equal(await archive.findOne({_id:iid}),null);assert.equal(events.length,beforeEvents);assert.equal(doc.live.unavailable_checks,0);
           results.push({test:'invalid_html_two_fresh_failures',status:'PASS',kind:'real disposable MongoDB; actual service/policy/controller; simulated parser failure',fixtureId:String(iid),canonicalPrice:doc.price_inr,unavailableChecks:doc.live.unavailable_checks});
           const report={status:'PASS',scope:'missing deletion evidence only',sourceSha256:snapshots.sha256,actualModulesLoaded:actualModules,productionCredentialsAvailable:false,productionWrites:0,db:m.connection.db.databaseName,retailerRequests:0,workerQuoteAcceptance:'BLOCKED by unresolved 1042',top5:'UNVERIFIED',watcherExecution:'UNVERIFIED; module loaded only',identityContext:'UNVERIFIED; ordinary Worker contract lacks catalog context',results};
