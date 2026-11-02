@@ -1,0 +1,83 @@
+name: Read-only production price integration inspection
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/price-audit-backend-20261102.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Authenticate to existing VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Inspect existing backend metadata and authentication without DB writes
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=20 "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY' > backend-price-inspection.json
+          import json,os,re,hashlib,subprocess
+          from pathlib import Path
+          from urllib.parse import urlparse
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError
+          from dotenv import dotenv_values
+          root=Path.home()/'apps'/'trustfolio'/'node-backend'
+          procs=json.loads(subprocess.check_output(['pm2','jlist'],text=True,stderr=subprocess.DEVNULL))
+          runtime=next((p.get('pm2_env',{}) for p in procs if p.get('name')=='trustfolio-backend'),{})
+          values={**dotenv_values(root/'.env'),**runtime}
+          files=[];refs=set()
+          for folder,dirs,names in os.walk(root):
+              dirs[:]=[d for d in dirs if d not in ['node_modules','.git','uploads','public']]
+              if len(Path(folder).relative_to(root).parts)>4:dirs[:]=[];continue
+              for name in names:
+                  if not name.endswith('.js') or not re.search(r'live.*price|recommend|top.?5|rank',name,re.I):continue
+                  path=Path(folder)/name
+                  source=path.read_text(errors='replace')
+                  refs.update(re.findall(r'process\.env\.([A-Z][A-Z0-9_]+)',source))
+                  calls={k:len(re.findall(r'\b'+k+r'\s*\(',source)) for k in ['updateOne','updateMany','findByIdAndUpdate','deleteOne','deleteMany','findOneAndDelete']}
+                  files.append({'path':str(path.relative_to(root)),'sha256':hashlib.sha256(source.encode()).hexdigest(),'database_mutator_call_counts':calls,'worker_reference':bool(re.search(r'WORKER|/api/check',source))})
+          known=set(refs)|{'PRICE_WORKER_URL','TF_PRICE_WORKER_URL','CF_WORKER_URL','PRICE_WORKER_KEY','TF_PRICE_WORKER_KEY','CF_WORKER_KEY'}
+          urlnames=[k for k in known if 'WORKER' in k and 'URL' in k and isinstance(values.get(k),str) and values[k]]
+          keynames=[k for k in known if 'WORKER' in k and any(x in k for x in ['KEY','SECRET','TOKEN']) and isinstance(values.get(k),str) and values[k]]
+          urls={values[k] for k in urlnames};keys={values[k] for k in keynames}
+          hosts=sorted({urlparse(v).hostname or 'invalid' for v in urls})
+          probe={'attempted':False,'reason':'runtime Worker destination/key not uniquely identified'}
+          allowed='trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev'
+          if len(urls)==1 and len(keys)==1:
+              u=urlparse(next(iter(urls)))
+              if u.scheme=='https' and u.hostname==allowed and not u.username and not u.password and not u.port:
+                  req=Request('https://'+allowed+'/api/check',data=json.dumps({'items':['B074J9SPYX'],'useCache':False,'browserProbe':False}).encode(),headers={'content-type':'application/json','x-api-key':next(iter(keys))},method='POST')
+                  try:
+                      with urlopen(req,timeout=20) as r:
+                          body=json.load(r);item=(body.get('results') or [{}])[0]
+                          probe={'attempted':True,'http_status':r.status,'asin':item.get('asin'),'status':item.get('amazon',{}).get('status'),'priceINR':item.get('amazon',{}).get('priceNum'),'browser_probe':False,'mongo_writes':0}
+                  except HTTPError as e:probe={'attempted':True,'http_status':e.code,'mongo_writes':0}
+                  except Exception as e:probe={'attempted':True,'error_type':type(e).__name__,'mongo_writes':0}
+              else:probe={'attempted':False,'reason':'runtime Worker target differs from authorized production Worker'}
+          print(json.dumps({'root_found':root.is_dir(),'files':files,'referenced_env_names':sorted(refs),'configured_worker_hosts':hosts,'worker_url_variable_names':urlnames,'worker_key_variable_names':keynames,'auth_canary':probe,'mongo_writes':0},indent=2))
+          PY
+          cat backend-price-inspection.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-price-readonly-inspection
+          path: backend-price-inspection.json
+          retention-days: 30
