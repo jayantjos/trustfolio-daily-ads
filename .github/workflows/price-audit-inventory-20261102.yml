@@ -50,7 +50,7 @@ jobs:
           products=[]
           for platform in ['amazon','flipkart']:
               groups=defaultdict(list)
-              for p in coll.find({'platform':{'$regex':'^'+platform+'$','$options':'i'}},fields).sort([('category',1),('_id',1)]):
+              for p in coll.find({'platform':{'$regex':'^'+platform+'$','$options':'i'}},fields).sort([('_id',1)]).hint('_id_'):
                   groups[str(p.get('category') or '')].append(p)
               chosen=[]
               # Exact known failing listing first; then deterministic category round-robin.
