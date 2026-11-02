@@ -1,8 +1,12 @@
 {
+  "brand": "Crompton",
+  "budget_inr": 5000,
   "campaign_id": "tfauto-3b62f89aae1026d7ee",
+  "category": "ceiling-fans",
   "container_id": "17919073752530469",
+  "meta_media_id": "18015287018990146",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-02T16:46:52.861966+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-02T16:46:58.066992+05:30",
+  "status": "api_accepted_published"
 }
