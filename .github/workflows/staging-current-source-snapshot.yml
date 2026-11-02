@@ -10,6 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Report staging deployment credential availability only
+        env:
+          CF_CREDENTIAL: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import os,json
+          print('CREDENTIAL_READINESS='+json.dumps({'cloudflareDeployCredentialPresent':bool(os.getenv('CF_CREDENTIAL'))}))
+          PY
       - name: Authenticate to existing VPS
         env:
           KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
