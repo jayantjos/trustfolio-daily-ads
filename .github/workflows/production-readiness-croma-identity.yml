@@ -1,0 +1,35 @@
+name: Exact Croma model evidence through unchanged VPS adapter
+on:
+  push:
+    branches: [production-readiness-final-20261103]
+    paths: ['.github/workflows/production-readiness-croma-identity.yml']
+permissions:
+  contents: read
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify pinned existing VPS identity
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          [[ "$HOSTKEY" == "200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC" ]]
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'timeout 12s node -' <<'JS'
+          const cp=require('node:child_process'),orig=cp.execFile,crypto=require('crypto');const evidence=[];
+          cp.execFile=(cmd,args,opts,cb)=>orig(cmd,args,opts,(err,out,stderr)=>{if(!err)try{const x=JSON.parse(out),hit=x.products?.find(p=>[p.code,p.skuId,p.productCode,p.id].some(v=>String(v)==='312748'));evidence.push({url:args[args.length-1],httpStatus:200,sha256:crypto.createHash('sha256').update(out).digest('hex'),hit:hit?Object.fromEntries(Object.entries(hit).filter(([k])=>/code|sku|name|title|model|brand|url|price|stock/i.test(k))):null});}catch{}cb(err,out,stderr);});
+          const direct=require('/home/scraperuser/apps/trustfolio/node-backend/services/CromaLivePriceDirect');const d={platform:'croma',platform_product_id:'312748',title:'LG 7.5 kg 5 Star Inverter Fully Automatic Top Load Washing Machine (T75VBSF1Z, Smart Inverter Motor, Middle Free Silver)',brand:'LG',category:'washing-machines'};
+          const t=Date.now();direct.fetchCromaDirect(d).then(result=>console.log('CROMA_MODEL_EVIDENCE='+JSON.stringify({atUTC:new Date().toISOString(),result,evidence,latencyMs:Date.now()-t,productionWrites:0}))).catch(()=>process.exit(1));
+          JS
+      - name: Remove temporary SSH identity
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
