@@ -1,0 +1,43 @@
+name: Final staging transport cleanup only
+on:
+  push:
+    branches: [production-readiness-final-20261103]
+    paths: ['.github/workflows/production-readiness-cleanup.yml']
+permissions:
+  actions: write
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Remove only exact temporary blobs and encrypted source artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: production-readiness-final-20261103
+        run: |
+          python3 - <<'PY'
+          import subprocess,json,os,re
+          repo=os.environ['GH_REPO'];branch=os.environ['STAGING_BRANCH'];out=[]
+          def api(args,payload=None):
+           p=subprocess.run(['gh','api',*args],input=json.dumps(payload) if payload else None,capture_output=True,text=True)
+           return p.returncode,p.stdout,p.stderr
+          for name in ['transport-public-cert.pem','worker-key-envelope.json','croma-request.json','croma-response.json']:
+           path='qa/production-readiness-final/'+name
+           code,raw,err=api([f'repos/{repo}/contents/{path}?ref={branch}'])
+           if code:
+            assert '404' in err,(name,'unexpected_read_failure')
+            out.append({'file':name,'status':'already_absent'});continue
+           obj=json.loads(raw);sha=obj.get('sha','');assert re.fullmatch('[0-9a-f]{40}',sha)
+           code,raw,err=api(['-X','DELETE',f'repos/{repo}/contents/{path}','--input','-'],{'message':'Remove exact final staging transport blob','branch':branch,'sha':sha})
+           assert code==0,(name,'delete_failed');out.append({'file':name,'status':'deleted'})
+          artifacts=[]
+          for run in [41573927581,41574433908]:
+           code,raw,err=api([f'repos/{repo}/actions/runs/{run}/artifacts']);assert code==0
+           for a in json.loads(raw)['artifacts']:
+            if a['name']=='final-real-encrypted-source':
+             code,_,_=api(['-X','DELETE',f'repos/{repo}/actions/artifacts/{a["id"]}']);assert code==0
+             artifacts.append({'run':run,'id':a['id'],'status':'deleted'})
+          print('FINAL_CLEANUP='+json.dumps({'status':'PASS','transport':out,'encryptedSourceArtifacts':artifacts,'productionChanges':0}))
+          PY
