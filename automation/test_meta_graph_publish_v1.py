@@ -203,8 +203,9 @@ class DirectMetaSafetyTests(unittest.TestCase):
         item=qa_manifest()
         ig=m.network_caption(item,"instagram")
         fb=m.network_caption(item,"facebook")
-        self.assertIn(item["landing_url"],ig)
-        self.assertIn(item["landing_url"],fb)
+        canonical="https://www.trustfolio.in/category/smart-phones/products/?budget=15000"
+        self.assertIn(canonical,ig)
+        self.assertIn(canonical,fb)
         self.assertIn("Apna budget daalo, Best 5 paao!",fb)
         self.assertIn("Shop / Compare Now",fb)
         self.assertIn("links tappable nahi",ig)
