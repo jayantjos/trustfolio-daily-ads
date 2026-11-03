@@ -59,6 +59,17 @@ jobs:
             await mongoose.connect(uri,{serverSelectionTimeoutMS:8000,readPreference:'primary'});
             const db=mongoose.connection.db;
             console.log('MONGO_CONNECTION=OK DB_NAME='+db.databaseName);
+            try {
+              const databases=await mongoose.connection.client.db('admin').admin().listDatabases();
+              console.log('ACCESSIBLE_DB_NAMES='+databases.databases.map(d=>d.name+':'+Math.round(d.sizeOnDisk/1024)).join(','));
+              for(const info of databases.databases.filter(x=>x.name!=='admin'&&x.name!=='local'&&x.name!=='config')){
+                const other=mongoose.connection.client.db(info.name);
+                const collections=(await other.listCollections({}, {nameOnly:true}).toArray()).map(x=>x.name).filter(x=>/product/i.test(x));
+                console.log('DB_CANDIDATE='+info.name+' COLLECTIONS='+collections.join(','));
+                for(const cn of collections)console.log('DB_PRODUCT_COUNT='+info.name+'/'+cn+':'+await other.collection(cn).estimatedDocumentCount());
+              }
+            }catch(err){console.log('LIST_DATABASES_UNAVAILABLE='+err.name)}
+
             const allNames=(await db.listCollections({}, {nameOnly:true}).toArray()).map(x=>x.name);
             console.log('DB_COLLECTIONS='+allNames.join(','));
             const names=allNames.filter(x=>/product/i.test(x));
