@@ -79,12 +79,12 @@ jobs:
               console.log('COLLECTION_COUNT='+name+':'+await c.estimatedDocumentCount());
               const samples=await c.find({}).limit(2).toArray();
               for(const d of samples)console.log('SAMPLE_SCHEMA='+name+':'+JSON.stringify(Object.keys(d).filter(x=>!(/token|secret|pass|key/i.test(x)))));
-              const filter={platform:/^croma$/i,category_slug:'washing-machines',title:/samsung.*7\\s*kg.*semi/i,$or:[{price_inr:11290},{price_inr:'11290'},{price:'₹11,290'},{price:'11290'}]};
+              const filter={platform:/^croma$/i, $or:[{title:/samsung.*7.*semi/i},{title:/samsung.*washing machine/i}], $or:[{title:/samsung.*7.*semi/i},{title:/samsung.*7.*washing/i}]};
               const docs=await c.find(filter).limit(40).toArray();
               console.log('POTENTIAL_MATCHES_COLLECTION='+name+' COUNT='+docs.length);
               for(const d of docs){
                 const result={_id:String(d._id)};
-                for(const key of Object.keys(d))if(/^(title|name|productName|product_name|product_title|platform|retailer|source|store|price|sellingPrice|salePrice|price_inr|selling_price|currentPrice|sku|productUrl|product_url|cleanUrl|clean_url|url|productLink|cleanLink|product_id)$/i.test(key)&&typeof d[key]!=='object')result[key]=String(d[key]).slice(0,260);
+                for(const key of Object.keys(d))if(/^(title|name|productName|product_name|product_title|category_slug|platform|retailer|source|store|price|sellingPrice|salePrice|price_inr|selling_price|currentPrice|sku|productUrl|product_url|cleanUrl|clean_url|url|productLink|cleanLink|product_id)$/i.test(key)&&typeof d[key]!=='object')result[key]=String(d[key]).slice(0,260);
                 console.log('MATCH='+JSON.stringify(result));
               }
             }
