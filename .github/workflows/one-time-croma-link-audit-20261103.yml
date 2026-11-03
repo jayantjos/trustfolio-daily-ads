@@ -44,7 +44,6 @@ jobs:
             console.log('BACKEND_PM2_STATUS='+p.pm2_env.status);
             console.log('BACKEND_ENV_KEYS='+Object.keys(p.pm2_env.env||{}).filter(k=>/MONGO|DB_|DATABASE/.test(k)).join(','));
             const possible=[cwd,path.join(cwd,'backend'),path.dirname(cwd)];
-            for(const file of ['server.js','app.js','index.js','config/db.js','config/database.js','src/config/db.js']){const full=path.join(cwd,file);if(fs.existsSync(full)){const matches=fs.readFileSync(full,'utf8').split('\\n').filter(l=>/mongoose.connect|dbName|DB_NAME|DATABASE_NAME/.test(l)).map(l=>l.replace(/mongodb(\\+srv)?:\\/\\/[^\\s'"]+/ig,'[REDACTED_URI]')).slice(0,8);console.log('BACKEND_DB_CONFIG_FILE='+file+' MATCH_COUNT='+matches.length+' MATCHES='+matches.map(m=>m.slice(0,130)).join(' | '))}}
             for(const root of possible)console.log('MONGODB_NODE_MODULES_PRESENT='+root+':'+fs.existsSync(path.join(root,'node_modules','mongoose')));
             console.log('DOTENV_PRESENT='+fs.existsSync(path.join(cwd,'.env')));
             const env=Object.assign({},p.pm2_env.env||{},p.pm2_env);
