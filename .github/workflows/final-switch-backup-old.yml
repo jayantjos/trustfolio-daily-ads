@@ -1,0 +1,55 @@
+name: Existing backup verification and one native old Worker price request
+on:
+  push:
+    branches: [final-worker-switch-readiness-20261103]
+    paths: ['.github/workflows/final-switch-backup-old.yml']
+permissions:
+  contents: read
+jobs:
+  readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Verify existing backup only; read current source; old Worker real canary
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          trap 'rm -f ~/.ssh/id_ed25519' EXIT
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY'
+          import hashlib,json,subprocess
+          from pathlib import Path
+          b=Path.home()/'trustfolio-cutover-backups/20261103T052423Z-41583713914'
+          assert hashlib.sha256((b/'production-before-worker-change.tar.gz').read_bytes()).hexdigest()=='0805617812b132f1ad6d624d02e12ea3233b680afed5ac7728d5111120b81357'
+          m=json.loads((b/'restore-manifest.private.json').read_text())
+          for name,v in m.items():assert hashlib.sha256((b/'restore-verification'/name).read_bytes()).hexdigest()==v['sha256']
+          root=Path.home()/'apps/trustfolio/node-backend'
+          procs=json.loads(subprocess.check_output(['pm2','jlist'],text=True))
+          r={'at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),'backupStatus':'PASS','verifiedFiles':len(m),'duplicateBackupCreated':False,'sourceHashes':{str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [root/'services/LivePriceService.js',root/'controllers/ProductController.js',root/'services/LiveBudgetRecommendationService.js',root/'services/ProductRecommendationService.js',root/'services/CromaLivePriceDirect.js',root/'services/ProductAvailabilityPolicy.js']},'pm2':[{'name':p['name'],'pid':p['pid'],'status':p['pm2_env']['status'],'restartCount':p['pm2_env'].get('restart_time')} for p in procs],'productionChanges':0}
+          print('BACKUP_RECONFIRM='+json.dumps(r))
+          
+          PY
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" 'cd "$HOME/apps/trustfolio/node-backend" && node -' <<'JS'
+          const fs=require('fs'),cp=require('child_process'),crypto=require('crypto');
+          const p=JSON.parse(cp.execFileSync('pm2',['jlist'],{encoding:'utf8'})).find(p=>p.name==='trustfolio-backend').pm2_env;
+          const e={...require('dotenv').parse(fs.readFileSync('.env')),...p.env,...Object.fromEntries(Object.entries(p).filter(([k,v])=>typeof v==='string'))};
+          const base=String(e.PRICE_WORKER_URL||'').replace(/\/+$/,'');if(base!=='https://spring-shape-2759.1shailendrasoni1.workers.dev')throw new Error('Unexpected URL');
+          const headers={'content-type':'application/json'};if(e.PRICE_WORKER_KEY)headers['x-api-key']=e.PRICE_WORKER_KEY;
+          const start=performance.now();fetch(base+'/api/check',{method:'POST',headers,body:JSON.stringify({items:['B0D41L64NR'],useCache:false,browserProbe:false}),signal:AbortSignal.timeout(12000)})
+          .then(async r=>{const text=await r.text();let body;try{body=JSON.parse(text)}catch{body=null}console.log('OLD_WORKER_REAL='+JSON.stringify({at:new Date().toISOString(),http:r.status,latencyMS:Math.round(performance.now()-start),ray:r.headers.get('cf-ray'),application:body,bodyHash:crypto.createHash('sha256').update(text).digest('hex'),configuredURL:base,credentialPresent:!!e.PRICE_WORKER_KEY,productionDatabaseWrites:0}));}).catch(e=>console.log('OLD_WORKER_REAL='+JSON.stringify({error:e.name,latencyMS:Math.round(performance.now()-start),productionDatabaseWrites:0})));
+          const frontRoot=JSON.parse(cp.execFileSync('pm2',['jlist'],{encoding:'utf8'})).find(p=>p.name==='trustfolio-web').pm2_env.pm_cwd;
+          const source=fs.readFileSync(frontRoot+'/src/services/api.service.ts','utf8');
+          console.log('FRONTEND_HASH='+JSON.stringify({sha256:crypto.createHash('sha256').update(source).digest('hex'),timeout:source.match(/DEFAULT_API_TIMEOUT_MS\s*=\s*(\d+)/)?.[1]}));
+          
+          JS
