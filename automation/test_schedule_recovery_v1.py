@@ -43,6 +43,30 @@ class ScheduleRecoveryTests(unittest.TestCase):
         chosen = [select_due_mode(SWEEP_CRON, at(h, 17), lambda _: False) for h in range(19, 22)]
         self.assertEqual({"budget", "brand_budget", "comparison"}, set(chosen))
 
+    def test_late_comparison_cron_recovers_due_budget(self):
+        self.assertEqual(
+            "budget",
+            select_due_mode("30 13 * * *", at(9, 15), lambda _: False),
+        )
+
+    def test_completed_slot_falls_back_to_other_due_mode(self):
+        self.assertEqual(
+            "brand_budget",
+            select_due_mode("0 3 * * *", at(14, 10), lambda m: m == "budget"),
+        )
+
+    def test_late_budget_cron_recovers_missing_comparison(self):
+        self.assertEqual(
+            "comparison",
+            select_due_mode("0 16 * * *", at(21, 30), lambda m: m != "comparison"),
+        )
+
+    def test_late_overnight_cron_does_not_publish_before_ist_due(self):
+        self.assertIsNone(select_due_mode("30 17 * * *", at(5, 30), lambda _: False))
+
+    def test_all_formats_already_published_on_fallback(self):
+        self.assertIsNone(select_due_mode("0 3 * * *", at(22, 15), lambda _: True))
+
     def test_all_done_skips_unnecessary_rendering(self):
         self.assertIsNone(select_due_mode(SWEEP_CRON, at(23, 17), lambda _: True))
 
