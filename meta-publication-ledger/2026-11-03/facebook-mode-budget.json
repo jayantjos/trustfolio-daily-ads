@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 11500,
   "campaign_id": "tfauto-b48454bd73e6fafc6f",
+  "category": "washing-machines",
+  "meta_photo_or_post_id": "122213261060911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-b48454bd73e6fafc6f.jpg",
-  "reserved_at": "2026-11-03T14:14:13.041736+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-03T14:14:19.608864+05:30",
+  "status": "api_accepted_published"
 }
