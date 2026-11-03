@@ -1,0 +1,166 @@
+name: Safe Worker pre-cutover backup and read-only gates
+on:
+  push:
+    branches: [worker-safe-cutover-20261103]
+    paths: ['.github/workflows/worker-safe-precutover.yml']
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Private backup and read-only production checks only
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          trap 'rm -f ~/.ssh/id_ed25519' EXIT
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" "TF_BACKUP_RUN=$GITHUB_RUN_ID \$HOME/venv/bin/python -" <<'PY' > safe-backup-metadata.log
+          """Server-local private backup; emits metadata only. Never changes running config."""
+          import datetime, hashlib, json, os, re, subprocess, tarfile, time, urllib.request, urllib.error
+          from pathlib import Path
+          from dotenv import dotenv_values
+          from pymongo import MongoClient
+          
+          os.umask(0o077)
+          home=Path.home()
+          root=home/'apps/trustfolio/node-backend'
+          assert root.is_dir()
+          stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+          base=home/'trustfolio-cutover-backups'
+          base.mkdir(mode=0o700,exist_ok=True)
+          assert base.stat().st_uid==os.getuid() and base.stat().st_mode & 0o077 == 0
+          dest=base/(stamp+'-'+os.environ.get('TF_BACKUP_RUN','manual'))
+          dest.mkdir(mode=0o700,exist_ok=False)
+          report={'status':'UNVERIFIED','createdAtUTC':stamp,'backupPath':str(dest),'productionConfigChanges':0,'productionDatabaseWrites':0,'restarts':0}
+          def sha(b):return hashlib.sha256(b).hexdigest()
+          def capture(args):
+           p=subprocess.run(args,capture_output=True,text=True,timeout=15)
+           return p.returncode,p.stdout
+          code,raw=capture(['pm2','jlist']);assert code==0
+          procs=json.loads(raw)
+          backend=next(p for p in procs if p['name']=='trustfolio-backend')
+          env=backend['pm2_env'];assert env['status']=='online'
+          effective=dict(env.get('env') or {});effective.update({k:v for k,v in env.items() if isinstance(v,(str,int,float,bool))})
+          fileenv=dotenv_values(root/'.env')
+          def value(key):return effective.get(key) if key in effective else fileenv.get(key)
+          url=str(value('PRICE_WORKER_URL') or '').rstrip('/')
+          allowed=['https://spring-shape-2759.1shailendrasoni1.workers.dev','https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev']
+          report['activeConfiguredWorkerURL']=url if url in allowed else 'OTHER_OR_UNSET_REVIEW_REQUIRED'
+          report['configuredWorkerKeyPresent']=bool(value('PRICE_WORKER_KEY'))
+          report['keyReference']='PM2 environment' if 'PRICE_WORKER_KEY' in effective else 'backend .env' if fileenv.get('PRICE_WORKER_KEY') else 'not resolved'
+          report['pm2']=[{'name':p['name'],'pid':p.get('pid'),'status':p['pm2_env'].get('status'),'restartCount':p['pm2_env'].get('restart_time')} for p in procs]
+          report['backendCwdMatches']=env.get('pm_cwd')==str(root)
+          report['backendSourceSHA256']={str(p.relative_to(root)):sha(p.read_bytes()) for p in [root/'services/LivePriceService.js',root/'services/ProductAvailabilityPolicy.js',root/'services/CromaLivePriceDirect.js',root/'services/LiveBudgetRecommendationService.js',root/'services/ProductRecommendationService.js',root/'controllers/ProductController.js'] if p.is_file()}
+          code,rev=capture(['git','-C',str(root),'rev-parse','HEAD'])
+          report['revision']=rev.strip() if code==0 and re.fullmatch('[0-9a-f]{40}\n?',rev) else 'source-hash snapshot; Git revision unavailable'
+          server=(root/'server.js').read_text()
+          report['dotenvStartupLines']=[{'line':i,'code':s.strip()} for i,s in enumerate(server.splitlines(),1) if 'dotenv' in s and not re.search('://|KEY=|PASSWORD=',s)]
+          report['workerCallerTimeoutMS']=int(re.search(r'WORKER_TIMEOUT_MS\s*=\s*(\d+)',(root/'services/LivePriceService.js').read_text()).group(1))
+          front=home/'apps/trustfolio/trustfolio-main/src/services/api.service.ts'
+          if front.is_file():
+           s=front.read_text();report['frontendSourceSHA256']=sha(s.encode())
+           report['frontendDefaultTimeoutMS']=int(re.search(r'DEFAULT_API_TIMEOUT_MS\s*=\s*(\d+)',s).group(1))
+          web=next((p for p in procs if p['name']=='trustfolio-web'),None)
+          frontRoot=Path(web['pm2_env']['pm_cwd']) if web else front.parents[2]
+          if not front.is_file():
+           front=frontRoot/'src/services/api.service.ts'
+           if front.is_file():
+            s=front.read_text();report['frontendSourceSHA256']=sha(s.encode());report['frontendDefaultTimeoutMS']=int(re.search(r'DEFAULT_API_TIMEOUT_MS\s*=\s*(\d+)',s).group(1))
+          timeoutOverrides=[]
+          for p in frontRoot.glob('.env*'):
+           if p.is_file():
+            v=dotenv_values(p).get('NEXT_PUBLIC_API_TIMEOUT_MS')
+            if v is not None:timeoutOverrides.append({'source':p.name,'value':str(v) if str(v).isdigit() else 'NON_NUMERIC'})
+          if web:
+           we=web['pm2_env'];v=we.get('NEXT_PUBLIC_API_TIMEOUT_MS',(we.get('env') or {}).get('NEXT_PUBLIC_API_TIMEOUT_MS'))
+           if v is not None:timeoutOverrides.append({'source':'PM2 web','value':str(v) if str(v).isdigit() else 'NON_NUMERIC'})
+          report['frontendTimeoutOverrides']=timeoutOverrides
+          mongoValues={**dotenv_values(home/'new_scraper/.env'),**fileenv,**effective}
+          uri=next((mongoValues.get(k) for k in ['MONGODB_URI','MONGO_URI','MONGODB_URL'] if mongoValues.get(k)),None)
+          assert uri
+          c=MongoClient(uri,serverSelectionTimeoutMS=5000,connectTimeoutMS=5000,socketTimeoutMS=5000,appname='TrustFolioPreCutoverReadOnlyPing')
+          report['mongoPing']='PASS' if c.admin.command('ping').get('ok')==1 else 'FAIL';c.close()
+          report['oldWorkerAuthControls']=[]
+          if url==allowed[0]:
+           for label,key in [('missing',None),('configured_previous_key',value('PRICE_WORKER_KEY'))]:
+            headers={'Content-Type':'application/json'}
+            if key:headers['x-api-key']=str(key)
+            started=time.monotonic()
+            try:
+             req=urllib.request.Request(url+'/api/check',data=b'{"items":[],"useCache":false,"browserProbe":false}',headers=headers,method='POST')
+             try:res=urllib.request.urlopen(req,timeout=10)
+             except urllib.error.HTTPError as e:res=e
+             rawbody=res.read(20000)
+             try:body=json.loads(rawbody)
+             except ValueError:body=None
+             report['oldWorkerAuthControls'].append({'label':label,'http':res.code,'latencyMS':round((time.monotonic()-started)*1000),'ray':res.headers.get('CF-Ray'),'jsonResponse':isinstance(body,dict),'hasResultsArray':isinstance(body,dict) and isinstance(body.get('results'),list),'bodySHA256':sha(rawbody),'retailerItems':0})
+            except Exception as e:report['oldWorkerAuthControls'].append({'label':label,'errorClass':type(e).__name__,'retailerItems':0})
+          
+          # Secrets stay inside a new private server-local archive; never upload this archive.
+          (dest/'pm2-jlist.private.json').write_text(raw)
+          entries=[]
+          exclude={'node_modules','.git','logs','uploads','.next','coverage','.cache','__pycache__'}
+          for p in root.rglob('*'):
+           if any(x in exclude for x in p.relative_to(root).parts):continue
+           if p.is_file() and not p.is_symlink():entries.append((p,'backend/'+str(p.relative_to(root))))
+          for p in home.glob('.pm2/dump.pm2*'):
+           if p.is_file() and not p.is_symlink():entries.append((p,'pm2/'+p.name))
+          entries.append((dest/'pm2-jlist.private.json','pm2/jlist.private.json'))
+          for p in [Path('/etc/nginx/nginx.conf'),*Path('/etc/nginx/sites-enabled').glob('*'),*Path('/etc/nginx/conf.d').glob('*')]:
+           if p.is_file():entries.append((p,'nginx/'+str(p.relative_to('/etc/nginx'))))
+          assert sum(p.stat().st_size for p,_ in entries)<250_000_000
+          manifest={name:{'sha256':sha(p.read_bytes()),'mode':p.stat().st_mode & 0o777,'source':str(p)} for p,name in entries}
+          archive=dest/'production-before-worker-change.tar.gz'
+          with tarfile.open(archive,'w:gz') as t:
+           for p,name in entries:t.add(p,arcname=name,recursive=False)
+          os.chmod(archive,0o600)
+          (dest/'restore-manifest.private.json').write_text(json.dumps(manifest,indent=2))
+          restored=dest/'restore-verification';restored.mkdir(mode=0o700)
+          with tarfile.open(archive,'r:gz') as t:
+           for member in t.getmembers():
+            assert member.isfile() and not member.name.startswith('/') and '..' not in Path(member.name).parts
+            data=t.extractfile(member).read();assert sha(data)==manifest[member.name]['sha256']
+            out=restored/member.name;out.parent.mkdir(parents=True,exist_ok=True);out.write_bytes(data);os.chmod(out,0o600)
+            assert sha(out.read_bytes())==manifest[member.name]['sha256']
+          report['backup']={'files':len(manifest),'archiveSHA256':sha(archive.read_bytes()),'bytes':archive.stat().st_size,'mode':oct(archive.stat().st_mode & 0o777),'restoreToPrivateDirectory':'PASS','liveRestorePerformed':False,'pm2Captured':True,'nginxFiles':sum(k.startswith('nginx/') for k in manifest),'envFileCaptured':'backend/.env' in manifest}
+          # Configuration rollback is prepared, never executed by this script.
+          rollback='''#!/bin/bash
+          set -euo pipefail
+          echo 'STOP: manual review and explicit cutover/rollback authorization required.' >&2
+          exit 1
+          # Restore only exact reviewed backend files from restore-verification/backend/.
+          # Restore backend .env privately; never echo it or pass credentials on command line.
+          # Restore PM2 PRICE_WORKER_URL/KEY from saved jlist privately if they override dotenv.
+          # Do not use pm2 resurrect: it could affect unrelated processes.
+          # Reload only trustfolio-backend through its existing deployment procedure if needed.
+          # Verify old Worker authenticated handler and actual backend route before claiming rollback.
+          # Never restore or delete MongoDB data as configuration rollback.
+          '''
+          (dest/'ROLLBACK_REVIEW_REQUIRED.sh').write_text(rollback)
+          code,after=capture(['pm2','jlist']);assert code==0
+          after=json.loads(after)
+          report['sameBackendPidAndRestartCount']=any(p['name']=='trustfolio-backend' and p.get('pid')==backend.get('pid') and p['pm2_env'].get('restart_time')==env.get('restart_time') for p in after)
+          report['status']='PASS' if report['backup']['restoreToPrivateDirectory']=='PASS' and report['mongoPing']=='PASS' and report['sameBackendPidAndRestartCount'] else 'FAIL'
+          (dest/'safe-summary.json').write_text(json.dumps(report,indent=2))
+          print('PRE_CUTOVER_METADATA='+json.dumps(report))
+          
+          PY
+          cat safe-backup-metadata.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safe-precutover-metadata-only
+          path: safe-backup-metadata.log
+          retention-days: 30
