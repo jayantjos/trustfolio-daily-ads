@@ -90,7 +90,7 @@ class SiteRankedCampaignTests(unittest.TestCase):
         item = manifest["ads"][0]
         self.assertEqual(item["site_ranking_status"], "verified")
         self.assertTrue(item["prefill_ready"])
-        self.assertEqual(urlsplit(item["landing_url"]).path, "/category/smartwatches/products")
+        self.assertEqual(urlsplit(item["landing_url"]).path, "/category/smartwatches/products/")
         self.assertEqual(parse_qs(urlsplit(item["landing_url"]).query)["brand"], ["TIMEX"])
         self.assertEqual([p["ad_rank"] for p in item["products"]], [1, 2, 3, 4, 5])
         self.assertEqual(item["products"][0]["product_id"], "website-sku-1")

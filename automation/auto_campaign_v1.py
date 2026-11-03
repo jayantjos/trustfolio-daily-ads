@@ -198,7 +198,7 @@ def check_report(plan, report):
     if report.get("renderer") != "master_template_renderer_html_v4":
         raise ValueError("Approved premium renderer not used")
     url = urlsplit(str(report.get("landing_url") or ""))
-    if url.scheme != "https" or url.hostname not in ("trustfolio.in", REPO_HOST) or not url.path.endswith("/products"):
+    if url.scheme != "https" or url.hostname not in ("trustfolio.in", REPO_HOST) or url.path.rstrip("/") != "/category/" + str(plan["category"]) + "/products":
         raise ValueError("Landing URL is not the real TrustFolio results page")
     params = parse_qs(url.query)
     if params.get("budget") != [str(plan["budget"])] or params.get("brand",[""])[0] != plan["brand"]:
@@ -208,6 +208,22 @@ def check_report(plan, report):
     # Rankings can change between planning and rendering; the website-render
     # report is authoritative for the actual image. Always record its ID order.
     return ids
+
+
+def clean_product_url(plan):
+    """Canonical public ad destination for every ranked category and budget."""
+    from urllib.parse import quote
+    slug = str(plan.get("category") or "").strip()
+    budget = int(plan.get("budget") or 0)
+    brand = str(plan.get("brand") or "").strip()
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) or budget <= 0:
+        raise ValueError("Invalid category or budget for canonical product link")
+    if (plan.get("mode") == "brand_budget") != bool(brand):
+        raise ValueError("Brand URL filter does not match ad mode")
+    query = {"budget": str(budget)}
+    if brand:
+        query["brand"] = brand
+    return "https://www.trustfolio.in/category/" + slug + "/products/?" + urlencode(query)
 
 
 def caption_for(plan, landing_url, *, network="instagram"):
@@ -232,11 +248,12 @@ def caption_for(plan, landing_url, *, network="instagram"):
     link = urlsplit(str(landing_url or ""))
     q = parse_qs(link.query)
     if (link.scheme != "https" or link.hostname not in ("trustfolio.in", REPO_HOST)
-            or link.path != "/category/" + category_slug + "/products"
+            or link.path.rstrip("/") != "/category/" + category_slug + "/products"
             or q.get("category", [category_slug])[0] != category_slug
             or q.get("budget") != [str(budget_inr)]
             or q.get("brand", [""])[0] != (brand if mode == "brand_budget" else "")):
         raise ValueError("Social caption URL does not match real category, budget and brand")
+    landing_url = clean_product_url(plan)
     amount = f"₹{budget_inr:,}"
     if mode == "brand_budget":
         title = f"Best {brand} {category} Under {amount}!"
@@ -292,6 +309,7 @@ def package_assets(plan, report, original_png, output_dir):
     with Image.open(jpg) as verify:
         if verify.size!=(1080,1350):
             raise ValueError("Invalid Instagram image")
+    landing_url = clean_product_url(plan)
     content = caption_for(plan, report["landing_url"])
     metadata = {
         "campaign_id":plan["campaign_id"],"mode":plan["mode"],
@@ -299,7 +317,7 @@ def package_assets(plan, report, original_png, output_dir):
         "budget_inr":plan["budget"],"brand":plan["brand"],
         "network":"instagram","instagram_account":"trustfolio3",
         "ranked_product_ids":ids,"ranking_observed_at":report.get("source_observed_at"),
-        "landing_url":report["landing_url"],"caption":content,
+        "landing_url":landing_url,"caption":content,
         "source_renderer":report["renderer"],"geometry_errors":[],
         "output_jpg":jpg.name,"size":[1080,1350],
         "status":"ready_for_publishing_gate","publication_status":"not_published",

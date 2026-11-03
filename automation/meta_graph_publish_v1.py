@@ -161,7 +161,7 @@ def validate_approved_manifest(manifest):
     landing=urlsplit(str(manifest.get("landing_url") or ""))
     if landing.scheme!="https" or landing.hostname not in ("trustfolio.in","www.trustfolio.in"):
         raise PublishingBlocked("Unverified landing URL domain")
-    if not landing.path.startswith("/category/") or not landing.path.endswith("/products"):
+    if not landing.path.startswith("/category/") or not landing.path.rstrip("/").endswith("/products"):
         raise PublishingBlocked("Wrong budget-filtered product page")
     caption=manifest.get("caption") or ""
     if not (50<=len(caption)<=2100) or "play.google.com/store/apps/details?id=com.trustfolio.app" not in caption:
