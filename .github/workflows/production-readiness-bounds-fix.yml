@@ -1,0 +1,392 @@
+name: Reproduced category bounds defect focused live regression
+on:
+  push:
+    branches: [production-readiness-final-20261103]
+    paths: ['.github/workflows/production-readiness-bounds-fix.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  source:
+    permissions:
+      contents: write
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Authenticate to existing VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Receive only staging public certificate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: production-readiness-final-20261103
+        run: |
+          for i in $(seq 1 80); do
+            if gh api "repos/$GH_REPO/contents/qa/production-readiness-final/transport-public-cert.pem?ref=$STAGING_BRANCH" --jq .content 2>/dev/null | base64 --decode > staging-cert.pem; then
+              if openssl x509 -in staging-cert.pem -noout >/dev/null 2>&1; then break; fi
+            fi
+            sleep 3
+          done
+          openssl x509 -in staging-cert.pem -noout >/dev/null
+      - name: Read real source and approved bounded fixtures; production reads only
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY' > private-sources.json
+          import json,re,hashlib,os,datetime
+          from pathlib import Path
+          from dotenv import load_dotenv
+          from pymongo import MongoClient
+          from bson import ObjectId
+          root=Path.home()/'apps/trustfolio/node-backend'
+          sources={}
+          for folder in ['services','controllers','models','entities','utils','helpers','lib','data','scripts']:
+           base=root/folder
+           if base.exists():
+            for p in base.rglob('*.js'):
+             if 'node_modules' in p.parts:continue
+             s=p.read_text();assert not re.search(r'mongodb(?:\+srv)?://',s)
+             sources[str(p.relative_to(root))]=s
+          load_dotenv(Path.home()/'new_scraper/.env')
+          uri=os.getenv('MONGODB_URI') or os.getenv('MONGO_URI') or os.getenv('MONGODB_URL')
+          c=MongoClient(uri,serverSelectionTimeoutMS=8000,appname='TrustFolioFinalReadOnlySource')
+          col=c[os.getenv('MONGODB_DB','trustfolio')][os.getenv('PRODUCT_COLLECTION','my_products')]
+          canaries=[];mapping={}
+          ids=['6a080110fe6fd8dc386bbee3', '6a1011ac0f397d1e1344d8d1', '6a11eb601550236f65449f35', '6a13b26845c23a8f711e72f7', '6a30d4bb3570d521d1841a98', '69f419329a622ea2d7ccb736', '6a1013380f397d1e1344dd59', '6a2c08a19665e4a0b177b34b', '6a2c234e63eb5b6abbf912be', '6a2c235963eb5b6abbf9133f']
+          pool=list(col.find({'_id':{'$in':[ObjectId(i) for i in ids]}}).max_time_ms(5000))
+          croma=list(col.find({'platform':'croma','platform_product_id':'312748'}).limit(1).max_time_ms(5000))
+          pool.extend(croma)
+          c.close()
+          print(json.dumps({'sources':sources,'sha256':{k:hashlib.sha256(v.encode()).hexdigest() for k,v in sources.items()},'canaries':canaries,'pool':pool,'mappingRecords':mapping,'readAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'productionWrites':0},default=str))
+          
+          PY
+          rm -f ~/.ssh/id_ed25519
+          python3 - <<'PY'
+          import json
+          x=json.load(open('private-sources.json'))
+          print('SOURCE_SUMMARY='+json.dumps({'hashes':x['sha256'],'canaryIds':[str(d['_id']) for d in x['canaries']],'pool':[{'id':d['_id'],'title':d['title'],'platform':d['platform'],'price':d.get('price_inr')} for d in x['pool']],'mappingRecords':x['mappingRecords'],'productionWrites':0},default=str))
+          PY
+          gzip -c private-sources.json > private-sources.json.gz
+          openssl cms -encrypt -binary -aes256 -in private-sources.json.gz -outform DER -out final-source.enc staging-cert.pem
+          rm -f private-sources.json private-sources.json.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-real-encrypted-source
+          path: final-source.enc
+          retention-days: 1
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Publish temporary public encryption certificate only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: production-readiness-final-20261103
+        run: |
+          openssl req -x509 -newkey rsa:3072 -keyout staging-private.pem -out staging-cert.pem -sha256 -days 1 -nodes -subj '/CN=TrustFolioFinalIsolatedStage' >/dev/null 2>&1
+          python3 - <<'PY'
+          import json,base64,os
+          from pathlib import Path
+          Path('cert-payload.json').write_text(json.dumps({'message':'Publish temporary public staging transport certificate','branch':os.environ['STAGING_BRANCH'],'content':base64.b64encode(Path('staging-cert.pem').read_bytes()).decode()}))
+          PY
+          gh api -X PUT "repos/$GH_REPO/contents/qa/production-readiness-final/transport-public-cert.pem" --input cert-payload.json >/dev/null
+      - name: Receive encrypted source and quote-only credential envelope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: production-readiness-final-20261103
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 140); do
+            if gh run download "$GITHUB_RUN_ID" -n final-real-encrypted-source 2>/dev/null; then break; fi
+            sleep 3
+          done
+          openssl cms -decrypt -binary -inform DER -in final-source.enc -recip staging-cert.pem -inkey staging-private.pem -out private-sources.json.gz
+          gzip -dc private-sources.json.gz > private-sources.json
+          for i in $(seq 1 140); do
+            if gh api "repos/$GH_REPO/contents/qa/production-readiness-final/worker-key-envelope.json?ref=$STAGING_BRANCH" --jq .content 2>/dev/null | base64 --decode > key-envelope.json; then
+              if python3 -c 'import json; assert json.load(open("key-envelope.json")).get("ciphertext")' 2>/dev/null; then break; fi
+            fi
+            sleep 3
+          done
+          python3 - <<'PY'
+          import base64,json
+          from pathlib import Path
+          Path('worker-key.enc').write_bytes(base64.b64decode(json.load(open('key-envelope.json'))['ciphertext']))
+          PY
+          openssl cms -decrypt -binary -inform DER -in worker-key.enc -recip staging-cert.pem -inkey staging-private.pem -out worker-key.txt
+          chmod 600 worker-key.txt
+          rm -f staging-private.pem worker-key.enc private-sources.json.gz
+      - name: Start only disposable Mongo replica set and isolated dependencies
+        run: |
+          docker run -d --name trustfolio-final-staging-mongo -p 127.0.0.1:27017:27017 mongo:7 --replSet rs0 --bind_ip_all >/dev/null
+          for i in $(seq 1 30); do
+            if docker exec trustfolio-final-staging-mongo mongosh --quiet --eval 'db.adminCommand({ping:1})' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec trustfolio-final-staging-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})' >/dev/null
+          npm install --no-audit --no-fund --ignore-scripts mongoose@8 dotenv@16 express@4
+
+      - name: Actual service controller ranker and watcher against real quotes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: production-readiness-final-20261103
+          STAGING_MONGO_URI: mongodb://127.0.0.1:27017/trustfolio_acceptance_disposable?replicaSet=rs0
+        run: |
+          cat > integration-runner.cjs <<'JS'
+          'use strict';
+          const fs=require('fs'),path=require('path'),assert=require('assert/strict'),crypto=require('crypto'),cp=require('child_process');
+          const mongoose=require('mongoose'),express=require('express');
+          const URI='mongodb://127.0.0.1:27017/trustfolio_acceptance_disposable?replicaSet=rs0';
+          const ROOT=path.resolve('backend');
+          const report={status:'UNVERIFIED',productionWrites:0,workerDeployment:false,canaries:[],mappings:[],quotes:[],rankerWaves:[],watcherLogs:[],simulation:[],checks:[],failures:[],sourceHashes:{}};
+          let watcher,server,faultServer,faultCase,faultPrice;let quoteCount=0,mode='real';const originalFetch=global.fetch;
+          function record(name,status,evidence){report.checks.push({name,status,...evidence});}
+          function check(name,fn){try{fn();record(name,'PASS',{});}catch(e){record(name,'FAIL',{error:e.message});report.failures.push({name,error:e.message});}}
+          function write(){fs.writeFileSync('real-integration-results.json',JSON.stringify(report,null,2));}
+          const delay=ms=>new Promise(r=>setTimeout(r,ms));
+          async function waitFor(fn,ms=16000){const end=Date.now()+ms;while(Date.now()<end){const r=await fn();if(r)return r;await delay(200);}throw Error('bounded_wait_expired');}
+          function sha(s){return crypto.createHash('sha256').update(s).digest('hex');}
+          function edit(s,a,b){assert.ok(s.includes(a),'Source patch anchor missing: '+a.slice(0,60));return s.replace(a,b);}
+          function normalizeDoc(d){const o={...d,_id:new mongoose.Types.ObjectId(d._id)};if(o.live){delete o.live;}return o;}
+          async function startFaultServer(){faultServer=require('http').createServer((req,res)=>{req.resume();const f=faultCase,timer=setTimeout(()=>{const sku='B0D41L64NR',q={status:'ok',verificationStatus:'ok',priceNum:faultPrice,in_stock:f.name==='unknown_stock'?null:true,inStock:f.name==='unknown_stock'?null:true,title:f.name==='wrong_variant'?'Bosch 8 kg WGA14200IN':'Bosch 9 kg WGA14200IN',url:'https://www.amazon.in/dp/'+sku,extractionSource:'SIMULATED_HTTP'};res.setHeader('content-type','application/json');res.end(JSON.stringify({results:[{asin:f.name==='wrong_identity'?'B000000000':sku,amazon:q}]}));},f.delay);res.on('close',()=>clearTimeout(timer));});faultServer.listen(0,'127.0.0.1');await new Promise(r=>faultServer.on('listening',r));}
+          async function main(){
+           await startFaultServer();
+           assert.equal(process.env.STAGING_MONGO_URI,URI);
+           for(const k of ['MONGODB_URI','MONGO_URI','MONGODB_URL','DATABASE_URL','TF_DEPLOY_SSH_KEY','CLOUDFLARE_API_TOKEN'])assert.ok(!process.env[k],k+' forbidden');
+           const originalConnect=mongoose.connect.bind(mongoose);mongoose.connect=(u,...a)=>{assert.equal(u,URI);return originalConnect(u,...a);};
+           const snap=JSON.parse(fs.readFileSync('private-sources.json'));report.sourceHashes=snap.sha256;report.sourceCatalogReadAt=snap.readAt;report.mappingRecords=snap.mappingRecords;
+           for(const [p,s] of Object.entries(snap.sources)){assert.ok(!p.includes('..'));assert.ok(!s.includes('mongodb:')&&!s.includes('mongodb+srv:'));const f=path.join(ROOT,p);fs.mkdirSync(path.dirname(f),{recursive:true});fs.writeFileSync(f,s);}
+           fs.mkdirSync(ROOT+'/config',{recursive:true});
+           fs.writeFileSync(ROOT+'/config/mongo.js',`module.exports=async()=>require('mongoose').connect(process.env.STAGING_MONGO_URI,{autoIndex:false});`);
+           fs.writeFileSync('staging-db-guard.cjs',`const m=require('mongoose'),assert=require('assert/strict');const u=${JSON.stringify(URI)};assert.equal(process.env.STAGING_MONGO_URI,u);const c=m.connect.bind(m);m.connect=(v,...a)=>{assert.equal(v,u);return c(v,...a)};`);
+           cp.execFileSync(process.execPath,['build-candidate.cjs',ROOT,ROOT]);
+           fs.copyFileSync('LivePriceIdentity.js',ROOT+'/services/LivePriceIdentity.js');fs.copyFileSync('CatalogIdentityGuard.js',ROOT+'/services/CatalogIdentityGuard.js');
+           process.env.PRICE_WORKER_URL='https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev';
+           process.env.PRICE_WORKER_KEY=fs.readFileSync('worker-key.txt','utf8').trim();assert.ok(process.env.PRICE_WORKER_KEY);
+           process.env.LIVE_PRICE_FRESH_MS='60000';
+           await mongoose.connect(URI,{autoIndex:false,monitorCommands:true});assert.equal(mongoose.connection.db.databaseName,'trustfolio_acceptance_disposable');
+           const col=mongoose.connection.collection('my_products'),cats=mongoose.connection.collection('categories'),archive=mongoose.connection.collection('my_products_deleted');
+           const docs=snap.pool.filter(d=>String(d._id)==='6a2c08a19665e4a0b177b34b').map(normalizeDoc);const unique=[...new Map(docs.map(d=>[String(d._id),d])).values()];
+           const confirmedMappings={"69f419329a622ea2d7ccb736": "WMNHBK4HNYBSDJ9U", "6a1013380f397d1e1344dd59": "WMNG4WGVXYSRYHJZ", "6a2c08a19665e4a0b177b34b": "WMNHHUCY5FWTHBAN", "6a2c234e63eb5b6abbf912be": "WMNGYGJKCVNKSZWY"};
+           for(const d of unique){const pid=confirmedMappings[String(d._id)];if(pid){d.platform_product_id=pid;const u=d.original_product_url||d.clean_url||d.url;d.original_product_url=u+(u.includes('?')?'&':'?')+'pid='+pid;}}
+           await col.insertMany(unique);
+           const slugs=[...new Set(unique.map(d=>d.category_slug||d.category))];for(const slug of slugs)await cats.insertOne({title:slug,slug,price_ranges:[]});
+          
+           const service=require(ROOT+'/services/LivePriceService'),controller=require(ROOT+'/controllers/ProductController'),ranker=require(ROOT+'/services/ProductRecommendationService'),category=require(ROOT+'/services/CategoryService');
+           const originalRank=ranker.getTopProductsForCategoryAndBudget.bind(ranker);ranker.getTopProductsForCategoryAndBudget=async(...args)=>{const t=Date.now(),r=await originalRank(...args);report.rankerWaves.push({category:args[0],budget:args[1],excluded:args[2]?.excludeProductIds||[],ids:r.products.map(p=>p.id),latencyMs:Date.now()-t});return r;};
+           let queries=0;mongoose.connection.getClient().on('commandStarted',e=>{if(e.commandName==='find'&&e.command.find==='my_products')queries++;});
+           global.fetch=async(url,options)=>{
+            if(String(url).startsWith('http://127.0.0.1:'))return originalFetch(url,options);
+            assert.equal(String(url),process.env.PRICE_WORKER_URL+'/api/check');
+            const body=JSON.parse(options.body),item=body.items[0],label=typeof item==='string'&&item.startsWith('https:')?new URL(item).searchParams.get('pid'):item;
+            if(mode!=='real'){return originalFetch('http://127.0.0.1:'+faultServer.address().port,options);}
+            if(false){const q=mode==='unknown'?{status:'ok',verificationStatus:'ok',priceNum:12345,price:'₹12,345',inStock:null,in_stock:null,title:'HP 24-cr0023in',extractionSource:'SIMULATED_STOCK_GUARD'}:{status:'error',verificationStatus:'temporary_error',priceNum:null,inStock:null,error:'SIMULATED_FAILURE'};return new Response(JSON.stringify({results:[{asin:label,pid:label,amazon:q}]}),{status:200,headers:{'content-type':'application/json'}});}
+            if(quoteCount>=10)return new Response(JSON.stringify({results:[{error:'acceptance_quote_budget_exhausted'}]}),{status:200});
+            quoteCount++;const t=Date.now();try{const res=await originalFetch(url,options),text=await res.text();let data;try{data=JSON.parse(text);}catch{}
+             const rr=data?.results?.[0],store=rr?.asin?rr.amazon:rr?.flipkart;
+             report.quotes.push({item,atUTC:new Date().toISOString(),httpStatus:res.status,ray:res.headers.get('cf-ray'),latencyMs:Date.now()-t,row:rr||null,source:store?.extractionSource||null});
+             return new Response(text,{status:res.status,headers:{'content-type':res.headers.get('content-type')||'application/json'}});
+            }catch(e){report.quotes.push({item,error:e.name,latencyMs:Date.now()-t});throw e;}
+           };
+           const app=express();app.get('/api/products/price-bounds',controller.getProductPriceBounds);app.get('/api/products/top',controller.getTopProducts);server=app.listen(0,'127.0.0.1');await new Promise(r=>server.on('listening',r));const endpoint='http://127.0.0.1:'+server.address().port;
+           const get=async p=>{const t=Date.now(),r=await originalFetch(endpoint+p);return {httpStatus:r.status,body:await r.json(),latencyMs:Date.now()-t};};
+           watcher=cp.fork(ROOT+'/scripts/trustfolio-category-price-watcher.js',[],{silent:true,execArgv:['--require',path.resolve('staging-db-guard.cjs')],env:{PATH:process.env.PATH,STAGING_MONGO_URI:URI,NODE_PATH:path.resolve('node_modules')}});watcher.stdout.on('data',b=>report.watcherLogs.push({at:Date.now(),text:String(b)}));watcher.stderr.on('data',b=>report.watcherLogs.push({at:Date.now(),stderr:String(b)}));await waitFor(()=>report.watcherLogs.some(x=>x.text?.includes('CHANGE_STREAM_ACTIVE')));
+           report.boundsBefore=await get('/api/products/price-bounds?category=washing-machines');const categoryStarted=Date.now();
+           // This focused regression reuses completed three-platform selection and timeout evidence.
+           const seed=unique[0];assert.equal(seed.platform_product_id,'WMNHHUCY5FWTHBAN');
+           report.beforeStoredPrice=seed.price_inr;
+           // Two explicitly synthetic catalog bounds fixtures exercise mixed extrema; they are not retailer offers.
+           await col.insertMany([{_id:new mongoose.Types.ObjectId(),title:'SIMULATED bounds lower fixture',platform:'unsupported_fixture',category:'washing-machines',category_slug:'washing-machines',price:'33000',price_inr:33000},{_id:new mongoose.Types.ObjectId(),title:'SIMULATED bounds upper fixture',platform:'unsupported_fixture',category:'washing-machines',category_slug:'washing-machines',price:'40000',price_inr:40000}]);
+           await category.updateCategoryPriceRange('washing-machines');controller.invalidatePriceCaches();
+           report.seededBounds=await get('/api/products/price-bounds?category=washing-machines');
+           const t=Date.now(),top=await get('/api/products/top?category=washing-machines&budget=31500&limit=5');report.top5=top;report.regressionMs=Date.now()-t;
+           const selected=top.body.data?.products||[],after=await col.findOne({_id:seed._id});report.persistedProducts=[after];report.afterImmediateBounds=await get('/api/products/price-bounds?category=washing-machines');
+           check('genuine_newly_eligible_product',()=>{assert.equal(selected.length,1);assert.equal(selected[0].verified_retailer_id,'WMNHHUCY5FWTHBAN');assert.equal(selected[0].price_inr,after.live.price_inr);assert.ok(after.price_inr<=31500);assert.equal(after.live.status,'ok');});
+           check('same_response_mixed_bounds_current',()=>{assert.equal(top.body.data.catalogPriceRange.min,after.price_inr);assert.equal(top.body.data.catalogPriceRange.max,40000);assert.equal(report.afterImmediateBounds.body.data.min,after.price_inr);assert.equal(report.afterImmediateBounds.body.data.max,40000);});
+           check('budget_label_and_identity_link',()=>{assert.deepEqual(top.body.data.priceWindow,{min:0,max:31500});assert.equal(new URL(selected[0].product_url).searchParams.get('pid'),'WMNHHUCY5FWTHBAN');});
+           await waitFor(()=>report.watcherLogs.some(x=>x.text?.includes('CATEGORY_RANGE_')),18000);report.watcherBounds=await get('/api/products/price-bounds?category=washing-machines');
+           check('watcher_preserves_synchronous_bounds',()=>assert.deepEqual(report.watcherBounds.body.data,report.afterImmediateBounds.body.data));
+           report.top5Count=selected.length;report.status=report.failures.length?'FAIL':'PASS';report.kind='one genuine Haier quote through actual backend, real disposable MongoDB; two explicitly synthetic catalog-bound fixtures';
+           mode='real';report.archiveCount=await archive.countDocuments();report.quoteCount=quoteCount;report.catalogScope={category:'washing-machines',budget:35000,fixtureCandidates:snap.pool.length,networkQuoteCap:10};
+           report.scope='Only reproduced stale category-metadata defect and affected live eligibility';report.status=report.failures.length?'FAIL':'PASS';
+          }
+          (async()=>{try{await main();}catch(e){report.status='FAIL';report.fatal={name:e.name,message:e.message,stack:e.stack};}finally{if(watcher){watcher.kill('SIGTERM');await delay(500);}if(server)await new Promise(r=>server.close(r));if(faultServer){faultServer.closeAllConnections();await new Promise(r=>faultServer.close(r));}if(mongoose.connection.readyState===1){await mongoose.connection.dropDatabase();report.disposableDatabaseDropped=true;await mongoose.disconnect();}delete process.env.PRICE_WORKER_KEY;try{fs.unlinkSync('worker-key.txt');}catch{}write();console.log('REAL_INTEGRATION_RESULTS='+JSON.stringify(report));}})();
+          JS
+          cat > build-candidate.cjs <<'CODE'
+          const fs=require('fs'),assert=require('assert/strict'),path=require('path');
+          const base=process.argv[2]||'backend',out=process.argv[3]||'candidate-backend';
+          function edit(s,a,b){assert.ok(s.includes(a),'Source drift: '+a.slice(0,90));return s.replace(a,b);}
+          function put(p,s){fs.mkdirSync(path.dirname(out+'/'+p),{recursive:true});fs.writeFileSync(out+'/'+p,s);}
+          let s=fs.readFileSync(base+'/services/LivePriceService.js','utf8');
+          s=edit(s,"const WORKER_TIMEOUT_MS = 6000;","const WORKER_TIMEOUT_MS = 8000; // 6500 ms upstream + 1500 ms response/parsing margin");
+          s=edit(s,"const { classify, toAvailabilityState, isConfirmedUnavailable } = require('./ProductAvailabilityPolicy');","const { classify, toAvailabilityState, isConfirmedUnavailable } = require('./ProductAvailabilityPolicy');\nconst { workerItem, validateWorkerQuote } = require('./LivePriceIdentity');");
+          const a=s.indexOf('function workerItem(doc) {'),b=s.indexOf('\nasync function fetchLive',a);assert.ok(a>0&&b>a);s=s.slice(0,a)+s.slice(b);
+          s=edit(s,'async function fetchLive(item) {','async function fetchLive(item, doc) {');
+          s=edit(s,'items: [item], useCache: true','items: [item], useCache: false, browserProbe: false');
+          s=edit(s,"return (r.asin ? r.amazon : r.flipkart) || { status: 'error', error: 'no store result' };","return validateWorkerQuote(doc, item, r);");
+          s=edit(s,'fetchCromaDirect(d) : fetchLive(workerItem(d))',"fetchCromaDirect(d).then(r => ({...r, verificationStatus:r.status==='ok'?'ok':null, extractionSource:'croma_vps_exact_sku_buy', retailer_product_id:String(d.platform_product_id), retailer_url:d.original_product_url||d.clean_url||d.product_url||d.url||null})) : fetchLive(workerItem(d), d)");
+          s=edit(s,'  const availabilityKind = classify(result);',"  if(result.status==='ok' && (!Number.isFinite(result.priceNum) || result.priceNum<=0 || result.verificationStatus!=='ok' || result.in_stock===false || result.inStock===false)) result={status:'error',error:'invalid_accepted_quote',in_stock:null};\n  const availabilityKind = classify(result);");
+          s=edit(s,"const priced = (liveStatus === 'ok' || liveStatus === 'out_of_stock') && result.priceNum > 0;","const priced = liveStatus === 'ok' && Number.isFinite(result.priceNum) && result.priceNum > 0;");
+          s=edit(s,"? result.in_stock : liveStatus === 'ok',","? (typeof result.in_stock==='boolean'?result.in_stock:null) : (typeof result.inStock==='boolean'?result.inStock:null),");
+          s=edit(s,'    checked_at: new Date(),',"    checked_at: new Date(),\n    verification_status:result.verificationStatus||null,\n    extraction_source:result.extractionSource||null,\n    retailer_product_id:result.retailer_product_id||null,\n    retailer_url:result.retailer_url||result.url||null,");
+          s=edit(s,'platform: 1, asin: 1, url: 1, clean_url: 1, productUrl: 1, original_product_url: 1,','platform: 1, asin: 1, url: 1, clean_url: 1, product_url: 1, productUrl: 1, original_product_url: 1,');
+          s=edit(s,'platform_product_id: 1, title: 1, brand: 1, category: 1, price_inr: 1, live: 1,','platform_product_id: 1, title: 1, brand: 1, category: 1, model: 1, model_number: 1, specifications: 1, price_inr: 1, live: 1,');
+          s=edit(s,'  if (fetched.length) {',"  if (fetched.length) {\n    const changedCategories=[...new Set(fetched.filter(d=>deletedIds.has(String(d._id)) || d.live.status==='ok').map(d=>d.category).filter(Boolean))];\n    await Promise.all(changedCategories.map(slug=>require('./CategoryService').updateCategoryPriceRange(slug)));\n");
+          put('services/LivePriceService.js',s);
+          s=fs.readFileSync(base+'/services/LiveBudgetRecommendationService.js','utf8');
+          s=edit(s,'  const inspected = new Set();',"  const started=Date.now();\n  const inspected = new Set();");
+          s=edit(s,'    waveCount++;',"    if(Date.now()-started>8000) break; // Reserve a complete 8000 ms price wave within 16000 ms.\n    waveCount++;");
+          s=edit(s,'      ...opts,',"      ...opts,\n      livePriceCandidates: true,");
+          const start=s.indexOf('      let displayPrice = candidate.price_inr;'),end=s.indexOf('      if (!goodPrice(displayPrice, budgetCap)) continue;',start);assert.ok(start>0&&end>start);
+          s=s.slice(0,start)+"      if (!row.supported || live?.status!=='ok' || live.verification_status!=='ok' || live.in_stock===false || !live.priced_at || Date.now()-new Date(live.priced_at).getTime()>60000) continue;\n      const displayPrice=live.price_inr;\n      const priceSource='website_live_price_api';\n"+s.slice(end);
+          s=edit(s,'        ...candidate,',"        ...candidate,\n        in_stock:live.in_stock,\n        inStock:live.in_stock,\n        availability_status:live.in_stock===true?'In Stock':null,\n        product_url:live.retailer_url||candidate.product_url,\n        verified_retailer_id:live.retailer_product_id,");
+          s=edit(s,'    ...original,\n    products,',"    ...original,\n    priceWindow:{min:0,max:budgetCap},\n    products,");
+          put('services/LiveBudgetRecommendationService.js',s);
+          s=fs.readFileSync(base+'/services/ProductRecommendationService.js','utf8');
+          s=edit(s,'  const budgetCap = Math.floor(Number(budgetInINR));',"  // Live candidate mode keeps the same ranker, but does not trust stale catalog price for eligibility.\n  const candidateBudget=options.livePriceCandidates?Number.MAX_SAFE_INTEGER:budgetInINR;\n  const budgetCap = Math.floor(Number(candidateBudget));");
+          s=edit(s,'  const { min: minBudget, max: maxFromRule } = getBudgetPriceWindow(budgetInINR);',"  const { min: minBudget, max: maxFromRule } = options.livePriceCandidates\n    ? {min:0,max:Number.MAX_SAFE_INTEGER} : getBudgetPriceWindow(budgetInINR);");
+          put('services/ProductRecommendationService.js',s);
+          s=fs.readFileSync(base+'/controllers/ProductController.js','utf8');
+          // The pre-live parallel bounds value can be stale relative to writes performed by the recommendation.
+          s=edit(s,'const [recommendation, catalogPriceRange] = await Promise.all([','const [recommendation] = await Promise.all([');
+          s=edit(s,'const budgetCap = Math.floor(Number(budget));',"const catalogPriceRange = await getLivePriceBoundsForCategory(normalizedCategory);\nconst budgetCap = Math.floor(Number(budget));");
+          put('controllers/ProductController.js',s);
+          CODE
+          cat > LivePriceIdentity.js <<'CODE'
+          'use strict';
+          const {catalogVariantConflicts}=require('./CatalogIdentityGuard');
+          const asin=x=>/^[A-Z0-9]{10}$/.test(x),pid=x=>/^[A-Z]{3}[A-Z0-9]{13}$/.test(x)&&!/^ITM/i.test(x);
+          function workerItem(doc){
+           const platform=String(doc.platform||'').toLowerCase(),id=String(doc.platform_product_id||doc.asin||'').toUpperCase();
+           const urls=[doc.original_product_url,doc.clean_url,doc.product_url,doc.url,doc.productUrl].filter(Boolean);
+           if(platform==='amazon'){
+            const fromUrls=urls.flatMap(s=>{try{const u=new URL(s);if(!/^(www\.)?amazon\.in$/.test(u.hostname))return[];const m=u.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|$)/i);return m?[m[1].toUpperCase()]:[];}catch{return[];}});
+            const ids=[...(asin(id)?[id]:[]),...fromUrls];return ids.length&&new Set(ids).size===1?ids[0]:null;
+           }
+           if(platform==='flipkart')for(const s of urls){try{
+            const u=new URL(s);if(u.protocol!=='https:'||!/^(www\.)?flipkart\.com$/.test(u.hostname)||!u.pathname.includes('/p/itm'))continue;
+            const p=String(u.searchParams.get('pid')||'').toUpperCase();
+            if(p&&(!pid(p)||(pid(id)&&id!==p)))return null;
+            const exact=p||(pid(id)?id:null);if(exact){u.search='';u.hash='';u.searchParams.set('pid',exact);return u.href;}
+           }catch{}}
+           return null;
+          }
+          function validateWorkerQuote(doc,item,r){
+           const amazon=String(doc.platform).toLowerCase()==='amazon',expected=amazon?item:new URL(item).searchParams.get('pid');
+           const actual=amazon?r.asin:r.pid,s=amazon?r.amazon:r.flipkart;
+           const reject=error=>({status:'error',error,in_stock:null});
+           if(!expected||actual!==expected||!s)return reject('identity_mismatch');
+           try{const u=new URL(s.url);if(amazon){if(!/^(www\.)?amazon\.in$/.test(u.hostname)||!u.pathname.includes('/'+expected))return reject('retailer_url_mismatch');}else if(!/^(www\.)?flipkart\.com$/.test(u.hostname)||u.searchParams.get('pid')!==expected)return reject('retailer_url_mismatch');}catch{return reject('retailer_url_missing');}
+           if(!s.title)return reject('catalog_identity_unverified');
+           const n=x=>String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+           if(doc.brand&&!n(s.title).includes(n(doc.brand)))return reject('catalog_brand_mismatch');
+           const conflicts=catalogVariantConflicts(doc,{name:s.title});
+           const model=doc.model_number||doc.model||doc.specifications?.['Model Number'];
+           if(model&&!n(s.title).includes(n(model)))conflicts.push({field:'model'});
+           if(conflicts.length)return reject('catalog_variant_mismatch');
+           return {...s,retailer_product_id:actual,retailer_url:s.url};
+          }
+          module.exports={workerItem,validateWorkerQuote};
+          CODE
+          cat > CatalogIdentityGuard.js <<'CODE'
+          function catalogVariantConflicts(sample,product) {
+            const norm=s=>String(s||'').toLowerCase().replace(/\b(\d{1,2})\s+(\d)\s+(ton|kg|inch)\b/g,(_,a,b,u)=>a+'.'+b+' '+u);
+            const expected=norm(sample.title),actual=norm(product.name),conflicts=[];
+            const check=(field,re)=>{const a=re.exec(expected)?.[1],b=re.exec(actual)?.[1];if(a&&b&&Number(a)!==Number(b))conflicts.push({field,catalog:a,retailer:b});};
+            const category=sample.category;
+            if(['air-conditioners','refrigerators','washing-machines'].includes(category))check('star_rating',/\b(\d)\s*star\b/);
+            if(category==='air-conditioners')check('ton_capacity',/\b(\d+(?:\.\d+)?)\s*tons?\b/);
+            if(['air-coolers','geysers','refrigerators','microwave-ovens','water-purifiers'].includes(category))check('litre_capacity',/\b(\d+(?:\.\d+)?)\s*(?:l|litres?|liters?)\b/);
+            if(category==='washing-machines')check('kg_capacity',/\b(\d+(?:\.\d+)?)\s*kg\b/);
+            if(category==='ceiling-fans')check('blade_sweep_mm',/\b(\d{3,4})\s*mm\b/);
+            if(['smart-tvs','tablets','laptops','desktop-computers'].includes(category))check('display_inches',/\b(\d+(?:\.\d+)?)\s*(?:inches|inch|")/);
+            const storage=s=>[...s.matchAll(/\b(64|128|256|512|1024|2048)\s*gb\b/g)].map(m=>Number(m[1]));
+            const a=storage(expected),b=storage(actual);
+            if(a.length&&b.length&&Math.max(...a)!==Math.max(...b))
+              conflicts.push({field:'storage_gb',catalog:Math.max(...a),retailer:Math.max(...b)});
+            check('ram_gb',/\b(\d+)\s*gb\s*(?:ram\b|ddr\d*\b)/);
+            const cpu=s=>/\b(ryzen|ath[oa]lon|celeron|pentium)\b/.exec(s)?.[1];
+            if(cpu(expected)&&cpu(actual)&&cpu(expected)!==cpu(actual))
+              conflicts.push({field:'processor_family',catalog:cpu(expected),retailer:cpu(actual)});
+            if(category==='induction-cooktops')check('power_watts',/\b(\d+)\s*w(?:atts?)?\b/);
+            if(category==='tablets'&&/\b[45]g\b/.test(expected)&&/\bwi[ -]?fi only\b/.test(actual))
+              conflicts.push({field:'connectivity',catalog:'cellular',retailer:'wi-fi only'});
+            const palette=['black','white','blue','green','red','maroon','silver','grey','gray','pink','purple','violet','yellow','orange','brown','gold'];
+            const color=s=>palette.find(c=>new RegExp('\\b'+c+'\\b').test(s))?.replace('gray','grey');
+            if(color(expected)&&color(actual)&&color(expected)!==color(actual))
+              conflicts.push({field:'color',catalog:color(expected),retailer:color(actual)});
+            // An explicit trailing tablet color can be a named finish (not a basic
+            // palette word). Compare it only with the primary Product's color field.
+            if(category==='tablets'&&product.color) {
+              const finish=/\btablet\s*\(?\s*([a-z]+(?:\s+[a-z]+){0,2})\)?$/.exec(expected)?.[1];
+              const normColor=s=>String(s).replace(/[^a-z]/g,'');
+              if(finish&&!/\b(with|only|wifi|wi|fi|gaming|rom|ram|lte)\b/.test(finish)&&normColor(finish)!==normColor(norm(product.color)))
+                conflicts.push({field:'named_color',catalog:finish,retailer:product.color});
+            }
+            return conflicts;
+          }
+          
+          
+          module.exports={catalogVariantConflicts};
+          
+          CODE
+          cat > croma-relay.cjs <<'CODE'
+          'use strict';
+          const cp=require('child_process'),crypto=require('crypto');
+          let pending;
+          const api=async(args,input)=>new Promise((resolve,reject)=>{const p=cp.execFile('gh',['api',...args],{maxBuffer:2000000,timeout:6000},(e,out)=>e?reject(e):resolve(out));if(input)p.stdin.end(JSON.stringify(input));});
+          module.exports=async function(d,docs){
+           if(!pending)pending=(async()=>{const branch=process.env.STAGING_BRANCH,repo=process.env.GH_REPO,nonce=crypto.randomUUID();
+            await api(['-X','PUT',`repos/${repo}/contents/qa/production-readiness-final/croma-request.json`,'--input','-'],{message:'Request bounded genuine VPS Croma adapter quotes',branch,content:Buffer.from(JSON.stringify({nonce,ids:docs.map(x=>String(x._id))})).toString('base64')});
+            const until=Date.now()+14000;while(Date.now()<until){try{const x=JSON.parse(await api([`repos/${repo}/contents/qa/production-readiness-final/croma-response.json?ref=${branch}`]));const r=JSON.parse(Buffer.from(x.content,'base64').toString());if(r.nonce===nonce)return r;}catch{}await new Promise(r=>setTimeout(r,700));}return {results:[],error:'staging_croma_transport_deadline'};
+           })();
+           const r=await pending,x=r.results?.find(x=>x.id===String(d._id));return x?{...x.result,vpsEvidence:x}:{status:'error',in_stock:null,error:r.error||'croma_exact_sku_unavailable'};
+          };
+          CODE
+          node integration-runner.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: final-real-live-integration
+          path: real-integration-results.json
+          retention-days: 30
+      - name: Remove only staging transport blobs and disposable runtime
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: production-readiness-final-20261103
+        run: |
+          for file in transport-public-cert.pem worker-key-envelope.json croma-request.json croma-response.json; do
+            sha=$(gh api "repos/$GH_REPO/contents/qa/production-readiness-final/$file?ref=$STAGING_BRANCH" --jq .sha 2>/dev/null || true)
+            if [ -n "$sha" ]; then gh api -X DELETE "repos/$GH_REPO/contents/qa/production-readiness-final/$file" -f message='Remove temporary encrypted staging transport' -f branch="$STAGING_BRANCH" -f sha="$sha" >/dev/null; fi
+          done
+          rm -rf worker-key.txt private-sources.json staging-private.pem backend
+          docker rm -f trustfolio-final-staging-mongo >/dev/null 2>&1 || true
+
