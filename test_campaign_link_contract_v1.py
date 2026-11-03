@@ -62,7 +62,10 @@ class CampaignContractTests(unittest.TestCase):
         self.assertEqual(q["budget"], ["2000"])
         self.assertEqual(q["brand"], ["boAt Audio"])
         self.assertTrue(link["prefill_ready"])
-        self.assertEqual(urlsplit(link["landing_url"]).path, "/category/smartwatches/products")
+        self.assertEqual(urlsplit(link["landing_url"]).path, "/category/smartwatches/products/")
+        self.assertNotIn("utm_source", q)
+        self.assertEqual(link["landing_url"],
+            "https://www.trustfolio.in/category/smartwatches/products/?budget=2000&brand=boAt+Audio")
         self.assertEqual(link["click_destination"], "filtered_products")
 
     def test_enabled_without_frontend_confirmation_stays_off(self):
