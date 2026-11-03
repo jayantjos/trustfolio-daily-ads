@@ -1,0 +1,89 @@
+name: Targeted private frontend runtime backup without activation
+on:
+  push:
+    branches: [final-worker-switch-readiness-20261103]
+    paths: ['.github/workflows/final-switch-frontend-backup-links.yml']
+permissions:
+  contents: read
+jobs:
+  readonly-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Guard disk budget; preserve old backend backup; restore verify frontend privately
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          trap 'rm -f ~/.ssh/id_ed25519' EXIT
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY'
+          import os,json,hashlib,tarfile,shutil,subprocess,datetime
+          from pathlib import Path
+          os.umask(0o077)
+          home=Path.home();base=home/'trustfolio-cutover-backups/20261103T052423Z-41583713914'
+          oldHash='0805617812b132f1ad6d624d02e12ea3233b680afed5ac7728d5111120b81357'
+          sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+          assert sha(base/'production-before-worker-change.tar.gz')==oldHash
+          procs=json.loads(subprocess.check_output(['pm2','jlist'],text=True));web=next(p for p in procs if p['name']=='trustfolio-web')
+          root=Path(web['pm2_env']['pm_cwd']);assert root==home/'apps/trustfolio/trustfolio-main'
+          report={'at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'status':'BLOCKED','backendBackupUnchanged':True,'productionChanges':0,'restarts':0}
+          files=[];symlinks=[]
+          for p in (root/'.next').rglob('*'):
+           rel=p.relative_to(root)
+           if '.next/cache' in str(rel):continue
+           if p.is_symlink():symlinks.append((p,str(rel),os.readlink(p)));continue
+           if p.is_file():files.append((p,str(rel)))
+          for p in [root/'src/services/api.service.ts',*root.glob('.env*'),*root.glob('package*.json'),*root.glob('next.config.*')]:
+           if p.is_file() and not p.is_symlink():files.append((p,str(p.relative_to(root))))
+          files=list({rel:p for p,rel in files}.items());files=[(p,rel) for rel,p in files]
+          total=sum(p.stat().st_size for p,_ in files);free=shutil.disk_usage(base).free
+          report.update({'runtimeFileCount':len(files),'uncompressedBytes':total,'freeBytesBefore':free,'sourceHash':sha(root/'src/services/api.service.ts'),'buildIdHash':sha(root/'.next/BUILD_ID') if (root/'.next/BUILD_ID').is_file() else None,'symlinkCount':len(symlinks)})
+          report['runtimeLinks']=[{'path':rel,'name':p.name,'underFrontendRoot':p.resolve().is_relative_to(root),'isDirectory':p.is_dir()} for p,rel,target in symlinks]
+          supportedLinks=all((p.name=='node_modules' and p.is_dir()) or (p.name=='.env' and p.resolve()==root/'.env') for p,rel,target in symlinks)
+          if total>400_000_000 or free<total*3+512_000_000 or not supportedLinks or not (root/'.next/BUILD_ID').is_file():
+           report['blocker']='size/disk/symlink/BUILD_ID guard; no backup or config overwrite performed'
+          else:
+           dest=base/'frontend-timeout-preparation';dest.mkdir(mode=0o700,exist_ok=False)
+           manifest={rel:{'sha256':sha(p),'mode':p.stat().st_mode & 0o777} for p,rel in files}
+           for p,rel,target in symlinks:
+            assert not any(Path(name).is_relative_to(Path(rel)) for name in manifest)
+            manifest[rel]={'type':'symlink','target':target}
+           arc=dest/'frontend-runtime-before-timeout.tar.gz'
+           with tarfile.open(arc,'w:gz',dereference=True) as tar:
+            for p,rel in files:tar.add(p,arcname=rel,recursive=False)
+            for p,rel,target in symlinks:
+             info=tarfile.TarInfo(rel);info.type=tarfile.SYMTYPE;info.linkname=target;tar.addfile(info)
+           os.chmod(arc,0o600);(dest/'manifest.private.json').write_text(json.dumps(manifest))
+           restored=dest/'restore-verification';restored.mkdir(mode=0o700)
+           with tarfile.open(arc,'r:gz') as tar:
+            for member in tar.getmembers():
+             assert not member.name.startswith('/') and '..' not in Path(member.name).parts
+             if member.issym():
+              assert manifest[member.name].get('type')=='symlink' and member.linkname==manifest[member.name]['target'];continue
+             assert member.isfile()
+             data=tar.extractfile(member).read();assert hashlib.sha256(data).hexdigest()==manifest[member.name]['sha256']
+             p=restored/member.name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data);os.chmod(p,0o600)
+             assert sha(p)==manifest[member.name]['sha256']
+           for p,rel,target in symlinks:
+            out=restored/rel;out.parent.mkdir(parents=True,exist_ok=True);os.symlink(target,out)
+            assert os.readlink(out)==target and os.readlink(p)==target
+           assert all(sha(p)==manifest[rel]['sha256'] for p,rel in files)
+           assert sha(base/'production-before-worker-change.tar.gz')==oldHash
+           after=json.loads(subprocess.check_output(['pm2','jlist'],text=True));w=next(p for p in after if p['name']=='trustfolio-web')
+           assert w['pid']==web['pid'] and w['pm2_env']['restart_time']==web['pm2_env']['restart_time']
+           report.update({'status':'PASS','backupPath':str(dest),'archiveHash':sha(arc),'archiveBytes':arc.stat().st_size,'archiveMode':'0600','privateRestore':'PASS','liveFilesUnchanged':True,'webPIDUnchanged':True,'nodeModulesPreservedNotDuplicated':True,'liveActivationTested':False})
+           (dest/'safe-summary.json').write_text(json.dumps(report,indent=2))
+          print('FRONTEND_BACKUP='+json.dumps(report))
+          
+          PY
