@@ -1,0 +1,198 @@
+name: TrustFolio one-time Facebook washing machines 11500 2026-11-03
+on:
+  pull_request:
+    paths: ['.github/workflows/one-time-facebook-wm11500-20261103.yml']
+  push:
+    branches: [main]
+    paths: ['.github/workflows/one-time-facebook-wm11500-20261103.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trustfolio-social-publication
+  cancel-in-progress: false
+
+jobs:
+  validate-washing-machine-top-five:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate exact Washing Machines 11500 website Top 5; never publish from PR
+        run: |
+          set -euo pipefail
+          python -m unittest -v automation.test_meta_graph_publish_v1 automation.test_auto_campaign_v1
+          mkdir -p campaign
+          python automation/auto_campaign_v1.py select \
+            --mode budget --slot 0 --day 2026-11-03 \
+            --category washing-machines --budget 11500 \
+            --output campaign/plan.json
+          python - <<'PY'
+          import json
+          p=json.load(open('campaign/plan.json'))
+          assert p['status']=='eligible',p.get('attempts')
+          assert p['category']=='washing-machines' and p['budget']==11500
+          assert p['mode']=='budget' and p['brand']==''
+          assert len(p['source_product_ids_by_rank'])==5
+          print('FACEBOOK_ONLY_WM_11500_LIVE_TOP5_ELIGIBLE=YES')
+          print('PR_PUBLISHING_ATTEMPTED=NO')
+          PY
+
+  publish-one-facebook-post:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1
+    needs: validate-washing-machine-top-five
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TF_META_DIRECT_PUBLISH_ENABLED: 'true'
+      TF_AUTO_POST_ENABLED: 'false'
+      TF_META_POST_NETWORKS: 'facebook'
+      TF_META_MAX_POSTS_PER_DAY_PER_NETWORK: '3'
+      TF_META_START_DATE: '2026-10-21'
+      TF_META_PAGE_ID: '619193294620746'
+      TF_META_GRAPH_VERSION: 'v25.0'
+      MEDIA_BASE: 'https://media.trustfolio.in'
+      MEDIA_PREFIX: 'trustfolio-auto'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Enforce original one-time date, exact category and 11500 rupees
+        run: |
+          set -euo pipefail
+          [[ "$(TZ=Asia/Kolkata date +%F)" == "2026-11-03" ]] || { echo "ONE_TIME_FACEBOOK_DATE_EXPIRED_NO_POST"; exit 1; }
+          python -m pip install --disable-pip-version-check Pillow==11.3.0
+      - name: Load immutable previous publication history to prevent repeated budget
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python -m automation.posting_history_v1 --output campaign/history.json --lookback-days 45
+      - name: Select exact live website Washing Machines under 11500
+        run: |
+          set -euo pipefail
+          python automation/auto_campaign_v1.py select \
+            --mode budget --slot 0 --day 2026-11-03 \
+            --category washing-machines --budget 11500 \
+            --used-budgets-file campaign/history.json \
+            --output campaign/plan.json
+          python - <<'PY'
+          import json
+          p=json.load(open('campaign/plan.json'))
+          assert p['status']=='eligible',p.get('attempts')
+          assert (p['category'],p['budget'],p['mode'],p['brand'])==('washing-machines',11500,'budget','')
+          assert len(p['source_product_ids_by_rank'])==5
+          print('EXACT_REQUESTED_FACEBOOK_CAMPAIGN=APPROVED')
+          PY
+      - name: Authenticate only the approved ads-folder VPS renderer
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Render exact existing premium template without alternate category or budget
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          python automation/render_with_brand_fallback_v1.py \
+            --plan campaign/plan.json --folder campaign \
+            --run-key "$GITHUB_RUN_ID" --host "$HOST" --user "$USER" \
+            --max-renders 1 --used-budgets-file campaign/history.json
+          python automation/auto_campaign_v1.py package \
+            --plan campaign/plan.json \
+            --report campaign/website-top5-render-qa.json \
+            --image campaign/trustfolio-live-website-top5-1024x1536.png \
+            --output-dir campaign/post
+          python - <<'PY'
+          import json
+          m=json.load(open('campaign/post/post.json'))
+          assert (m['category'],m['budget_inr'],m['mode'])==('washing-machines',11500,'budget')
+          assert len(m['ranked_product_ids'])==5
+          assert 'budget=11500' in m['landing_url']
+          print('RENDERED_EXACT_BUDGET=11500')
+          PY
+      - name: Preserve QA evidence even if publication fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trustfolio-one-time-facebook-wm11500-${{ github.run_id }}
+          path: campaign/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Stage exact approved JPEG on existing media host
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ID="$(python -c 'import json;print(json.load(open("campaign/plan.json"))["campaign_id"])')"
+          [[ "$ID" =~ ^tfauto-[a-f0-9]{18}$ ]]
+          REMOTE="${USER}@${HOST}"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" 'mkdir -p "$HOME/public_media/trustfolio-auto"'
+          scp -o StrictHostKeyChecking=yes "campaign/post/$ID.jpg" "$REMOTE:public_media/trustfolio-auto/$ID.jpg"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE" "chmod 644 \"\$HOME/public_media/trustfolio-auto/$ID.jpg\""
+      - name: Verify hosted image SHA and current live price before Facebook publication
+        run: |
+          set -euo pipefail
+          ID="$(python -c 'import json;print(json.load(open("campaign/plan.json"))["campaign_id"])')"
+          python automation/meta_graph_publish_v1.py \
+            --manifest campaign/post/post.json \
+            --jpg "campaign/post/$ID.jpg" \
+            --media-url "$MEDIA_BASE/$MEDIA_PREFIX/$ID.jpg" \
+            --preflight-only
+          python automation/verify_price_before_meta_publish_v1.py \
+            --plan campaign/plan.json \
+            --report campaign/website-top5-render-qa.json
+      - name: Publish once to Facebook only using official Meta Graph API and immutable daily lock
+        env:
+          TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ID="$(python -c 'import json;print(json.load(open("campaign/plan.json"))["campaign_id"])')"
+          python automation/meta_graph_publish_v1.py \
+            --manifest campaign/post/post.json \
+            --jpg "campaign/post/$ID.jpg" \
+            --media-url "$MEDIA_BASE/$MEDIA_PREFIX/$ID.jpg"
+      - name: Verify Facebook post ID from immutable ledger and read Meta object
+        env:
+          TF_META_PAGE_ACCESS_TOKEN: ${{ secrets.TF_META_PAGE_ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,json,os
+          from automation.meta_graph_publish_v1 import _github,_graph,LEDGER_BRANCH
+          day='2026-11-03'
+          path='contents/meta-publication-ledger/'+day+'/facebook-mode-budget.json?ref='+LEDGER_BRANCH
+          data=_github(os.environ['GITHUB_TOKEN'],path)
+          item=json.loads(base64.b64decode(data['content']).decode())
+          assert item['status']=='api_accepted_published',item.get('status')
+          assert item['category']=='washing-machines' and item['budget_inr']==11500,item
+          media_id=str(item['meta_photo_or_post_id'])
+          r=_graph('v25.0',media_id,os.environ['TF_META_PAGE_ACCESS_TOKEN'],fields='id,link')
+          assert str(r.get('id'))==media_id
+          print('FACEBOOK_WM_11500_PUBLICATION_VERIFIED=YES')
+          print('FACEBOOK_POST_ID='+media_id)
+          if r.get('link','').startswith('https://'):
+              print('FACEBOOK_POST_URL='+r['link'])
+          PY
