@@ -43,6 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile automation/rebuild_stale_meta_campaign_v1.py
+          python -m unittest -v automation.test_schedule_recovery_v1
           python automation/rebuild_stale_meta_campaign_v1.py --help
           python automation/render_with_brand_fallback_v1.py --help
           python -m unittest -v automation.test_posting_history_v1
