@@ -57,7 +57,7 @@ jobs:
             if(!root){console.log('MONGOOSE_MODULE=NOT_FOUND');return}
             const mongoose=require(path.join(root,'node_modules','mongoose'));
             await mongoose.connect(uri,{serverSelectionTimeoutMS:8000,readPreference:'primary'});
-            const db=mongoose.connection.db;
+            const db=mongoose.connection.client.db('trustfolio');
             console.log('MONGO_CONNECTION=OK DB_NAME='+db.databaseName);
             try {
               const databases=await mongoose.connection.client.db('admin').admin().listDatabases();
@@ -72,7 +72,7 @@ jobs:
 
             const allNames=(await db.listCollections({}, {nameOnly:true}).toArray()).map(x=>x.name);
             console.log('DB_COLLECTIONS='+allNames.join(','));
-            const names=allNames.filter(x=>/product/i.test(x));
+            const names=allNames.filter(x=>x==='my_products');
             console.log('PRODUCT_COLLECTIONS='+names.join(','));
             for(const name of names){
               const c=db.collection(name);
