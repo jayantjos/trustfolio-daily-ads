@@ -1,0 +1,58 @@
+name: Final timeout values and URI options whitelist read only
+on:
+  push:
+    branches: [final-three-blockers-20261103]
+    paths: ['.github/workflows/final-three-blockers-timeout-values.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Inspect numeric deadlines without exposing any database URI or secret
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          [[ "$HOSTKEY" == "200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC" ]]
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY'
+          import json,re,subprocess,urllib.parse
+          from pathlib import Path
+          from dotenv import dotenv_values
+          root=Path.home()/'apps/trustfolio/node-backend'
+          r={'productionWrites':0,'numericTimeoutConfig':[],'mongoURIOptionKeys':[],'packageVersions':{}}
+          keys=['LIVE_PRICE_FRESH_MS','CROMA_MAX_CONCURRENT','BUDGET_QUERY_MAX_TIME_MS','NEXT_PUBLIC_API_TIMEOUT_MS']
+          sources=[]
+          try:
+           rows=json.loads(subprocess.run(['pm2','jlist'],capture_output=True,text=True,timeout=8).stdout)
+           for p in rows:
+            if p.get('name') in ['trustfolio-backend','trustfolio-web']:sources.append(('pm2:'+p['name'],p.get('pm2_env',{})))
+          except:pass
+          for name,p in [('backend dotenv',root/'.env'),('scraper dotenv',Path.home()/'new_scraper/.env')]:
+           if p.exists():sources.append((name,dotenv_values(p)))
+          for name,v in sources:
+           r['numericTimeoutConfig'].append({'source':name,'values':{k:(str(v[k]) if str(v[k]).isdigit() else '[non-numeric value withheld]') for k in keys if v.get(k) is not None}})
+           for key in ['MONGODB_URI','MONGO_URI','MONGODB_URL','DATABASE_URL']:
+            uri=v.get(key)
+            if not uri:continue
+            params=urllib.parse.parse_qs(urllib.parse.urlsplit(uri).query)
+            allowed={k:(vals[0] if vals[0].isdigit() else '[non-numeric option withheld]') for k,vals in params.items() if k.lower() in ['serverselectiontimeoutms','connecttimeoutms','sockettimeoutms','waitqueuetimeoutms','maxidletimems','timeoutms']}
+            r['mongoURIOptionKeys'].append({'source':name,'variable':key,'timeoutOptions':allowed})
+          for name,p in [('mongoose',root/'node_modules/mongoose/package.json'),('mongodb',root/'node_modules/mongodb/package.json'),('mongoose-nested-mongodb',root/'node_modules/mongoose/node_modules/mongodb/package.json')]:
+           try:r['packageVersions'][name]=json.loads(p.read_text())['version']
+           except:pass
+          print('NUMERIC_TIMEOUT_CONFIG='+json.dumps(r))
+          
+          PY
+      - name: Remove transient SSH identity
+        if: always()
+        run: python3 -c "from pathlib import Path; Path.home().joinpath('.ssh/id_ed25519').unlink(missing_ok=True)"
