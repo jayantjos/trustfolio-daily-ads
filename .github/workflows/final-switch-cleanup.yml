@@ -1,0 +1,36 @@
+name: Cleanup only temporary encrypted staging source artifacts
+on:
+  push:
+    branches: [final-worker-switch-readiness-20261103]
+    paths: ['.github/workflows/final-switch-cleanup.yml']
+permissions:
+  contents: read
+  actions: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Preserve acceptance artifacts; remove only named temporary encrypted source archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json,os,subprocess
+          def api(path,delete=False):
+           args=['gh','api']
+           if delete:args+=['-X','DELETE']
+           args+=[path]
+           p=subprocess.run(args,capture_output=True,text=True)
+           if p.returncode:raise RuntimeError('GitHub artifact cleanup failed')
+           return json.loads(p.stdout) if p.stdout.strip() else None
+          out=[]
+          for run in [41586955374,41587272943,41587820844,41588132854]:
+           data=api('repos/'+os.environ['GH_REPO']+'/actions/runs/'+str(run)+'/artifacts')
+           for a in data['artifacts']:
+            if a['name']=='final-real-encrypted-source':
+             api('repos/'+os.environ['GH_REPO']+'/actions/artifacts/'+str(a['id']),True)
+             out.append({'run':run,'artifactId':a['id'],'removed':True})
+          print('FINAL_SOURCE_CLEANUP='+json.dumps({'status':'PASS','removed':out,'acceptanceArtifactsPreserved':True,'productionChanges':0}))
+          PY
