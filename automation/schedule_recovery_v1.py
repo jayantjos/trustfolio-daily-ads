@@ -32,32 +32,35 @@ DUE_IST = (
 def select_due_mode(
     cron: str, now_ist: datetime, both_networks_published: Callable[[str], bool]
 ) -> Optional[str]:
-    """Return one missing, due mode; None if it is too early or already complete.
+    """Recover one due/missing mode, even from a late or already-done cron.
 
-    The sweep rotates the initial candidate across all due formats, so an
-    ambiguous/reserved Budget attempt cannot starve Brand or Comparison.
-    A 'published' status must be obtained from the immutable per-network
-    GitHub ledger, never inferred from workflow success.
+    Prefer the cron's original mode when due and missing. Otherwise rotate
+    due formats to prevent starvation. The immutable per-network ledger is
+    authoritative; workflow success alone never means published.
     """
     if now_ist.tzinfo is None or now_ist.utcoffset() is None:
         raise ValueError("IST clock must be timezone-aware")
     local_clock = now_ist.timetz().replace(tzinfo=None)
     due = [mode for mode, start in DUE_IST if local_clock >= start]
-    if cron == SWEEP_CRON:
-        if not due:
-            return None
-        # Rotate per half-hour without adding any extra published posts.
-        index = (now_ist.hour * 2 + (1 if now_ist.minute >= 30 else 0)) % len(due)
-        ordered = due[index:] + due[:index]
-        for mode in ordered:
-            if not both_networks_published(mode):
-                return mode
+    if cron != SWEEP_CRON and cron not in CRON_MODES:
+        raise ValueError("Unknown Meta campaign cron expression")
+    if not due:
+        # Late previous-day triggers must not publish before today's IST slots.
         return None
 
-    mode = CRON_MODES.get(cron)
-    if mode is None:
-        raise ValueError("Unknown Meta campaign cron expression")
-    if mode not in due:
-        # Never publish a prior day's delayed cron before its real IST slot.
-        return None
-    return None if both_networks_published(mode) else mode
+    if cron != SWEEP_CRON:
+        preferred = CRON_MODES[cron]
+        # Preserve the normal time slot when it is still missing.
+        if preferred in due and not both_networks_published(preferred):
+            return preferred
+
+    # A cron can arrive many hours late, or its own mode may be complete.
+    # Recover another due, missing format instead of silently skipping it.
+    # Rotate fallback candidates so one repeatedly failing format cannot
+    # starve the other formats; the per-network ledger remains authoritative.
+    index = (now_ist.hour * 2 + (1 if now_ist.minute >= 30 else 0)) % len(due)
+    ordered = due[index:] + due[:index]
+    for mode in ordered:
+        if not both_networks_published(mode):
+            return mode
+    return None
