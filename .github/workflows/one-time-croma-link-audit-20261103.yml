@@ -1,0 +1,72 @@
+name: One-time read-only Croma product URL audit
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/one-time-croma-link-audit-20261103.yml']
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate authorized VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Inspect backend process and identify Mongo fields READ ONLY
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" 'node -' <<'NODE'
+          (async()=>{
+            const cp=require('child_process'),fs=require('fs'),path=require('path');
+            const processes=JSON.parse(cp.execFileSync('pm2',['jlist'],{encoding:'utf8',maxBuffer:10_000_000}));
+            const p=processes.find(x=>x.name==='trustfolio-backend');
+            if(!p)throw Error('Backend PM2 process not found');
+            const cwd=p.pm2_env.pm_cwd;
+            console.log('BACKEND_CWD='+cwd);
+            console.log('BACKEND_PM2_STATUS='+p.pm2_env.status);
+            console.log('BACKEND_ENV_KEYS='+Object.keys(p.pm2_env.env||{}).filter(k=>/MONGO|DB_|DATABASE/.test(k)).join(','));
+            const possible=[cwd,path.join(cwd,'backend'),path.dirname(cwd)];
+            for(const root of possible)console.log('MONGODB_NODE_MODULES_PRESENT='+root+':'+fs.existsSync(path.join(root,'node_modules','mongoose')));
+            console.log('DOTENV_PRESENT='+fs.existsSync(path.join(cwd,'.env')));
+            const env=Object.assign({},p.pm2_env.env||{},p.pm2_env);
+            for(const name of ['.env','.env.production'])if(fs.existsSync(path.join(cwd,name))){
+              const str=fs.readFileSync(path.join(cwd,name),'utf8');
+              for(const line of str.split(/\r?\n/)){const m=line.match(/^\s*(MONGO_URI|MONGODB_URI|DATABASE_URL|DB_URI)\s*=\s*(.*?)\s*$/);if(m&&!env[m[1]])env[m[1]]=m[2].replace(/^['"]|['"]$/g,'')}
+            }
+            const uri=env.MONGO_URI||env.MONGODB_URI||env.DATABASE_URL||env.DB_URI;
+            if(!uri){console.log('MONGO_CONNECTION=NOT_FOUND');return}
+            const root=possible.find(x=>fs.existsSync(path.join(x,'node_modules','mongoose')));
+            if(!root){console.log('MONGOOSE_MODULE=NOT_FOUND');return}
+            const mongoose=require(path.join(root,'node_modules','mongoose'));
+            await mongoose.connect(uri,{serverSelectionTimeoutMS:8000,readPreference:'primary'});
+            const db=mongoose.connection.db;
+            console.log('MONGO_CONNECTION=OK');
+            const names=(await db.listCollections({}, {nameOnly:true}).toArray()).map(x=>x.name).filter(x=>/product/i.test(x));
+            console.log('PRODUCT_COLLECTIONS='+names.join(','));
+            for(const name of names){
+              const c=db.collection(name);
+              const docs=await c.find({$or:[{title:/Samsung.*7.*semi/i},{name:/Samsung.*7.*semi/i},{productName:/Samsung.*7.*semi/i}]},{projection:{title:1,name:1,productName:1,platform:1,retailer:1,price:1,sellingPrice:1,cleanUrl:1,clean_url:1,productUrl:1,product_url:1,url:1,sku:1}}).limit(15).toArray();
+              console.log('POTENTIAL_MATCHES_COLLECTION='+name+' COUNT='+docs.length);
+              for(const d of docs){const result={_id:String(d._id),title:d.title||d.name||d.productName,platform:d.platform||d.retailer,price:d.price||d.sellingPrice,sku:d.sku,field_names:Object.keys(d).filter(x=>/url/i.test(x))}; for(const key of ['cleanUrl','clean_url','productUrl','product_url','url'])if(d[key])result[key]=d[key];console.log('MATCH='+JSON.stringify(result))}
+            }
+            await mongoose.disconnect();
+          })().catch(e=>{console.error('AUDIT_ERROR='+e.name+':'+e.message.replace(/mongodb(\+srv)?:\/\/[^\s]+/ig,'[URI REDACTED]'));process.exitCode=1});
+          NODE
