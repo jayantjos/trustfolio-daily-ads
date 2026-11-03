@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 
 from automation.auto_campaign_v1 import (
-    campaign_id, choose_campaign, check_report, caption_for, package_assets,
+    campaign_id, choose_campaign, check_report, caption_for, package_assets, clean_product_url,
 )
 
 
@@ -120,6 +120,22 @@ class AutoCampaignTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"filters"):
             check_report(p,r)
 
+    def test_clean_url_every_category_budget_and_brand(self):
+        from urllib.parse import urlsplit, parse_qs
+        for slug,budget in (("washing-machines",11500),("smart-phones",15000),
+                            ("laptops",55000),("headphones-earbuds",3000)):
+            plan=sample_plan()
+            plan.update(category=slug,budget=budget)
+            url=clean_product_url(plan)
+            self.assertEqual(url, f"https://www.trustfolio.in/category/{slug}/products/?budget={budget}")
+            self.assertEqual(parse_qs(urlsplit(url).query),{"budget":[str(budget)]})
+            self.assertIn(url,caption_for(plan,
+                f"https://www.trustfolio.in/category/{slug}/products?utm_source=social&budget={budget}"))
+        plan=sample_plan()
+        plan.update(mode="brand_budget",brand="boAt Audio")
+        self.assertEqual(clean_product_url(plan),
+            "https://www.trustfolio.in/category/smartwatches/products/?budget=2000&brand=boAt+Audio")
+
     def test_4x5_image_preserves_all_original_pixels(self):
         try:
             from PIL import Image
@@ -135,6 +151,8 @@ class AutoCampaignTests(unittest.TestCase):
                 self.assertGreater(im.getpixel((540,650))[2],160)
             self.assertEqual(manifest["status"],"ready_for_publishing_gate")
             self.assertIn("budget=2000",manifest["caption"])
+            self.assertEqual(manifest["landing_url"],
+                "https://www.trustfolio.in/category/smartwatches/products/?budget=2000")
             self.assertTrue((root/"out"/"post.json").exists())
 
 
