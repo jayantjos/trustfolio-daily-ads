@@ -1,0 +1,37 @@
+name: Final three blockers exact encrypted transport cleanup
+on:
+  push:
+    branches: [final-three-blockers-20261103]
+    paths: ['.github/workflows/final-three-blockers-cleanup.yml']
+permissions:
+  contents: write
+  actions: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Remove only completed staging transport and encrypted-source artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: final-three-blockers-20261103
+        run: |
+          python3 - <<'PY'
+          import os,json,re,subprocess
+          repo=os.environ['GH_REPO'];branch=os.environ['STAGING_BRANCH'];out=[]
+          def api(args,payload=None):
+           p=subprocess.run(['gh','api',*args],input=json.dumps(payload) if payload else None,capture_output=True,text=True);return p.returncode,p.stdout,p.stderr
+          for name in ['transport-public-cert.pem','worker-key-envelope.json']:
+           path='qa/final-three-blockers/'+name;code,s,e=api([f'repos/{repo}/contents/{path}?ref={branch}'])
+           if code:
+            assert '404' in e;out.append({'path':path,'status':'already_absent'});continue
+           sha=json.loads(s)['sha'];assert re.fullmatch('[0-9a-f]{40}',sha)
+           code,_,_=api(['-X','DELETE',f'repos/{repo}/contents/{path}','--input','-'],{'message':'Remove exact disposable staging transport','branch':branch,'sha':sha});assert code==0;out.append({'path':path,'status':'deleted'})
+          for run in [41579209184,41579784025]:
+           code,s,_=api([f'repos/{repo}/actions/runs/{run}/artifacts']);assert code==0
+           for a in json.loads(s)['artifacts']:
+            if a['name']=='final-real-encrypted-source':
+             code,_,_=api(['-X','DELETE',f'repos/{repo}/actions/artifacts/{a["id"]}']);assert code==0;out.append({'run':run,'artifact':a['id'],'status':'deleted'})
+          print('FINAL_THREE_CLEANUP='+json.dumps({'status':'PASS','resources':out,'productionChanges':0}))
+          PY
