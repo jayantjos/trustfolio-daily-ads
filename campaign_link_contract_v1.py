@@ -70,7 +70,20 @@ def campaign_link(ad, config, ad_id):
             if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name):
                 raise ValueError("Invalid verified query parameter")
             params[name] = str(requested)
-    url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(params), parsed.fragment))
+    # Verified results links are clean, canonical, and directly budget-filtered.
+    # Organic captions must not carry tracking or ad-type parameters that can
+    # interfere with the website's budget-prefill route.
+    if budget_verified:
+        clean = {"budget": str(filters["budget_inr"])}
+        if filters["brand"]:
+            if not _verified_option(brand_cfg):
+                raise ValueError("Brand filtered results route is not verified")
+            clean["brand"] = filters["brand"]
+        url = urlunsplit(("https", "www.trustfolio.in",
+                          "/category/" + str(slug) + "/products/",
+                          urlencode(clean), ""))
+    else:
+        url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(params), parsed.fragment))
     return {
         "landing_url": url,
         "requested_filters": filters,
