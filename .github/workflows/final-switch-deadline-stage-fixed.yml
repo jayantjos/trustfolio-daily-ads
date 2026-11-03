@@ -1,0 +1,846 @@
+name: Final three blockers read-only contract and exact allowlist integration
+on:
+  push:
+    branches: [final-worker-switch-readiness-20261103]
+    paths: ['.github/workflows/final-switch-deadline-stage-fixed.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  source:
+    permissions:
+      contents: write
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Authenticate to existing VPS
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh-keygen -y -P '' -f ~/.ssh/id_ed25519 >/dev/null
+      - name: Receive only staging public certificate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: final-worker-switch-readiness-20261103
+        run: |
+          for i in $(seq 1 80); do
+            if gh api "repos/$GH_REPO/contents/qa/final-three-blockers/transport-public-cert.pem?ref=$STAGING_BRANCH" --jq .content 2>/dev/null | base64 --decode > staging-cert.pem; then
+              if openssl x509 -in staging-cert.pem -noout >/dev/null 2>&1; then break; fi
+            fi
+            sleep 3
+          done
+          openssl x509 -in staging-cert.pem -noout >/dev/null
+      - name: Read real source and approved bounded fixtures; production reads only
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "${USER}@${HOST}" '$HOME/venv/bin/python -' <<'PY' > private-sources.json
+          import json,re,hashlib,os,datetime
+          from pathlib import Path
+          from dotenv import load_dotenv
+          from pymongo import MongoClient
+          from bson import ObjectId
+          root=Path.home()/'apps/trustfolio/node-backend'
+          sources={}
+          for folder in ['services','controllers','models','entities','utils','helpers','lib','data','scripts']:
+           base=root/folder
+           if base.exists():
+            for p in base.rglob('*.js'):
+             if 'node_modules' in p.parts:continue
+             s=p.read_text();assert not re.search(r'mongodb(?:\+srv)?://',s)
+             sources[str(p.relative_to(root))]=s
+          load_dotenv(Path.home()/'new_scraper/.env')
+          uri=os.getenv('MONGODB_URI') or os.getenv('MONGO_URI') or os.getenv('MONGODB_URL')
+          c=MongoClient(uri,serverSelectionTimeoutMS=8000,appname='TrustFolioFinalReadOnlySource')
+          col=c[os.getenv('MONGODB_DB','trustfolio')][os.getenv('PRODUCT_COLLECTION','my_products')]
+          canaries=[];mapping={}
+          ids=['6a080110fe6fd8dc386bbee3','69f419329a622ea2d7ccb736','6a1013380f397d1e1344dd59','6a2c08a19665e4a0b177b34b','69f419289a622ea2d7ccb608','69f4026f9a622ea2d7ccb2e6','69f4192b9a622ea2d7ccb68b','6a1011ac0f397d1e1344d8d1']
+          pool=list(col.find({'_id':{'$in':[ObjectId(i) for i in ids]}}).max_time_ms(5000))
+          c.close()
+          print(json.dumps({'frontendSource':(Path.home()/'apps/trustfolio/trustfolio-main/src/services/api.service.ts').read_text(),'sources':sources,'sha256':{k:hashlib.sha256(v.encode()).hexdigest() for k,v in sources.items()},'canaries':canaries,'pool':pool,'mappingRecords':mapping,'readAt':datetime.datetime.now(datetime.timezone.utc).isoformat(),'productionWrites':0},default=str))
+          
+          PY
+          rm -f ~/.ssh/id_ed25519
+          python3 - <<'PY'
+          import json
+          x=json.load(open('private-sources.json'))
+          print('SOURCE_SUMMARY='+json.dumps({'hashes':x['sha256'],'canaryIds':[str(d['_id']) for d in x['canaries']],'pool':[{'id':d['_id'],'title':d['title'],'platform':d['platform'],'price':d.get('price_inr')} for d in x['pool']],'mappingRecords':x['mappingRecords'],'productionWrites':0},default=str))
+          PY
+          gzip -c private-sources.json > private-sources.json.gz
+          openssl cms -encrypt -binary -aes256 -in private-sources.json.gz -outform DER -out final-source.enc staging-cert.pem
+          rm -f private-sources.json private-sources.json.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-real-encrypted-source
+          path: final-source.enc
+          retention-days: 1
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Publish temporary public encryption certificate only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: final-worker-switch-readiness-20261103
+        run: |
+          openssl req -x509 -newkey rsa:3072 -keyout staging-private.pem -out staging-cert.pem -sha256 -days 1 -nodes -subj '/CN=TrustFolioFinalIsolatedStage' >/dev/null 2>&1
+          python3 - <<'PY'
+          import json,base64,os
+          from pathlib import Path
+          Path('cert-payload.json').write_text(json.dumps({'message':'Publish temporary public staging transport certificate','branch':os.environ['STAGING_BRANCH'],'content':base64.b64encode(Path('staging-cert.pem').read_bytes()).decode()}))
+          PY
+          gh api -X PUT "repos/$GH_REPO/contents/qa/final-three-blockers/transport-public-cert.pem" --input cert-payload.json >/dev/null
+      - name: Receive encrypted source and quote-only credential envelope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: final-worker-switch-readiness-20261103
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 140); do
+            if gh run download "$GITHUB_RUN_ID" -n final-real-encrypted-source 2>/dev/null; then break; fi
+            sleep 3
+          done
+          openssl cms -decrypt -binary -inform DER -in final-source.enc -recip staging-cert.pem -inkey staging-private.pem -out private-sources.json.gz
+          gzip -dc private-sources.json.gz > private-sources.json
+          for i in $(seq 1 140); do
+            if gh api "repos/$GH_REPO/contents/qa/final-three-blockers/worker-key-envelope.json?ref=$STAGING_BRANCH" --jq .content 2>/dev/null | base64 --decode > key-envelope.json; then
+              if python3 -c 'import json; assert json.load(open("key-envelope.json")).get("ciphertext")' 2>/dev/null; then break; fi
+            fi
+            sleep 3
+          done
+          python3 - <<'PY'
+          import base64,json
+          from pathlib import Path
+          Path('worker-key.enc').write_bytes(base64.b64decode(json.load(open('key-envelope.json'))['ciphertext']))
+          PY
+          openssl cms -decrypt -binary -inform DER -in worker-key.enc -recip staging-cert.pem -inkey staging-private.pem -out worker-key.txt
+          chmod 600 worker-key.txt
+          rm -f staging-private.pem worker-key.enc private-sources.json.gz
+      - name: Start only disposable Mongo replica set and isolated dependencies
+        run: |
+          docker run -d --name trustfolio-final-staging-mongo -p 127.0.0.1:27017:27017 mongo:7 --replSet rs0 --bind_ip_all >/dev/null
+          for i in $(seq 1 30); do
+            if docker exec trustfolio-final-staging-mongo mongosh --quiet --eval 'db.adminCommand({ping:1})' >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec trustfolio-final-staging-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})' >/dev/null
+          npm install --no-audit --no-fund --ignore-scripts mongoose@8 dotenv@16 express@4 typescript@5
+
+      - name: Actual service controller ranker and watcher against real quotes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: final-worker-switch-readiness-20261103
+          STAGING_MONGO_URI: mongodb://127.0.0.1:27017/trustfolio_acceptance_disposable?replicaSet=rs0
+        run: |
+          cat > integration-runner.cjs <<'JS'
+          'use strict';
+          const fs=require('fs'),path=require('path'),cp=require('child_process'),crypto=require('crypto'),assert=require('assert/strict');
+          const mongoose=require('mongoose'),express=require('express');
+          const URI='mongodb://127.0.0.1:27017/trustfolio_acceptance_disposable?replicaSet=rs0',ROOT=path.resolve('backend');
+          const report={status:'UNVERIFIED',productionWrites:0,quotes:[],checks:[],controls:[],failures:[]};let server;
+          const sha=x=>crypto.createHash('sha256').update(x).digest('hex');
+          const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+          function check(name,fn){try{fn();report.checks.push({name,status:'PASS'});}catch(e){report.failures.push({name,error:e.message});}}
+          async function main(){
+           assert.equal(process.env.STAGING_MONGO_URI,URI);
+           for(const k of ['MONGODB_URI','MONGO_URI','MONGODB_URL','DATABASE_URL','TF_DEPLOY_SSH_KEY','CLOUDFLARE_API_TOKEN'])assert.ok(!process.env[k],k+' forbidden');
+           const snap=JSON.parse(fs.readFileSync('private-sources.json')),expected=JSON.parse(fs.readFileSync('patch-source-hashes.json'));
+           for(const [p,v] of Object.entries(expected))if(v.base_sha256)assert.equal(snap.sha256[p],v.base_sha256,'source drift '+p);
+           for(const [p,s] of Object.entries(snap.sources)){assert.ok(!p.includes('..'));assert.ok(!/mongodb(?:\+srv)?:\/\//.test(s));fs.mkdirSync(path.dirname(ROOT+'/'+p),{recursive:true});fs.writeFileSync(ROOT+'/'+p,s);}
+           cp.execFileSync('git',['apply','--check','--directory=backend','candidate.diff']);cp.execFileSync('git',['apply','--directory=backend','candidate.diff']);
+           report.patchSHA256=sha(fs.readFileSync('candidate.diff'));report.candidateHashes={};
+           for(const [p,v] of Object.entries(expected)){const actual=sha(fs.readFileSync(ROOT+'/'+p));assert.equal(actual,v.candidate_sha256);report.candidateHashes[p]=actual;}
+           assert.equal(sha(snap.frontendSource),'36d74bdbfe88a2221c1929897caba75df4bddb8e260cd5a6ab5829be61410521');
+           fs.mkdirSync('frontend/src/services',{recursive:true});fs.writeFileSync('frontend/src/services/api.service.ts',snap.frontendSource);
+           cp.execFileSync('git',['apply','--check','--directory=frontend','frontend.diff']);cp.execFileSync('git',['apply','--directory=frontend','frontend.diff']);
+           report.frontendCandidateHash=sha(fs.readFileSync('frontend/src/services/api.service.ts'));
+           fs.mkdirSync(ROOT+'/config',{recursive:true});fs.writeFileSync(ROOT+'/config/mongo.js',"module.exports=async()=>require('mongoose').connect(process.env.STAGING_MONGO_URI,{autoIndex:false});");
+           const connect=mongoose.connect.bind(mongoose);mongoose.connect=(u,...a)=>{assert.equal(u,URI);return connect(u,...a);};
+           process.env.PRICE_WORKER_URL='https://trustfolio-live-price-worker.jayantjoshi-joshi.workers.dev';process.env.PRICE_WORKER_KEY=fs.readFileSync('worker-key.txt','utf8').trim();assert.ok(process.env.PRICE_WORKER_KEY);
+           await mongoose.connect(URI,{autoIndex:false});
+           const col=mongoose.connection.collection('my_products'),cats=mongoose.connection.collection('categories'),archive=mongoose.connection.collection('my_products_deleted');
+           const pool=snap.pool.map(d=>({...d,_id:new mongoose.Types.ObjectId(d._id)}));for(const d of pool)delete d.live;
+           const actualFetch=global.fetch,identity=require(ROOT+'/services/LivePriceIdentity');let mode='genuine',delay=0,fixtureDocs=[];
+           global.fetch=async(url,opts)=>{
+            if(String(url).startsWith('http://127.0.0.1:'))return actualFetch(url,opts);
+            assert.equal(String(url),process.env.PRICE_WORKER_URL+'/api/check');const b=JSON.parse(opts.body),item=b.items[0];assert.equal(b.useCache,false);assert.equal(b.browserProbe,false);
+            if(mode==='genuine'){
+             assert.ok(report.quotes.length<2);assert.ok(!String(item).includes('WMNHBK4HNYBSDJ9U'),'exact Godrej retest cap already exhausted');
+             const t=Date.now(),res=await actualFetch(url,opts),raw=await res.text();let body;try{body=JSON.parse(raw)}catch{}
+             report.quotes.push({at:new Date().toISOString(),item,http:res.status,latencyMS:Date.now()-t,ray:res.headers.get('cf-ray'),body});return new Response(raw,{status:res.status,headers:{'content-type':'application/json'}});
+            }
+            if(delay)await sleep(delay); // deliberate non-cooperative quote task, to test discarded late completion
+            if(mode==='failure')return new Response('{}',{status:502});
+            const doc=fixtureDocs.find(d=>identity.workerItem(d)===item);assert.ok(doc,'controlled fixture mapping');
+            const amazon=doc.platform.toLowerCase()==='amazon',id=amazon?item:new URL(item).searchParams.get('pid');
+            const quote={status:'ok',priceNum:20000+fixtureDocs.indexOf(doc)*100,price:'controlled',in_stock:null,inStock:null,verificationStatus:'ok',extractionSource:'SIMULATED_DEADLINE_CONTROL',url:amazon?'https://www.amazon.in/dp/'+id:item,title:doc.title};
+            return new Response(JSON.stringify({results:[{asin:amazon?id:null,pid:amazon?null:id,[amazon?'amazon':'flipkart']:quote}]}),{status:200});
+           };
+           const service=require(ROOT+'/services/LivePriceService'),controller=require(ROOT+'/controllers/ProductController'),deadline=require(ROOT+'/services/LivePriceDeadline');
+           async function seed(docs){await col.deleteMany({});await cats.deleteMany({});for(const d of docs)delete d.live;await col.insertMany(docs);for(const slug of new Set(docs.map(d=>d.category)))await cats.insertOne({slug,title:slug,price_ranges:[]});controller.invalidatePriceCaches();}
+           const real=pool.filter(d=>['6a080110fe6fd8dc386bbee3','69f4192b9a622ea2d7ccb68b'].includes(String(d._id)));assert.equal(real.length,2);let t;
+           mode='controlled';fixtureDocs=pool.filter(d=>['6a080110fe6fd8dc386bbee3','69f419329a622ea2d7ccb736','6a1013380f397d1e1344dd59','6a2c08a19665e4a0b177b34b','6a1011ac0f397d1e1344d8d1'].includes(String(d._id)));assert.equal(fixtureDocs.length,5);
+           const app=express();app.get('/products/top',controller.getTopProducts);server=app.listen(0,'127.0.0.1');await new Promise(r=>server.on('listening',r));const base='http://127.0.0.1:'+server.address().port;
+           const front=fs.readFileSync('frontend/src/services/api.service.ts','utf8');const start=front.indexOf('function isAbortError('),end=front.indexOf('\n}',front.indexOf('async function fetchAPI',start))+2;assert.ok(start>=0&&end>start);
+           const ts=require('typescript');let js=ts.transpileModule(front.slice(start,end),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
+           const frontend=new Function('getApiBaseCandidates','API_TIMEOUT_MS','fetch',js+';return fetchAPI;')(()=>[base],8000,actualFetch);
+           for(const [name,ms] of [['fast',20],['slow',6800]]){
+            await seed(fixtureDocs);delay=ms;t=Date.now();const body=await frontend('/products/top?category=washing-machines&budget=35000&limit=5');const elapsed=Date.now()-t;
+            report.controls.push({name,evidence:'SIMULATED retailer quotes; actual ranker/controller/frontend wrapper/transactional MongoDB',elapsedMS:elapsed,count:body.data?.products?.length,products:body.data?.products});
+            check('controlled_'+name+'_five_within_client_deadline',()=>{assert.equal(body.data.products.length,5);assert.ok(elapsed<20500);for(const p of body.data.products){assert.ok(p.price_inr<=35000);assert.equal(p.in_stock,null);}assert.equal(new Set(body.data.products.map(p=>p.id)).size,5);});
+           }
+           delay=0;mode='failure';const before=await col.find({}).toArray();await col.updateMany({},{$unset:{'live.checked_at':''}});controller.invalidatePriceCaches();t=Date.now();const failed=await frontend('/products/top?category=washing-machines&budget=35000&limit=5');report.controls.push({name:'502_no_stale_fallback',elapsedMS:Date.now()-t,count:failed.data?.products?.length});
+           check('failed_quotes_do_not_return_stale_prices_or_delete',()=>assert.equal(failed.data.products.length,0));const after=await col.find({}).toArray();check('failed_quote_preserves_canonical_prices',()=>{assert.equal(after.length,5);for(const d of after)assert.equal(d.price,before.find(x=>x._id.equals(d._id)).price);});
+           mode='controlled';delay=350;await seed(fixtureDocs);let baseline=JSON.stringify(await col.find({}).sort({_id:1}).toArray());t=Date.now();let aborted=false;
+           try{await deadline.run(()=>service.getLivePrices([fixtureDocs[0]._id]),{timeoutMS:100});}catch(e){aborted=true;}
+           const responseMS=Date.now()-t;await sleep(500);
+           report.controls.push({name:'late_quote',responseMS,postCompletionObservationMS:500,aborted});
+           // Evaluate async read separately from the synchronous assertion helper.
+           const late=JSON.stringify(await col.find({}).sort({_id:1}).toArray());check('late_quote_cannot_mutate_after_timeout',()=>{assert.ok(aborted);assert.equal(late,baseline);});
+           delay=0;await seed(fixtureDocs);baseline=JSON.stringify(await col.find({}).sort({_id:1}).toArray());const category=require(ROOT+'/services/CategoryService'),originalCategory=category.updateCategoryPriceRange;category.updateCategoryPriceRange=async(...args)=>{await sleep(250);return originalCategory(...args);};aborted=false;t=Date.now();
+           try{await deadline.run(()=>service.getLivePrices([fixtureDocs[0]._id]),{timeoutMS:100});}catch(e){aborted=true;}category.updateCategoryPriceRange=originalCategory;await sleep(300);
+           const rolled=JSON.stringify(await col.find({}).sort({_id:1}).toArray());check('expiry_during_mutation_rolls_back_transaction',()=>{assert.ok(aborted);assert.equal(rolled,baseline);});report.controls.push({name:'transaction_expiry',totalWithObservationMS:Date.now()-t,aborted});
+           check('zero_archive_and_no_false_deletion',()=>assert.equal(after.length,5));report.archiveCount=await archive.countDocuments();check('no_archives',()=>assert.equal(report.archiveCount,0));
+           if(!report.failures.length) {mode='genuine';delay=0;await seed(real);
+           t=Date.now();const live=await service.getLivePrices(real.map(d=>d._id));report.genuineConnectedMS=Date.now()-t;report.genuineRows=live;
+           const realAfter=await col.find({}).toArray();report.genuineAcceptance=realAfter.every(d=>d.live?.status==='ok')?'PASS':'BLOCKED';
+           if(report.genuineAcceptance==='PASS')check('actual_transactional_service_genuine_quote_persistence',()=>{for(const d of realAfter){assert.equal(d.price,String(d.live.price_inr));assert.equal(d.price_inr,d.live.price_inr);assert.equal(d.currentPriceValue,d.live.price_inr);assert.equal(d.live.verification_status,'ok');}});
+          }
+           report.status=report.failures.length?'FAIL':report.genuineAcceptance==='PASS'?'PASS':'BLOCKED';
+           report.nativeVPSFullTop5='UNVERIFIED; no safe native isolated runtime';report.scope='Two genuine new quotes; five-product timing/negative tests explicitly SIMULATED origin, actual business services and real disposable DB. Croma adapter and availability policy unchanged.';
+          }
+          (async()=>{try{await main();}catch(e){report.status='FAIL';report.fatal={name:e.name,message:e.message,stack:e.stack};}finally{if(server)await new Promise(r=>server.close(r));if(mongoose.connection.readyState===1){await mongoose.connection.dropDatabase();report.databaseDropped=true;await mongoose.disconnect();}delete process.env.PRICE_WORKER_KEY;try{fs.unlinkSync('worker-key.txt')}catch{}fs.writeFileSync('allowlist-results.json',JSON.stringify(report,null,2));console.log('DEADLINE_ACCEPTANCE='+JSON.stringify(report));}})();
+          JS
+          cat > candidate.diff <<'CANDIDATE'
+          --- a/controllers/ProductController.js
+          +++ b/controllers/ProductController.js
+          @@ -1,3 +1,4 @@
+          +const Deadline=require('../services/LivePriceDeadline');
+           const mongoose = require('mongoose');
+           const MyProduct = require('../entities/MyProduct');
+           const Product = require('../entities/Product');
+          @@ -595,6 +596,14 @@
+           }
+           
+           async function getTopProducts(req, res) {
+          +  const controller=new AbortController();
+          +  const stop=()=>controller.abort(new DOMException('Client disconnected','AbortError'));
+          +  const close=()=>{if(!res.writableEnded)stop();};
+          +  req.once('aborted',stop); res.once('close',close);
+          +  try { return await Deadline.run(()=>getTopProductsInner(req,res),{signal:controller.signal}); }
+          +  finally {req.removeListener('aborted',stop);res.removeListener('close',close);}
+          +}
+          +async function getTopProductsInner(req, res) {
+             try {
+               const category = req.query.category;
+               const budget = parseFloat(req.query.budget);
+          @@ -635,7 +644,7 @@
+           }
+           
+           if (brand) {
+          -  const brandValid = await BrandService.isValidBrandForCategory(normalizedCategory, brand);
+          +  const brandValid = await Deadline.wait(BrandService.isValidBrandForCategory(normalizedCategory, brand));
+             if (!brandValid) {
+               return res.status(400).json(
+                 apiResponse(false, 'Brand is not available for this category. Select a brand from the list.')
+          @@ -643,7 +652,7 @@
+             }
+           }
+           
+          -    const [recommendation, catalogPriceRange] = await Promise.all([
+          +    const [recommendation] = await Deadline.wait(Promise.all([
+             LiveBudgetRecommendationService.getTopProductsForCategoryAndBudget(
+               normalizedCategory,
+               budget,
+          @@ -653,8 +662,9 @@
+               console.warn('[Products] Price bounds lookup skipped:', error.message || error);
+               return { min: null, max: null, count: 0 };
+             }),
+          -]);
+          -
+          +]));
+          +
+          +const catalogPriceRange = await Deadline.wait(getLivePriceBoundsForCategory(normalizedCategory));
+           const budgetCap = Math.floor(Number(budget));
+           let topProducts = recommendation.products || [];
+           topProducts = topProducts
+          @@ -773,9 +783,12 @@
+                 response
+               );
+           
+          +    Deadline.check();
+               topProductsResponseCache.set(topCacheKey, { at: Date.now(), value: responseBody });
+               return res.json(responseBody);
+             } catch (e) {
+          +    if (res.destroyed || res.writableEnded) return;
+          +    if (Deadline.current()?.signal.aborted) return res.status(504).json(apiResponse(false, 'Live price request deadline exceeded; no stale recommendation returned'));
+               res.status(400).json(apiResponse(false, `Failed to retrieve top products: ${e.message}`));
+             }
+           }
+          --- /dev/null
+          +++ b/services/CatalogIdentityGuard.js
+          @@ -0,0 +1,40 @@
+          +function catalogVariantConflicts(sample,product) {
+          +  const norm=s=>String(s||'').toLowerCase().replace(/\b(\d{1,2})\s+(\d)\s+(ton|kg|inch)\b/g,(_,a,b,u)=>a+'.'+b+' '+u);
+          +  const expected=norm(sample.title),actual=norm(product.name),conflicts=[];
+          +  const check=(field,re)=>{const a=re.exec(expected)?.[1],b=re.exec(actual)?.[1];if(a&&b&&Number(a)!==Number(b))conflicts.push({field,catalog:a,retailer:b});};
+          +  const category=sample.category;
+          +  if(['air-conditioners','refrigerators','washing-machines'].includes(category))check('star_rating',/\b(\d)\s*star\b/);
+          +  if(category==='air-conditioners')check('ton_capacity',/\b(\d+(?:\.\d+)?)\s*tons?\b/);
+          +  if(['air-coolers','geysers','refrigerators','microwave-ovens','water-purifiers'].includes(category))check('litre_capacity',/\b(\d+(?:\.\d+)?)\s*(?:l|litres?|liters?)\b/);
+          +  if(category==='washing-machines')check('kg_capacity',/\b(\d+(?:\.\d+)?)\s*kg\b/);
+          +  if(category==='ceiling-fans')check('blade_sweep_mm',/\b(\d{3,4})\s*mm\b/);
+          +  if(['smart-tvs','tablets','laptops','desktop-computers'].includes(category))check('display_inches',/\b(\d+(?:\.\d+)?)\s*(?:inches|inch|")/);
+          +  const storage=s=>[...s.matchAll(/\b(64|128|256|512|1024|2048)\s*gb\b/g)].map(m=>Number(m[1]));
+          +  const a=storage(expected),b=storage(actual);
+          +  if(a.length&&b.length&&Math.max(...a)!==Math.max(...b))
+          +    conflicts.push({field:'storage_gb',catalog:Math.max(...a),retailer:Math.max(...b)});
+          +  check('ram_gb',/\b(\d+)\s*gb\s*(?:ram\b|ddr\d*\b)/);
+          +  const cpu=s=>/\b(ryzen|ath[oa]lon|celeron|pentium)\b/.exec(s)?.[1];
+          +  if(cpu(expected)&&cpu(actual)&&cpu(expected)!==cpu(actual))
+          +    conflicts.push({field:'processor_family',catalog:cpu(expected),retailer:cpu(actual)});
+          +  if(category==='induction-cooktops')check('power_watts',/\b(\d+)\s*w(?:atts?)?\b/);
+          +  if(category==='tablets'&&/\b[45]g\b/.test(expected)&&/\bwi[ -]?fi only\b/.test(actual))
+          +    conflicts.push({field:'connectivity',catalog:'cellular',retailer:'wi-fi only'});
+          +  const palette=['black','white','blue','green','red','maroon','silver','grey','gray','pink','purple','violet','yellow','orange','brown','gold'];
+          +  const color=s=>palette.find(c=>new RegExp('\\b'+c+'\\b').test(s))?.replace('gray','grey');
+          +  if(color(expected)&&color(actual)&&color(expected)!==color(actual))
+          +    conflicts.push({field:'color',catalog:color(expected),retailer:color(actual)});
+          +  // An explicit trailing tablet color can be a named finish (not a basic
+          +  // palette word). Compare it only with the primary Product's color field.
+          +  if(category==='tablets'&&product.color) {
+          +    const finish=/\btablet\s*\(?\s*([a-z]+(?:\s+[a-z]+){0,2})\)?$/.exec(expected)?.[1];
+          +    const normColor=s=>String(s).replace(/[^a-z]/g,'');
+          +    if(finish&&!/\b(with|only|wifi|wi|fi|gaming|rom|ram|lte)\b/.test(finish)&&normColor(finish)!==normColor(norm(product.color)))
+          +      conflicts.push({field:'named_color',catalog:finish,retailer:product.color});
+          +  }
+          +  return conflicts;
+          +}
+          +
+          +
+          +module.exports={catalogVariantConflicts};
+          +
+          --- a/services/LiveBudgetRecommendationService.js
+          +++ b/services/LiveBudgetRecommendationService.js
+          @@ -1,3 +1,4 @@
+          +const Deadline=require('./LivePriceDeadline');
+           'use strict';
+           
+           /**
+          @@ -21,6 +22,7 @@
+               throw new Error('Invalid budget for live price ranking');
+             }
+           
+          +  const started=Date.now();
+             const inspected = new Set();
+             const qualified = [];
+             let initial = null;
+          @@ -29,12 +31,15 @@
+             let waveCount = 0;
+           
+             for (let wave = 0; wave < MAX_WAVES && qualified.length < limit; wave++) {
+          +    Deadline.check();
+          +    if(Deadline.remaining() < Deadline.WORKER_MS + Deadline.WRITE_RESERVE_MS) break;
+               waveCount++;
+          -    const rec = await ranker.getTopProductsForCategoryAndBudget(category, budgetCap, {
+          +    const rec = await Deadline.wait(ranker.getTopProductsForCategoryAndBudget(category, budgetCap, {
+                 ...opts,
+          +      livePriceCandidates: true,
+                 limit,
+                 excludeProductIds: [...inspected],
+          -    });
+          +    }));
+               if (!initial) initial = rec;
+               latest = rec;
+               const batch = (rec.products || []).filter((p) => {
+          @@ -63,15 +68,17 @@
+                 const live = row.live || null;
+                 if (row.deleted || live?.status === 'out_of_stock') continue;
+           
+          -      let displayPrice = candidate.price_inr;
+          -      let priceSource = 'website_catalog';
+          -      if (live?.status === 'ok') {
+          -        displayPrice = Number(live.price_inr);
+          -        priceSource = 'website_live_price_api';
+          -      }
+          +      if (!row.supported || live?.status!=='ok' || live.verification_status!=='ok' || live.in_stock===false || !live.priced_at || Date.now()-new Date(live.priced_at).getTime()>60000) continue;
+          +      const displayPrice=live.price_inr;
+          +      const priceSource='website_live_price_api';
+                 if (!goodPrice(displayPrice, budgetCap)) continue;
+                 qualified.push({
+                   ...candidate,
+          +        in_stock:live.in_stock,
+          +        inStock:live.in_stock,
+          +        availability_status:live.in_stock===true?'In Stock':null,
+          +        product_url:live.retailer_url||candidate.product_url,
+          +        verified_retailer_id:live.retailer_product_id,
+                   price_inr: Number(displayPrice),
+                   price_source: priceSource,
+                   live_price_status: live?.status || null,
+          @@ -103,6 +110,7 @@
+           
+             return {
+               ...original,
+          +    priceWindow:{min:0,max:budgetCap},
+               products,
+               matchType,
+               fallbackApplied,
+          --- /dev/null
+          +++ b/services/LivePriceIdentity.js
+          @@ -0,0 +1,47 @@
+          +'use strict';
+          +const {catalogVariantConflicts}=require('./CatalogIdentityGuard');
+          +const asin=x=>/^[A-Z0-9]{10}$/.test(x),pid=x=>/^[A-Z]{3}[A-Z0-9]{13}$/.test(x)&&!/^ITM/i.test(x);
+          +// Read-only approvals from exact primary retailer SKU evidence in qa/final-live-price-integration/.
+          +// Never infer a SKU from an itm page identifier. Unknown pages remain unsupported.
+          +const approvedPages={
+          + itm85c805abf4849:{pid:'WMNHBK4HNYBSDJ9U',brand:'godrej',capacity:9},
+          + itm1ad6a5136676c:{pid:'WMNG4WGVXYSRYHJZ',brand:'motorola',capacity:7},
+          + itm5b001b74dc1cc:{pid:'WMNHHUCY5FWTHBAN',brand:'haier',capacity:8},
+          + itm0381052d06f11:{pid:'WMNGYGJKCVNKSZWY',brand:'samsung',capacity:7},
+          + itmd2a376187074e:{pid:'COMHCYMG83BGNQHH',brand:'lenovo'}
+          +};
+          +function workerItem(doc){
+          + const platform=String(doc.platform||'').toLowerCase(),id=String(doc.platform_product_id||doc.asin||'').toUpperCase();
+          + const urls=[doc.original_product_url,doc.clean_url,doc.product_url,doc.url,doc.productUrl].filter(Boolean);
+          + if(platform==='amazon'){
+          +  const fromUrls=urls.flatMap(s=>{try{const u=new URL(s);if(!/^(www\.)?amazon\.in$/.test(u.hostname))return[];const m=u.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|$)/i);return m?[m[1].toUpperCase()]:[];}catch{return[];}});
+          +  const ids=[...(asin(id)?[id]:[]),...fromUrls];return ids.length&&new Set(ids).size===1?ids[0]:null;
+          + }
+          + if(platform==='flipkart')for(const s of urls){try{
+          +  const u=new URL(s);if(u.protocol!=='https:'||!/^(www\.)?flipkart\.com$/.test(u.hostname)||!u.pathname.includes('/p/itm'))continue;
+          +  const p=String(u.searchParams.get('pid')||'').toUpperCase();
+          +  const approved=approvedPages[u.pathname.match(/\/p\/(itm[a-z0-9]+)/i)?.[1]?.toLowerCase()];
+          +  if(approved && (p && p!==approved.pid || pid(id)&&id!==approved.pid))return null;
+          +  const approvedForCatalog=approved && String(doc.brand||'').toLowerCase()===approved.brand
+          +    && (!approved.capacity || Number(/\b(\d+(?:\.\d+)?)\s*kg\b/i.exec(doc.title||'')?.[1])===approved.capacity);
+          +  if(p&&(!pid(p)||(pid(id)&&id!==p)))return null;
+          +  const exact=p||(pid(id)?id:null)||(approvedForCatalog?approved.pid:null);if(exact){u.search='';u.hash='';u.searchParams.set('pid',exact);return u.href;}
+          + }catch{}}
+          + return null;
+          +}
+          +function validateWorkerQuote(doc,item,r){
+          + const amazon=String(doc.platform).toLowerCase()==='amazon',expected=amazon?item:new URL(item).searchParams.get('pid');
+          + const actual=amazon?r.asin:r.pid,s=amazon?r.amazon:r.flipkart;
+          + const reject=error=>({status:'error',error,in_stock:null});
+          + if(!expected||actual!==expected||!s)return reject('identity_mismatch');
+          + try{const u=new URL(s.url);if(amazon){if(!/^(www\.)?amazon\.in$/.test(u.hostname)||!u.pathname.includes('/'+expected))return reject('retailer_url_mismatch');}else if(!/^(www\.)?flipkart\.com$/.test(u.hostname)||u.searchParams.get('pid')!==expected)return reject('retailer_url_mismatch');}catch{return reject('retailer_url_missing');}
+          + if(!s.title)return reject('catalog_identity_unverified');
+          + const n=x=>String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+          + if(doc.brand&&!n(s.title).includes(n(doc.brand)))return reject('catalog_brand_mismatch');
+          + const conflicts=catalogVariantConflicts(doc,{name:s.title});
+          + const model=doc.model_number||doc.model||doc.specifications?.['Model Number'];
+          + if(model&&!n(s.title).includes(n(model)))conflicts.push({field:'model'});
+          + if(conflicts.length)return reject('catalog_variant_mismatch');
+          + return {...s,retailer_product_id:actual,retailer_url:s.url};
+          +}
+          +module.exports={workerItem,validateWorkerQuote};
+          --- a/services/LivePriceService.js
+          +++ b/services/LivePriceService.js
+          @@ -1,3 +1,4 @@
+          +const Deadline = require('./LivePriceDeadline');
+           /**
+            * Live store prices for my_products listings, fetched through the Cloudflare price Worker
+            * (worker-trustfolio-fetch-cloudflare). Amazon by ASIN, Flipkart by product link; Croma has no live price.
+          @@ -5,49 +6,28 @@
+           const mongoose = require('mongoose');
+           const { canFetchCroma, fetchCromaDirect } = require('./CromaLivePriceDirect');
+           const { classify, toAvailabilityState, isConfirmedUnavailable } = require('./ProductAvailabilityPolicy');
+          +const { workerItem, validateWorkerQuote } = require('./LivePriceIdentity');
+           
+           const WORKER_URL = (process.env.PRICE_WORKER_URL || '').replace(/\/+$/, '');
+           const WORKER_KEY = process.env.PRICE_WORKER_KEY || '';
+           const FRESH_MS = parseInt(process.env.LIVE_PRICE_FRESH_MS || '60000', 10); // a listing is fetched at most once per window
+          -const WORKER_TIMEOUT_MS = 6000;
+          +const WORKER_TIMEOUT_MS = 8000; // 6500 ms upstream + 1500 ms response/parsing margin
+           const MAX_IDS = 30;
+           
+           /** listing id -> pending fetch, shared by concurrent page views */
+           const inflight = new Map();
+           
+           /** What the Worker should fetch for a listing; null = no live price (Croma, missing link). */
+          -function workerItem(doc) {
+          -  const platform = String(doc.platform || '').toLowerCase();
+          -  const url = String(doc.original_product_url || doc.clean_url || doc.url || doc.productUrl || '');
+          -  const id = String(doc.platform_product_id || doc.asin || '');
+          -
+          -  if (platform.includes('amazon')) {
+          -    if (/^B0[A-Z0-9]{8}$/i.test(id)) return id.toUpperCase();
+          -    const m = url.match(/\/(?:dp|gp\/product)\/(B0[A-Z0-9]{8})/i);
+          -    return m ? m[1].toUpperCase() : null;
+          -  }
+          -
+          -  if (platform.includes('flipkart')) {
+          -    if (!/flipkart\.com\/.+\/p\/itm/i.test(url)) return null;
+          -    // One itm page covers several variants; the pid picks the exact one.
+          -    if (!/[?&]pid=/i.test(url) && /^[A-Z]{3}[A-Z0-9]{13}$/.test(id) && !id.startsWith('ITM')) {
+          -      return url + (url.includes('?') ? '&' : '?') + 'pid=' + id;
+          -    }
+          -    return url;
+          -  }
+          -
+          -  return null;
+          -}
+          -
+          -async function fetchLive(item) {
+          +
+          +async function fetchLive(item, doc) {
+             const headers = { 'content-type': 'application/json' };
+             if (WORKER_KEY) headers['x-api-key'] = WORKER_KEY;
+           
+             const res = await fetch(`${WORKER_URL}/api/check`, {
+               method: 'POST',
+               headers,
+          -    body: JSON.stringify({ items: [item], useCache: true }),
+          -    signal: AbortSignal.timeout(WORKER_TIMEOUT_MS),
+          +    body: JSON.stringify({ items: [item], useCache: false, browserProbe: false }),
+          +    signal: Deadline.workerSignal(),
+             });
+             if (!res.ok) return { status: 'error', error: `worker http ${res.status}` };
+           
+          @@ -55,26 +35,31 @@
+             const r = body && Array.isArray(body.results) ? body.results[0] : null;
+             if (!r) return { status: 'error', error: 'empty worker response' };
+             if (r.error) return { status: 'error', error: r.error };
+          -  return (r.asin ? r.amazon : r.flipkart) || { status: 'error', error: 'no store result' };
+          +  return validateWorkerQuote(doc, item, r);
+           }
+           
+           function toLive(result, prev = {}) {
+          +  if(result.status==='ok' && (!Number.isFinite(result.priceNum) || result.priceNum<=0 || result.verificationStatus!=='ok' || result.in_stock===false || result.inStock===false)) result={status:'error',error:'invalid_accepted_quote',in_stock:null};
+             const availabilityKind = classify(result);
+             // Do not show a fresh LIVE badge for a product whose listing explicitly says unavailable.
+             const liveStatus = availabilityKind === 'permanent' ? 'out_of_stock'
+               : availabilityKind === 'ambiguous' ? 'not_available'
+               : availabilityKind === 'transient' && result.status === 'ok' ? 'error' : result.status;
+          -  const priced = (liveStatus === 'ok' || liveStatus === 'out_of_stock') && result.priceNum > 0;
+          +  const priced = liveStatus === 'ok' && Number.isFinite(result.priceNum) && result.priceNum > 0;
+             const availabilityState = toAvailabilityState(result, prev);
+             return {
+               ...availabilityState,
+               status: liveStatus,
+               checked_at: new Date(),
+          +    verification_status:result.verificationStatus||null,
+          +    extraction_source:result.extractionSource||null,
+          +    retailer_product_id:result.retailer_product_id||null,
+          +    retailer_url:result.retailer_url||result.url||null,
+               // On blocks and timeouts keep the last good price so the page still shows one.
+               price_inr: priced ? result.priceNum : prev.price_inr ?? null,
+               priced_at: priced ? new Date() : prev.priced_at ?? null,
+               in_stock: Object.prototype.hasOwnProperty.call(result, 'in_stock')
+          -      ? result.in_stock : liveStatus === 'ok',
+          +      ? (typeof result.in_stock==='boolean'?result.in_stock:null) : (typeof result.inStock==='boolean'?result.inStock:null),
+               availability: result.availability ?? null,
+               error: result.error ? String(result.error).slice(0, 180) : null,
+               http_status: Number(result.http_status ?? result.httpStatus ?? result.statusCode) || null,
+          @@ -86,6 +71,10 @@
+            * from Mongo; the rest are fetched from the Worker in parallel and saved under `live`.
+            */
+           async function getLivePrices(ids) {
+          +  return Deadline.run(() => getLivePricesInner(ids));
+          +}
+          +async function getLivePricesInner(ids) {
+          +  Deadline.check();
+             const objectIds = [...new Set((Array.isArray(ids) ? ids : []).map(String))]
+               .filter((id) => mongoose.Types.ObjectId.isValid(id))
+               .slice(0, MAX_IDS)
+          @@ -98,9 +87,10 @@
+               .find(
+                 { _id: { $in: objectIds } },
+                 {
+          +        ...Deadline.options(),
+                   projection: {
+          -          platform: 1, asin: 1, url: 1, clean_url: 1, productUrl: 1, original_product_url: 1,
+          -          platform_product_id: 1, title: 1, brand: 1, category: 1, price_inr: 1, live: 1,
+          +          platform: 1, asin: 1, url: 1, clean_url: 1, product_url: 1, productUrl: 1, original_product_url: 1,
+          +          platform_product_id: 1, title: 1, brand: 1, category: 1, model: 1, model_number: 1, specifications: 1, price_inr: 1, live: 1,
+                   },
+                 }
+               )
+          @@ -115,25 +105,31 @@
+           
+             const fetched = await Promise.all(
+               due.map(async (d) => {
+          -      const key = String(d._id);
+          +      const key = `${Deadline.current().id}:${d._id}`;
+                 if (!inflight.has(key)) {
+          -        const job = (canFetchCroma(d) ? fetchCromaDirect(d) : fetchLive(workerItem(d)))
+          +        const job = (canFetchCroma(d) ? fetchCromaDirect(d).then(r => ({...r, verificationStatus:r.status==='ok'?'ok':null, extractionSource:'croma_vps_exact_sku_buy', retailer_product_id:String(d.platform_product_id), retailer_url:d.original_product_url||d.clean_url||d.product_url||d.url||null})) : fetchLive(workerItem(d), d))
+                     .catch((e) => ({ status: 'error', error: e.message }));
+                   inflight.set(key, job.finally(() => inflight.delete(key)));
+                 }
+          -      d.live = toLive(await inflight.get(key), d.live || {});
+          +      d.live = toLive(await Deadline.wait(inflight.get(key)), d.live || {});
+                 return d;
+               })
+             );
+           
+          +  Deadline.check();
+          +  let deletedIds;
+          +  const session = await mongoose.startSession();
+          +  try {
+          +  await session.withTransaction(async () => {
+          +  Deadline.check();
+             // Out of stock listings are removed from my_products. Only a confirmed out_of_stock result counts;
+             // blocks, timeouts and errors never delete. A copy goes to my_products_deleted so a delete can be undone.
+             // Bound irreversible per-request removals. Archive precedes delete, and
+             // transient 502/503/timeout/WAF failures NEVER count as unavailable.
+             const outOfStock = fetched.filter((d) => isConfirmedUnavailable(d.live)).slice(0, 5);
+          -  const deletedIds = new Set(outOfStock.map((d) => String(d._id)));
+          +  deletedIds = new Set(outOfStock.map((d) => String(d._id)));
+             if (outOfStock.length) {
+          -    const full = await col.find({ _id: { $in: outOfStock.map((d) => d._id) } }).toArray();
+          +    const full = await col.find({ _id: { $in: outOfStock.map((d) => d._id) } }, Deadline.options({session})).toArray();
+               const deletedAt = new Date();
+               if (full.length) {
+                 await mongoose.connection.collection('my_products_deleted').bulkWrite(
+          @@ -150,14 +146,16 @@
+                       upsert: true,
+                     },
+                   })),
+          -        { ordered: false }
+          +        Deadline.options({ordered:false,session})
+                 );
+          -      await col.deleteMany({ _id: { $in: full.map((doc) => doc._id) } });
+          +      Deadline.check();
+          +      await col.deleteMany({ _id: { $in: full.map((doc) => doc._id) } }, Deadline.options({session}));
+               }
+             }
+           
+             const kept = fetched.filter((d) => !deletedIds.has(String(d._id)));
+             if (kept.length) {
+          +    Deadline.check();
+               await col.bulkWrite(
+                 kept.map((d) => {
+                   const fields = { live: d.live };
+          @@ -171,15 +169,27 @@
+                   }
+                   return { updateOne: { filter: { _id: d._id }, update: { $set: fields } } };
+                 }),
+          -      { ordered: false }
+          +      Deadline.options({ordered:false,session})
+               );
+             }
+           
+          +  if (fetched.length) {
+          +    const changedCategories=[...new Set(fetched.filter(d=>deletedIds.has(String(d._id)) || d.live.status==='ok').map(d=>d.category).filter(Boolean))];
+          +    for (const slug of changedCategories) {
+          +      Deadline.check();
+          +      await require('./CategoryService').updateCategoryPriceRange(slug, Deadline.options({session}));
+          +    }
+          +
+          +  }
+          +  Deadline.check();
+          +  }, {timeoutMS:Deadline.remaining(),maxCommitTimeMS:Math.min(1000,Deadline.remaining())});
+          +  } finally { await session.endSession(); }
+             if (fetched.length) {
+               // Clear in-process cache immediately after actual live-price writes.
+               require('../controllers/ProductController').invalidatePriceCaches();
+             }
+           
+          +  Deadline.check();
+             return docs.map((d) => ({
+               id: String(d._id),
+               platform: d.platform || null,
+          --- a/services/ProductRecommendationService.js
+          +++ b/services/ProductRecommendationService.js
+          @@ -390,10 +390,13 @@
+             const resultLimit = Number.isFinite(options.limit) && options.limit > 0
+               ? Math.min(options.limit, 5)
+               : getRecommendationResultLimit();
+          -  const budgetCap = Math.floor(Number(budgetInINR));
+          +  // Live candidate mode keeps the same ranker, but does not trust stale catalog price for eligibility.
+          +  const candidateBudget=options.livePriceCandidates?Number.MAX_SAFE_INTEGER:budgetInINR;
+          +  const budgetCap = Math.floor(Number(candidateBudget));
+             const excludedIds = new Set((options.excludeProductIds || []).map(String));
+             const notInspected = (p) => !excludedIds.has(productStableId(p));
+          -  const { min: minBudget, max: maxFromRule } = getBudgetPriceWindow(budgetInINR);
+          +  const { min: minBudget, max: maxFromRule } = options.livePriceCandidates
+          +    ? {min:0,max:Number.MAX_SAFE_INTEGER} : getBudgetPriceWindow(budgetInINR);
+             const maxBudget = Number.isFinite(budgetCap) && budgetCap > 0
+               ? Math.min(maxFromRule, budgetCap)
+               : maxFromRule;
+          --- a/services/CategoryService.js
+          +++ b/services/CategoryService.js
+          @@ -240,8 +240,8 @@
+             return category.save();
+           }
+           
+          -async function updateCategoryPriceRange(categorySlug) {
+          -  const category = await Category.findOne({ slug: categorySlug });
+          +async function updateCategoryPriceRange(categorySlug, requestOptions = {}) {
+          +  const category = await Category.findOne({ slug: categorySlug }).setOptions(requestOptions);
+             if (!category) return null;
+           
+             const slug = String(categorySlug || '').trim();
+          @@ -271,6 +271,7 @@
+                   price_inr: 1,
+                 }
+               )
+          +      .setOptions(requestOptions)
+                 .sort({ scrapedAt: -1 })
+                 .lean(),
+               slug
+          @@ -308,7 +309,7 @@
+               category.max_price = null;
+               category.price_ranges = [];
+               category.updated_at = formatDate();
+          -    return category.save();
+          +    return category.save(requestOptions);
+             }
+           
+             const minPrice = Math.min(...prices);
+          @@ -326,7 +327,7 @@
+               },
+             ];
+             category.updated_at = now;
+          -  return category.save();
+          +  return category.save(requestOptions);
+           }
+           
+           async function updateAllCategoryPriceRanges() {
+          --- /dev/null
+          +++ b/services/LivePriceDeadline.js
+          @@ -0,0 +1,30 @@
+          +'use strict';
+          +const {AsyncLocalStorage}=require('node:async_hooks');
+          +const {randomUUID}=require('node:crypto');
+          +const storage=new AsyncLocalStorage();
+          +const BACKEND_MS=18500,WORKER_MS=7500,WRITE_RESERVE_MS=1500;
+          +function current(){return storage.getStore();}
+          +function check(){const c=current();if(c){if(Date.now()>=c.endsAt&&!c.signal.aborted)c.controller.abort(new DOMException('Live price request deadline exceeded','TimeoutError'));c.signal.throwIfAborted();}}
+          +function remaining(){check();return current()?Math.max(1,current().endsAt-Date.now()):BACKEND_MS;}
+          +function options(extra={}){
+          + check();
+          + if(!current())return extra;
+          + // withTransaction owns the aggregate CSOT; driver forbids per-operation overrides there.
+          + return {...extra,signal:current().signal,...(extra.session?.inTransaction()?{}:{timeoutMS:remaining()})};
+          +}
+          +async function wait(promise){
+          + const c=current();if(!c)return promise;
+          + check();let abort;
+          + const stopped=new Promise((_,reject)=>{abort=()=>reject(c.signal.reason);c.signal.addEventListener('abort',abort,{once:true});});
+          + try{return await Promise.race([promise,stopped]);}finally{c.signal.removeEventListener('abort',abort);}
+          +}
+          +function workerSignal(){check();const s=AbortSignal.timeout(Math.min(WORKER_MS,Math.max(1,remaining()-WRITE_RESERVE_MS)));return current()?AbortSignal.any([s,current().signal]):s;}
+          +async function run(fn,{timeoutMS=BACKEND_MS,signal}={}){
+          + if(current())return fn();
+          + const controller=new AbortController(),c={id:randomUUID(),controller,signal:controller.signal,endsAt:Date.now()+timeoutMS};
+          + const stop=()=>controller.abort(signal.reason||new DOMException('Client disconnected','AbortError'));
+          + if(signal){if(signal.aborted)stop();else signal.addEventListener('abort',stop,{once:true});}
+          + const timer=setTimeout(()=>controller.abort(new DOMException('Live price request deadline exceeded','TimeoutError')),timeoutMS);
+          + try{return await storage.run(c,fn);}finally{clearTimeout(timer);signal?.removeEventListener('abort',stop);}
+          +}
+          +module.exports={current,check,remaining,options,wait,workerSignal,run,BACKEND_MS,WORKER_MS,WRITE_RESERVE_MS};
+          CANDIDATE
+          cat > patch-source-hashes.json <<'CANDIDATE'
+          {
+            "controllers/ProductController.js": {
+              "base_sha256": "4d927892c950ba50e59d1fa53bf7110ea95c96018d63953b3ff3107ee5526562",
+              "candidate_sha256": "838aea3940432617f73f5eeb1f56a85a4e07816bbe2b5e34e678d23dd957f03b"
+            },
+            "services/CatalogIdentityGuard.js": {
+              "base_sha256": null,
+              "candidate_sha256": "1864d439a61929774502f0b955a6af26664711e29d67306b981d287402c13dbc"
+            },
+            "services/LiveBudgetRecommendationService.js": {
+              "base_sha256": "136ece5770aec60f3f712abc43983d0a5c5d56ce4065e8fcb1dd603474222184",
+              "candidate_sha256": "7642396495c658cf8a6eb09a88fe275c62ac34ffd692c50d506fbfc1b9da5c73"
+            },
+            "services/LivePriceIdentity.js": {
+              "base_sha256": null,
+              "candidate_sha256": "9d4a0383effc73d58f68ea67f62357c979398cd2f47dfa506f47d332d14cef1f"
+            },
+            "services/LivePriceService.js": {
+              "base_sha256": "03d5c3c8ac73f7df281162bdaea467fef4f94859427938db1fbde65fef637f0d",
+              "candidate_sha256": "d7183c0c3e2cb2cdf76235d958ab8681fd826c0dfd5aa8c0499c200126b77cc7"
+            },
+            "services/ProductRecommendationService.js": {
+              "base_sha256": "cadaae48fe765d2535449508bba75811ffc1df172eb01f3f9b07d30ff527d6e9",
+              "candidate_sha256": "0d589d1d6ad37a709ae61e1355e7c15198ea653db918a7f15b3ef328e0ea27f3"
+            },
+            "services/CategoryService.js": {
+              "base_sha256": "d4b25e8c0fd59455d5e05d87a2dc75575751c93d658e4fc595a2467132f3dc9a",
+              "candidate_sha256": "db79624a251b57a7c9044e74212af734b4245fccc598760517c57c4fa9d24645"
+            },
+            "services/LivePriceDeadline.js": {
+              "base_sha256": null,
+              "candidate_sha256": "18368da9565b65c25a969488ccd6925e014281436c0488464122bd66e02f1ae7"
+            }
+          }
+          CANDIDATE
+          cat > frontend.diff <<'CANDIDATE'
+          --- a/src/services/api.service.ts
+          +++ b/src/services/api.service.ts
+          @@ -12,11 +12,15 @@
+             const bases = getApiBaseCandidates();
+             const errors: string[] = [];
+           
+          +  const isTopProducts = /^\/products\/top(?:[?]|$)/.test(endpoint);
+          +  const requestEndsAt = isTopProducts ? Date.now() + 20500 : null;
+             for (const base of bases) {
+          +    const requestTimeout = requestEndsAt == null ? API_TIMEOUT_MS : requestEndsAt - Date.now();
+          +    if (requestTimeout <= 0 || options?.signal?.aborted) break;
+               const url = `${base}${endpoint}`;
+               const controller = new AbortController();
+               const cleanupFns: Array<() => void> = [];
+          -    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+          +    const timeoutId = setTimeout(() => controller.abort(), requestTimeout);
+               cleanupFns.push(() => clearTimeout(timeoutId));
+           
+               if (options?.signal) {
+          @@ -59,7 +63,7 @@
+                 const isNetworkError = message === 'Failed to fetch' || (error instanceof TypeError && message.includes('fetch'));
+                 const isAbort = isAbortError(error);
+                 if (isAbort) {
+          -        errors.push(`${base}: timed out after ${Math.round(API_TIMEOUT_MS / 1000)}s`);
+          +        errors.push(`${base}: timed out after ${Math.round(requestTimeout / 1000)}s`);
+                 }
+                 // try next base
+               } finally {
+          CANDIDATE
+          node integration-runner.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: final-canonical-allowlist-acceptance
+          path: allowlist-results.json
+          retention-days: 30
+      - name: Remove only staging transport blobs and disposable runtime
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          STAGING_BRANCH: final-worker-switch-readiness-20261103
+        run: |
+          for file in transport-public-cert.pem worker-key-envelope.json; do
+            sha=$(gh api "repos/$GH_REPO/contents/qa/final-three-blockers/$file?ref=$STAGING_BRANCH" --jq .sha 2>/dev/null || true)
+            if [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then gh api -X DELETE "repos/$GH_REPO/contents/qa/final-three-blockers/$file" -f message='Remove temporary encrypted staging transport' -f branch="$STAGING_BRANCH" -f sha="$sha" >/dev/null; fi
+          done
+          rm -rf worker-key.txt private-sources.json staging-private.pem backend
+          docker rm -f trustfolio-final-staging-mongo >/dev/null 2>&1 || true
+
