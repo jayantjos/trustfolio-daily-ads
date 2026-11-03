@@ -63,9 +63,21 @@ jobs:
             console.log('PRODUCT_COLLECTIONS='+names.join(','));
             for(const name of names){
               const c=db.collection(name);
-              const docs=await c.find({$or:[{title:/Samsung.*7.*semi/i},{name:/Samsung.*7.*semi/i},{productName:/Samsung.*7.*semi/i}]},{projection:{title:1,name:1,productName:1,platform:1,retailer:1,price:1,sellingPrice:1,cleanUrl:1,clean_url:1,productUrl:1,product_url:1,url:1,sku:1}}).limit(15).toArray();
+              const samples=await c.find({},{limit:2}).toArray();
+              for(const d of samples)console.log('SAMPLE_SCHEMA='+name+':'+JSON.stringify(Object.keys(d).filter(x=>!(/token|secret|pass|key/i.test(x)))));
+              const filter={$or:[
+                 {title:/Samsung/i},{name:/Samsung/i},{productName:/Samsung/i},
+                 {product_name:/Samsung/i},{product_title:/Samsung/i},{product_title_name:/Samsung/i},
+                 {price:11290},{sellingPrice:11290},{salePrice:11290},{price_inr:11290},
+                 {selling_price:11290},{currentPrice:11290},{'price.amount':11290}
+              ]};
+              const docs=await c.find(filter).limit(40).toArray();
               console.log('POTENTIAL_MATCHES_COLLECTION='+name+' COUNT='+docs.length);
-              for(const d of docs){const result={_id:String(d._id),title:d.title||d.name||d.productName,platform:d.platform||d.retailer,price:d.price||d.sellingPrice,sku:d.sku,field_names:Object.keys(d).filter(x=>/url/i.test(x))}; for(const key of ['cleanUrl','clean_url','productUrl','product_url','url'])if(d[key])result[key]=d[key];console.log('MATCH='+JSON.stringify(result))}
+              for(const d of docs){
+                const result={_id:String(d._id)};
+                for(const key of Object.keys(d))if(/^(title|name|productName|product_name|product_title|platform|retailer|source|store|price|sellingPrice|salePrice|price_inr|selling_price|currentPrice|sku|productUrl|product_url|cleanUrl|clean_url|url|productLink|cleanLink|product_id)$/i.test(key)&&typeof d[key]!=='object')result[key]=String(d[key]).slice(0,260);
+                console.log('MATCH='+JSON.stringify(result));
+              }
             }
             await mongoose.disconnect();
           })().catch(e=>{console.error('AUDIT_ERROR='+e.name+':'+e.message.replace(/mongodb(\+srv)?:\/\/[^\s]+/ig,'[URI REDACTED]'));process.exitCode=1});
