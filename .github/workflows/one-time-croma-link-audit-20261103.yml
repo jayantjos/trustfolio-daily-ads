@@ -79,12 +79,7 @@ jobs:
               console.log('COLLECTION_COUNT='+name+':'+await c.estimatedDocumentCount());
               const samples=await c.find({}).limit(2).toArray();
               for(const d of samples)console.log('SAMPLE_SCHEMA='+name+':'+JSON.stringify(Object.keys(d).filter(x=>!(/token|secret|pass|key/i.test(x)))));
-              const filter={$or:[
-                 {title:/Samsung/i},{name:/Samsung/i},{productName:/Samsung/i},
-                 {product_name:/Samsung/i},{product_title:/Samsung/i},{product_title_name:/Samsung/i},
-                 {price:11290},{sellingPrice:11290},{salePrice:11290},{price_inr:11290},
-                 {selling_price:11290},{currentPrice:11290},{'price.amount':11290}
-              ]};
+              const filter={platform:/^croma$/i,category_slug:'washing-machines',title:/samsung.*7\\s*kg.*semi/i,$or:[{price_inr:11290},{price_inr:'11290'},{price:'₹11,290'},{price:'11290'}]};
               const docs=await c.find(filter).limit(40).toArray();
               console.log('POTENTIAL_MATCHES_COLLECTION='+name+' COUNT='+docs.length);
               for(const d of docs){
