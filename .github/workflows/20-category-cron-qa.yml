@@ -47,7 +47,9 @@ jobs:
           assert "automation/render_with_brand_fallback_v1.py" in f
           assert "mode=plan['mode']" in renderer
           assert "TF_AUTO_POST_ENABLED" in f
-          assert "TF_METRICOOL_API_TOKEN" in f
+          assert "TF_AUTO_POST_ENABLED: 'false'" in f
+          assert "TF_META_DIRECT_PUBLISH_ENABLED: 'true'" in f
+          assert "metricool_publish_v1.py" not in f
           assert len(cfg['rotation']['categories'])==20
           assert "apps/trustfolio" not in str(cfg)
           print('TWENTY_CATEGORY_CRON_MODE_FORWARDED_SAFE_BY_DEFAULT')

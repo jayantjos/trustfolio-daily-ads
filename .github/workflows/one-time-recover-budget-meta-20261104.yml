@@ -1,0 +1,25 @@
+name: One-time recovery of today's missing Meta budget post
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/one-time-recover-budget-meta-20261104.yml']
+permissions:
+  contents: read
+  actions: write
+jobs:
+  dispatch-budget:
+    if: github.repository == 'jayantjos/trustfolio-daily-ads' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify date and request today's Budget recovery on the existing safe Meta-only workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          today="$(TZ=Asia/Kolkata date +%F)"
+          [[ "$today" == '2026-11-04' ]] || { echo "RECOVERY_EXPIRED_NO_DISPATCH"; exit 1; }
+          gh api --method POST "repos/$GH_REPO/actions/workflows/auto-instagram-campaigns.yml/dispatches" \
+            -f ref=main -f 'inputs[mode]=budget' -f 'inputs[publish]=true'
+          echo "META_BUDGET_RECOVERY_DISPATCH_REQUESTED=YES"
+          echo "PUBLICATION_NOT_CONFIRMED_CHECK_META_LEDGER"
