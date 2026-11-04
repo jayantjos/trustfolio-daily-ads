@@ -1,0 +1,30 @@
+name: One-time Nov 4 comparison retry after route parity fix
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/one-time-comparison-retry-20261104.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  retry:
+    if: github.repository == 'jayantjos/trustfolio-daily-ads' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check current date and exact comparison publication ledger
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(TZ=Asia/Kolkata date +%F)" == '2026-11-04' ]] || { echo 'EXPIRED_NO_DISPATCH'; exit 1; }
+          for network in instagram facebook; do
+            if gh api "repos/$GH_REPO/contents/meta-publication-ledger/2026-11-04/$network-mode-comparison.json?ref=trustfolio-meta-publishing-ledger" >/dev/null 2>&1; then
+              echo "EXISTING_COMPARISON_LEDGER_$network=YES"
+            fi
+          done
+          gh api --method POST "repos/$GH_REPO/actions/workflows/auto-instagram-campaigns.yml/dispatches" \
+            -f ref=main -f 'inputs[mode]=comparison' -f 'inputs[publish]=true'
+          echo 'COMPARISON_RETRY_REQUESTED=YES'
+          echo 'CHECK_LIVE_PRICE_AND_RANKING_GATE_FOR_FINAL_PUBLICATION'
