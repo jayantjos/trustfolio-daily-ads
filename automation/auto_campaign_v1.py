@@ -22,6 +22,14 @@ IST = ZoneInfo("Asia/Kolkata")
 MODES = ("budget", "brand_budget", "comparison")
 REPO_HOST = "www.trustfolio.in"
 
+# Website canonical route may differ from the internal campaign category key.
+# Only map explicitly verified backend-rendered routes; no free-form fallback.
+RESULTS_ROUTE_ALIASES = {"speakers": "bluetooth-speakers"}
+
+
+def results_route_slug(category):
+    return RESULTS_ROUTE_ALIASES.get(str(category), str(category))
+
 
 def campaign_id(day, mode, category, budget, brand):
     value = "|".join((str(day), mode, category, str(budget), brand.casefold()))
@@ -198,7 +206,7 @@ def check_report(plan, report):
     if report.get("renderer") != "master_template_renderer_html_v4":
         raise ValueError("Approved premium renderer not used")
     url = urlsplit(str(report.get("landing_url") or ""))
-    if url.scheme != "https" or url.hostname not in ("trustfolio.in", REPO_HOST) or url.path.rstrip("/") != "/category/" + str(plan["category"]) + "/products":
+    if url.scheme != "https" or url.hostname not in ("trustfolio.in", REPO_HOST) or url.path.rstrip("/") != "/category/" + results_route_slug(plan["category"]) + "/products":
         raise ValueError("Landing URL is not the real TrustFolio results page")
     params = parse_qs(url.query)
     if params.get("budget") != [str(plan["budget"])] or params.get("brand",[""])[0] != plan["brand"]:
@@ -213,7 +221,7 @@ def check_report(plan, report):
 def clean_product_url(plan):
     """Canonical public ad destination for every ranked category and budget."""
     from urllib.parse import quote
-    slug = str(plan.get("category") or "").strip()
+    slug = results_route_slug(str(plan.get("category") or "").strip())
     budget = int(plan.get("budget") or 0)
     brand = str(plan.get("brand") or "").strip()
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) or budget <= 0:
