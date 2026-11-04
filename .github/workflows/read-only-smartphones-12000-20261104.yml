@@ -1,0 +1,50 @@
+name: Read-only 12000 smartphone brand picks for Flow
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/read-only-smartphones-12000-20261104.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch five brand rankings without writes or publishing
+        run: |
+          python - <<'PY'
+          import json, datetime
+          from site_top5_ads_v1 import fetch_public_top5
+          from website_live_price_sync_v1 import fetch_live_price_rows, overlay_site_live_prices
+          brands=['Realme','Samsung','Redmi','OnePlus','OPPO']
+          report={'date_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'budget_inr':12000,'category':'smart-phones','brands':{}}
+          for brand in brands:
+            try:
+              raw=fetch_public_top5('smart-phones',12000,brand)
+              products=raw.get('products',[])
+              ids=[str(p.get('id','')) for p in products if isinstance(p,dict) and p.get('id')]
+              if ids:
+                raw=overlay_site_live_prices(raw,fetch_live_price_rows(ids),12000)
+              matches=[]
+              for rank,p in enumerate(raw.get('products',[]),1):
+                platform=str(p.get('platform') or '').lower()
+                title=str(p.get('title') or '')
+                pbrand=str(p.get('brand') or '')
+                price=p.get('price_inr')
+                if platform not in ('amazon','flipkart') or not isinstance(price,(int,float)) or not 0<price<=12000:continue
+                if brand.lower() not in pbrand.lower() and brand.lower() not in title.lower():continue
+                if brand=='OnePlus' and 'nord' not in title.lower():continue
+                matches.append({'source_rank':rank,'id':p.get('id'),'title':title,'brand':pbrand,'price_inr':price,'platform':platform,'image':p.get('main_image') or p.get('images'),'specifications':p.get('specifications'),'product_url':p.get('product_url'),'live_price_status':p.get('live_price_status'),'live_checked_at':p.get('live_checked_at')})
+              report['brands'][brand]={'status':'selected' if matches else 'no_eligible_amazon_flipkart_product','selected':matches[0] if matches else None,'candidates':len(matches)}
+            except Exception as e:
+              report['brands'][brand]={'status':'error','error_type':type(e).__name__,'error':str(e)[:300]}
+          with open('smartphones-12000-report.json','w') as f:json.dump(report,f,indent=2,ensure_ascii=False)
+          print(json.dumps({b:{'status':v['status'],'selected':v.get('selected',{}).get('title') if v.get('selected') else None} for b,v in report['brands'].items()},ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smartphones-12000-brand-picks
+          path: smartphones-12000-report.json
+          retention-days: 7
