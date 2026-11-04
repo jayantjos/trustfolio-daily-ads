@@ -256,7 +256,7 @@ def caption_for(plan, landing_url, *, network="instagram"):
     link = urlsplit(str(landing_url or ""))
     q = parse_qs(link.query)
     if (link.scheme != "https" or link.hostname not in ("trustfolio.in", REPO_HOST)
-            or link.path.rstrip("/") != "/category/" + category_slug + "/products"
+            or link.path.rstrip("/") != "/category/" + results_route_slug(category_slug) + "/products"
             or q.get("category", [category_slug])[0] != category_slug
             or q.get("budget") != [str(budget_inr)]
             or q.get("brand", [""])[0] != (brand if mode == "brand_budget" else "")):

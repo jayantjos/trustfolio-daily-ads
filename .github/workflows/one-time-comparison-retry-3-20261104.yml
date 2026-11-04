@@ -1,0 +1,24 @@
+name: One-time Nov 4 comparison recovery after caption route fix
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/one-time-comparison-retry-3-20261104.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  retry:
+    if: github.repository == 'jayantjos/trustfolio-daily-ads' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch remaining comparison using original safe Meta-only workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$(TZ=Asia/Kolkata date +%F)" == '2026-11-04' ]] || { echo 'EXPIRED_NO_DISPATCH'; exit 1; }
+          gh api --method POST "repos/$GH_REPO/actions/workflows/auto-instagram-campaigns.yml/dispatches" \
+            -f ref=main -f 'inputs[mode]=comparison' -f 'inputs[publish]=true'
+          echo "SAFE_COMPARISON_RECOVERY_DISPATCHED=YES"
+          echo "META_LEDGER_VERIFICATION_REQUIRED=YES"

@@ -145,7 +145,12 @@ class AutoCampaignTests(unittest.TestCase):
         self.assertEqual(len(check_report(plan,report)),5)
         self.assertEqual(clean_product_url(plan),
             "https://www.trustfolio.in/category/bluetooth-speakers/products/?budget=5000")
+        for network in ("instagram","facebook","linkedin"):
+            caption=caption_for(plan,report["landing_url"],network=network)
+            self.assertIn(clean_product_url(plan),caption)
         report["landing_url"]="https://www.trustfolio.in/category/speakers/products/?budget=5000"
+        with self.assertRaisesRegex(ValueError,"Social caption URL"):
+            caption_for(plan,report["landing_url"],network="facebook")
         with self.assertRaisesRegex(ValueError,"real TrustFolio results page"):
             check_report(plan,report)
 
