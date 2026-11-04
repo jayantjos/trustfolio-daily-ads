@@ -47,7 +47,8 @@ jobs:
               'TF_META_DIRECT_PUBLISH_ENABLED', 'TF_META_PAGE_ACCESS_TOKEN',
               'TF_META_START_DATE', 'TF_META_MAX_POSTS_PER_DAY_PER_NETWORK',
               'github.event_name == \'schedule\'', '--preflight-only',
-              'Post via Metricool ONLY after',
+              "TF_AUTO_POST_ENABLED: 'false'",
+              "TF_META_DIRECT_PUBLISH_ENABLED: 'true'",
               'Publish to verified Instagram and Facebook through official Meta Graph API',
           ]
           for v in required:
