@@ -1,0 +1,48 @@
+name: One-time remaining Meta modes for 4 November
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/one-time-remaining-meta-modes-20261104.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  recover-remaining:
+    if: github.repository == 'jayantjos/trustfolio-daily-ads' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 42
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Recover only missing brand budget and comparison via original Meta publishing safety gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(TZ=Asia/Kolkata date +%F)" == "2026-11-04" ]] || { echo "RECOVERY_EXPIRED"; exit 1; }
+          check_mode() {
+            local mode="$1" network
+            for network in instagram facebook; do
+              local content
+              content="$(gh api "repos/$GH_REPO/contents/meta-publication-ledger/2026-11-04/$network-mode-$mode.json?ref=trustfolio-meta-publishing-ledger" --jq .content 2>/dev/null || true)"
+              if [[ -z "$content" ]]; then return 1; fi
+              if [[ "$(printf '%s' "$content" | base64 -d | jq -r .status)" != 'api_accepted_published' ]]; then return 1; fi
+            done
+            return 0
+          }
+          for mode in brand_budget comparison; do
+            if check_mode "$mode"; then echo "ALREADY_PUBLISHED_BOTH_NETWORKS=$mode"; continue; fi
+            gh api --method POST "repos/$GH_REPO/actions/workflows/auto-instagram-campaigns.yml/dispatches" \
+              -f ref=main -f "inputs[mode]=$mode" -f 'inputs[publish]=true'
+            echo "RECOVERY_DISPATCHED=$mode"
+            for attempt in $(seq 1 28); do
+              sleep 60
+              if check_mode "$mode"; then echo "VERIFIED_BOTH_NETWORKS=$mode"; break; fi
+              if [[ "$(TZ=Asia/Kolkata date +%F)" != "2026-11-04" ]]; then echo "CROSSED_DATE_STOP"; exit 1; fi
+            done
+            if ! check_mode "$mode"; then
+              echo "NOT_VERIFIED_WITHIN_SAFE_WINDOW=$mode"
+              exit 1
+            fi
+          done
+          echo "NOV_4_BRAND_AND_COMPARISON_VERIFIED=YES"
