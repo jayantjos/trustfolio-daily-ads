@@ -136,6 +136,19 @@ class AutoCampaignTests(unittest.TestCase):
         self.assertEqual(clean_product_url(plan),
             "https://www.trustfolio.in/category/smartwatches/products/?budget=2000&brand=boAt+Audio")
 
+    def test_speakers_backend_verified_canonical_route(self):
+        plan=sample_plan()
+        plan.update(category="speakers",budget=5000)
+        report=sample_report()
+        report.update(campaign_category="speakers",campaign_budget_inr=5000,
+                      landing_url="https://www.trustfolio.in/category/bluetooth-speakers/products/?budget=5000")
+        self.assertEqual(len(check_report(plan,report)),5)
+        self.assertEqual(clean_product_url(plan),
+            "https://www.trustfolio.in/category/bluetooth-speakers/products/?budget=5000")
+        report["landing_url"]="https://www.trustfolio.in/category/speakers/products/?budget=5000"
+        with self.assertRaisesRegex(ValueError,"real TrustFolio results page"):
+            check_report(plan,report)
+
     def test_4x5_image_preserves_all_original_pixels(self):
         try:
             from PIL import Image
