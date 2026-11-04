@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 4189,
   "campaign_id": "tfauto-91c65a74e5792c8315",
+  "category": "speakers",
   "container_id": "17919359733530469",
+  "meta_media_id": "17885443776522835",
   "mode": "comparison",
   "network": "instagram",
-  "recorded_at": "2026-11-04T12:06:56.274754+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-04T12:07:09.051753+05:30",
+  "status": "api_accepted_published"
 }
