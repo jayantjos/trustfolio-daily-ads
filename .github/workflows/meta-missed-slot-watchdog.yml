@@ -1,0 +1,73 @@
+name: TrustFolio Meta missed-slot watchdog
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/meta-missed-slot-watchdog.yml']
+  schedule:
+    # Independent dispatch triggers for missed Meta main cron slots.
+    # Times UTC; actual IST eligibility is checked again at runtime.
+    - cron: '23 3 * * *'
+    - cron: '23 8 * * *'
+    - cron: '53 13 * * *'
+    - cron: '23 16 * * *'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: trustfolio-meta-watchdog
+  cancel-in-progress: false
+
+jobs:
+  check-and-recover:
+    if: github.repository == 'jayantjos/trustfolio-daily-ads' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Dispatch only a due missing Meta mode through original safety-gated workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64,datetime,json,os,subprocess,urllib.error,urllib.request
+          from zoneinfo import ZoneInfo
+          now=datetime.datetime.now(ZoneInfo('Asia/Kolkata'))
+          day=now.date().isoformat()
+          due=(('budget',(8,30)),('brand_budget',(13,30)),('comparison',(19,0)))
+          completed=[]
+          def is_published(mode,network):
+              path=f'meta-publication-ledger/{day}/{network}-mode-{mode}.json'
+              url=f'https://api.github.com/repos/{os.environ["GH_REPO"]}/contents/{path}?ref=trustfolio-meta-publishing-ledger'
+              req=urllib.request.Request(url,headers={
+                  'Authorization':'Bearer '+os.environ['GH_TOKEN'],
+                  'Accept':'application/vnd.github+json'})
+              try:
+                  with urllib.request.urlopen(req,timeout=15) as response:
+                      payload=json.load(response)
+                  record=json.loads(base64.b64decode(payload['content']))
+                  return record.get('status')=='api_accepted_published'
+              except urllib.error.HTTPError as err:
+                  if err.code==404:return False
+                  raise
+          # Always check exact date and due slot. Cron can be early, delayed or missed.
+          for mode,(h,m) in due:
+              if (now.hour,now.minute)<(h,m):continue
+              if all(is_published(mode,n) for n in ('facebook','instagram')):
+                  completed.append(mode)
+                  continue
+              print('WATCHDOG_IST_DATE='+day)
+              print('WATCHDOG_MISSING_DUE_MODE='+mode)
+              subprocess.run(['gh','api','--method','POST',
+                  f'repos/{os.environ["GH_REPO"]}/actions/workflows/auto-instagram-campaigns.yml/dispatches',
+                  '-f','ref=main','-f',f'inputs[mode]={mode}','-f','inputs[publish]=true'],check=True)
+              print('WATCHDOG_SAFE_META_DISPATCH_REQUESTED='+mode)
+              break
+          else:
+              print('WATCHDOG_NO_MISSING_DUE_SLOT=YES')
+          print('WATCHDOG_ALREADY_COMPLETED_MODES='+','.join(completed))
+          print('WATCHDOG_PUBLISHING_DONE_HERE=NO')
+          PY
