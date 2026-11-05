@@ -111,13 +111,25 @@ test('slow verification stops additional batches',async()=>{
   f.dependencies.now=()=>time;
   f.dependencies.prices={async getLivePrices(ids){time+=6000;return ids.map(id=>({id,live:{status:'error'}}));}};
   const r=await top('drones',20000,{},f.dependencies);
-  assert.equal(r.livePriceBatches,1); assert.equal(r.stopReason,'time_budget');
+  assert.equal(r.livePriceBatches,2); assert.equal(r.stopReason,'time_budget');
+});
+
+test('request deadline returns safely even if verification remains pending',async()=>{
+  const f=fixture([product('a',19000)]);
+  let ticks=0;
+  f.dependencies.now=()=>ticks++===0 ? NOW : NOW+7495;
+  f.dependencies.prices={async getLivePrices(){return new Promise(()=>{});}};
+  const r=await top('drones',20000,{},f.dependencies);
+  assert.equal(r.products.length,0);
+  assert.equal(r.livePriceBatches,1);
+  assert.equal(r.stopReason,'time_budget');
+  assert.equal(r.verificationFailures.timeout,1);
 });
 
 test('Q: concurrent equal requests coalesce while category, brand and budget stay isolated',async()=>{
   let queries=0;
   const m={exports:{}};
-  const sandbox={module:m,exports:m.exports,process,Date,Map,Set,require(name){
+  const sandbox={module:m,exports:m.exports,process,Date,Map,Set,setTimeout,clearTimeout,require(name){
     if(name.includes('ProductRecommendation'))return {async getBudgetNearCandidates(){queries++;await new Promise(r=>setImmediate(r));return {products:[]};}};
     if(name.includes('LivePrice'))return {};
     throw new Error(name);
