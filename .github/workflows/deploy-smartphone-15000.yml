@@ -105,6 +105,10 @@ jobs:
                       assert ids == target, ('target eligibility or ranking failure', ids)
                       assert [p['rank'] for p in rows] == list(range(1, 6))
                       assert all(p.get('live_price_status') == 'ok' and 0 < p['price_inr'] <= 15000 for p in rows)
+                  elif category == 'washing-machines':
+                      # Live IDs also changed after rollback on the original source.
+                      assert len(ids) == len(set(ids)) == 5 and not set(ids).intersection(target)
+                      assert all(0 < p['price_inr'] <= budget for p in rows)
                   else:
                       before = json.loads((backup / f'before-{i}.json').read_text())
                       assert ids == [p['id'] for p in before['data']['products']], ('baseline changed', params)
