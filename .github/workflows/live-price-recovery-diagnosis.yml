@@ -55,15 +55,31 @@ jobs:
              console.log('CONTROLLED_PROBE',JSON.stringify({requestId,id:String(doc._id),transport:'node-fetch',phase,status:response.status,firstByteMs,totalMs:Date.now()-start,server:response.headers.get('server'),cfRay:response.headers.get('cf-ray'),retryAfter:response.headers.get('retry-after'),body:body.slice(0,2500)}));
             }catch(error){console.log('CONTROLLED_PROBE',JSON.stringify({requestId,id:String(doc._id),transport:'node-fetch',phase,totalMs:Date.now()-start,error:error.message,cause:error.cause?.code||null}));}
            }
-           await nodeProbe(docs[0],'single');
-           await new Promise(resolve=>setTimeout(resolve,10000));
+           // The preceding run already captured a successful Node single probe.
+          
            const config=['url = '+JSON.stringify(endpoint),'request = "POST"','header = '+JSON.stringify('content-type: application/json'),...(env.PRICE_WORKER_KEY?['header = '+JSON.stringify('x-api-key: '+env.PRICE_WORKER_KEY)]:[]),'data = '+JSON.stringify(JSON.stringify(payload(docs[0])))].join('\n');
            const start=Date.now();
-           const result=cp.spawnSync('curl',['--config','-','--silent','--show-error','--connect-timeout','5','--max-time','12','--dump-header','/dev/stderr','--write-out','\nCURL_METRICS %{http_code} %{time_namelookup} %{time_connect} %{time_starttransfer} %{time_total}'],{input:config,encoding:'utf8'});
-           const headers=redact(result.stderr).split('\n').filter(x=>/^(HTTP\/|server:|cf-ray:|retry-after:|curl:)/i.test(x));
+           const result=cp.spawnSync('curl',['--config','-','--silent','--show-error','--connect-timeout','5','--max-time','12','--dump-header','-','--write-out','\nCURL_METRICS %{http_code} %{time_namelookup} %{time_connect} %{time_starttransfer} %{time_total}'],{input:config,encoding:'utf8'});
+           const headers=redact(result.stdout+'\n'+result.stderr).split('\n').filter(x=>/^(HTTP\/|server:|cf-ray:|retry-after:|curl:)/i.test(x));
            console.log('CONTROLLED_PROBE',JSON.stringify({requestId:'tf-curl-'+start,id:String(docs[0]._id),transport:'curl',phase:'single',totalMs:Date.now()-start,exitCode:result.status,headers,body:redact(result.stdout).slice(0,3000)}));
            await new Promise(resolve=>setTimeout(resolve,10000));
-           await Promise.all(docs.map(doc=>nodeProbe(doc,'limited-pair')));
+           const procs=JSON.parse(cp.execFileSync('pm2',['jlist'],{encoding:'utf8'}));
+ for(const name of ['trustfolio-backend','trustfolio-price-watcher']){
+   const p=procs.find(p=>p.name===name);
+   let descriptors=null,sockets=null;
+   try{const fds=fs.readdirSync('/proc/'+p.pid+'/fd');descriptors=fds.length;sockets=fds.filter(fd=>{try{return fs.readlinkSync('/proc/'+p.pid+'/fd/'+fd).startsWith('socket:');}catch{return false;}}).length;}catch{}
+   console.log('RESOURCE_AUDIT',JSON.stringify({name,pid:p.pid,status:p.pm2_env.status,restarts:p.pm2_env.restart_time,cpu:p.monit?.cpu,memory:p.monit?.memory,descriptors,sockets}));
+ }
+ for(const directory of ['controllers','services']){
+   for(const file of fs.readdirSync(directory).filter(n=>n.endsWith('.js'))){
+     const content=fs.readFileSync(directory+'/'+file,'utf8');
+     content.split('\n').forEach((line,index)=>{if(/getLivePrices\(|LivePriceService/.test(line))console.log('CALLER',directory+'/'+file+':'+(index+1),line.trim());});
+   }
+ }
+ for(const file of ['services/LivePriceService.js','services/ProductAvailabilityPolicy.js']){
+   console.log('SOURCE',file);
+   console.log(fs.readFileSync(file,'utf8').replace(/((?:key|secret|password|token)\s*[:=]\s*)['"][^'"]+['"]/gi,'$1"[REDACTED]"'));
+ }
            await mongoose.disconnect();
           })().catch(async error=>{console.error(error.stack);await mongoose.disconnect();process.exitCode=1;});
           JS
