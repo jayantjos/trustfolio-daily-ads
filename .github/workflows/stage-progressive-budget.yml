@@ -1,4 +1,4 @@
-name: Stage progressive budget policy and simulate all categories
+name: Stage progressive policy with bounded live verification
 on:
   push:
     branches: [feat/progressive-budget-near]
