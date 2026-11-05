@@ -8,7 +8,7 @@ permissions:
 jobs:
   stage:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,6 +47,7 @@ jobs:
           cmp /tmp/budget-original/services/LiveBudgetRecommendationService.js /tmp/budget-stage/services/LiveBudgetRecommendationService.js
           node --check /tmp/budget-stage/controllers/ProductController.js
           node site_patches/test_staged_budget_cache.js /tmp/budget-stage/controllers/ProductController.js
+          node site_patches/test_staged_budget_candidates.js /tmp/budget-stage/services/ProductRecommendationService.js /tmp/budget-original/services/ProductRecommendationService.js
           (cd /tmp/budget-original; sha256sum controllers/*.js services/*.js) > evidence/production-before.sha256
           python3 - <<'PY' > /tmp/simulate-progressive.js
           import ast, json
@@ -58,6 +59,20 @@ jobs:
           print(Path('site_patches/simulate_budget_near.js').read_text())
           PY
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && node' < /tmp/simulate-progressive.js | tee evidence/simulation.log
+      - name: Staged live canary using existing extraction without database writes
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/canary-progressive.js
+          import json
+          from pathlib import Path
+          print('const STAGED_RANKER = '+json.dumps(Path('/tmp/budget-stage/services/ProductRecommendationService.js').read_text())+';')
+          print('const STAGED_SERVICE = '+json.dumps(Path('site_patches/BudgetNearRecommendationService.js').read_text())+';')
+          print(Path('site_patches/canary_budget_near.js').read_text())
+          PY
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && node' < /tmp/canary-progressive.js | tee evidence/live-canary.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
