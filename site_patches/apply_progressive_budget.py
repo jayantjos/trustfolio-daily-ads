@@ -19,7 +19,11 @@ async function getBudgetNearCandidates(categorySlug, budgetCap, options = {}) {
   const brand = typeof options.brand === 'string' ? options.brand.trim() : '';
   const { capped, totalMatches } = await fetchProductsInBudgetWindow(
     categorySlug, min, budgetCap, budgetCap, { brand, candidateLimit: 100 });
-  const qualityRanked = orderPickedByRatingThenSpecs(categorySlug, capped.filter(hasUsableProductImage));
+  const qualityCandidates = capped.filter((product) => {
+    const rating = extractRating(product);
+    return hasUsableProductImage(product) && (rating == null || rating >= 3);
+  });
+  const qualityRanked = orderPickedByRatingThenSpecs(categorySlug, qualityCandidates);
   // Preserve the existing quality order within each five-percent budget band.
   const band = (p) => Math.floor((budgetCap - resolveProductPrice(p)) / (budgetCap * 0.05) + 1e-9);
   qualityRanked.sort((a, b) => band(a) - band(b));
