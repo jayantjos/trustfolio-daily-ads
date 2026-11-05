@@ -31,7 +31,25 @@ def patch(root):
         live,
         "      if (row.deleted || live?.status === 'out_of_stock') continue;",
         """      if (row.deleted || live?.status === 'out_of_stock') continue;
-      if (exactSmartphoneBudget && live?.status !== 'ok') continue;""",
+      if (exactSmartphoneBudget && (live?.status !== 'ok' || live.in_stock === false)) continue;""",
+    )
+
+    live = replace_once(
+        live,
+        "    const liveRows = await priceService.getLivePrices(ids);",
+        """    let liveRows;
+    if (exactSmartphoneBudget) {
+      liveRows = [];
+      // Keep worker concurrency bounded for this five-listing request only.
+      // The existing service still decides freshness and coalesces each ID.
+      for (let start = 0; start < ids.length; start += 2) {
+        const rows = await priceService.getLivePrices(ids.slice(start, start + 2));
+        if (!Array.isArray(rows)) throw new Error('Live price API response invalid');
+        liveRows.push(...rows);
+      }
+    } else {
+      liveRows = await priceService.getLivePrices(ids);
+    }""",
     )
 
     ranking = replace_once(
