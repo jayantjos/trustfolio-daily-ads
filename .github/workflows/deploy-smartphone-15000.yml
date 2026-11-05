@@ -1,0 +1,126 @@
+name: Deploy exact smartphone override
+on:
+  push:
+    branches: [fix/smartphones-exact-15000]
+    paths: [.github/workflows/deploy-smartphone-15000.yml]
+permissions:
+  contents: read
+concurrency:
+  group: trustfolio-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Back up, deploy and verify the guarded backend patch
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          remote="$USER@$HOST"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$remote" 'mkdir -p "$HOME/trustfolio_releases"'
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes site_patches/apply_exact_smartphone_15000.py "$remote:trustfolio_releases/smartphone-15000-$GITHUB_RUN_ID.py"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$remote" bash -s -- "$GITHUB_RUN_ID" <<'REMOTE_SCRIPT'
+          set -Eeuo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          backup="$HOME/trustfolio_backend_backups/smartphone-15000-$1"
+          mkdir -p "$(dirname "$backup")"
+          exec 9>"$(dirname "$backup")/.smartphone-15000.lock"
+          flock -n 9
+          sha256sum -c <<'HASHES'
+          4d927892c950ba50e59d1fa53bf7110ea95c96018d63953b3ff3107ee5526562  controllers/ProductController.js
+          136ece5770aec60f3f712abc43983d0a5c5d56ce4065e8fcb1dd603474222184  services/LiveBudgetRecommendationService.js
+          cadaae48fe765d2535449508bba75811ffc1df172eb01f3f9b07d30ff527d6e9  services/ProductRecommendationService.js
+          HASHES
+          mkdir "$backup"
+          files=(controllers/ProductController.js services/ProductRecommendationService.js services/LiveBudgetRecommendationService.js)
+          cp -p --parents "${files[@]}" "$backup"
+          (cd "$backup"; sha256sum "${files[@]}" > SHA256SUMS)
+          printf 'ROLLBACK_BACKUP=%s\n' "$backup"
+          stage=$(mktemp -d)
+          changed=0
+          cleanup() {
+            rc=$?
+            trap - EXIT
+            if (( changed )); then
+              (cd "$backup"; sha256sum -c SHA256SUMS)
+              for file in "${files[@]}"; do cp -p "$backup/$file" "$file"; done
+              pm2 restart trustfolio-backend
+              echo ROLLBACK_APPLIED
+            fi
+            rm -rf "$stage"
+            exit "$rc"
+          }
+          trap cleanup EXIT
+          cp -p --parents "${files[@]}" "$stage"
+          python3 "$HOME/trustfolio_releases/smartphone-15000-$1.py" --staging-backend "$stage"
+          for file in "${files[@]}"; do node --check "$stage/$file"; cmp "$backup/$file" "$file"; done
+          verify() {
+          python3 - "$backup" "$1" <<'PY'
+          import json, sys, time
+          from pathlib import Path
+          from urllib.parse import urlencode
+          from urllib.request import urlopen
+          backup, phase = Path(sys.argv[1]), sys.argv[2]
+          target = ['69f9e9f56529299d30426ac8','69f9ea1f6529299d30426ae4','6a9e4a2e0933a0daedaddd80','6aa56d332bb194728fab44c3','6a2ed790ee20fca78fefdfde']
+          queries = [('smart-phones',15000,''),('smart-phones',15000.5,''),('smart-phones',12000,''),('smart-phones',20000,''),('smart-phones',15000,'Samsung'),('washing-machines',15000,''),('smart-tvs',15000,'')]
+          for i, (category, budget, brand) in enumerate(queries):
+              params = dict(category=category, budget=budget, limit=5)
+              if brand:
+                  params['brand'] = brand
+              for attempt in range(3):
+                  try:
+                      with urlopen('https://api.trustfolio.in/api/products/top?' + urlencode(params), timeout=25) as response:
+                          payload = json.load(response)
+                      break
+                  except Exception:
+                      if attempt == 2:
+                          raise
+                      time.sleep(2)
+              assert payload['success'], params
+              rows = payload['data']['products']
+              (backup / f'{phase}-{i}.json').write_text(json.dumps(payload))
+              ids = [row['id'] for row in rows]
+              print(phase, params, [(p['id'],p['price_inr'],p.get('live_price_status')) for p in rows], flush=True)
+              if phase == 'after':
+                  if i == 0:
+                      assert ids == target, ('target eligibility or ranking failure', ids)
+                      assert [p['rank'] for p in rows] == list(range(1, 6))
+                      assert all(p.get('live_price_status') == 'ok' and 0 < p['price_inr'] <= 15000 for p in rows)
+                  else:
+                      before = json.loads((backup / f'before-{i}.json').read_text())
+                      assert ids == [p['id'] for p in before['data']['products']], ('baseline changed', params)
+          PY
+          }
+          verify before
+          for file in "${files[@]}"; do cmp "$backup/$file" "$file"; done
+          changed=1
+          for file in "${files[@]}"; do
+            cp -p "$stage/$file" "$file.smartphone-15000-$1"
+            mv -f "$file.smartphone-15000-$1" "$file"
+          done
+          pm2 restart trustfolio-backend
+          sleep 5
+          verify after
+          pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let p=JSON.parse(s);for(let name of ["trustfolio-backend","trustfolio-price-watcher"]){if(!p.some(x=>x.name===name&&x.pm2_env.status==="online"))process.exit(1);console.log(name+" online")}})'
+          changed=0
+          echo DEPLOYED_AND_API_VERIFIED
+          REMOTE_SCRIPT
