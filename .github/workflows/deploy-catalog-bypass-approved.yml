@@ -1,0 +1,83 @@
+name: Deploy approved exact smartphone catalog bypass
+on:
+  push:
+    branches: [fix/smartphone-15000-catalog-bypass]
+    paths: [.github/workflows/deploy-catalog-bypass-approved.yml]
+permissions:
+  contents: read
+concurrency:
+  group: trustfolio-catalog-bypass-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Prepare mobile acceptance runner before modifying production
+        run: |
+          npm install --prefix "$RUNNER_TEMP/catalog-qa" playwright@1.56.1
+          "$RUNNER_TEMP/catalog-qa/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Confirm approved code and promote only approved files and tested web build
+        id: promote
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin 3edbc87ddbe16d7b878a20495835342b8ca08639
+          for name in ProductController.js LiveBudgetRecommendationService.js ProductsTable.tsx; do
+            git show "3edbc87ddbe16d7b878a20495835342b8ca08639:site_patches/catalog-bypass/$name" > "$RUNNER_TEMP/approved-$name"
+            cmp "$RUNNER_TEMP/approved-$name" "site_patches/catalog-bypass/$name"
+          done
+          package="/tmp/trustfolio-catalog-bypass-deploy-$GITHUB_RUN_ID"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 -o ConnectionAttempts=3 "$USER@$HOST" "mkdir -p '$package'"
+          tar -C site_patches/catalog-bypass -czf package.tgz .
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 package.tgz "$USER@$HOST:$package/package.tgz"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST" "tar -xzf '$package/package.tgz' -C '$package' && bash '$package/promote.sh' '$package' '$GITHUB_RUN_ID'"
+      - name: Verify production API, fresh mobile and desktop sessions and unaffected searches
+        id: acceptance
+        env:
+          NODE_PATH: ${{ runner.temp }}/catalog-qa/node_modules
+        run: node site_patches/catalog-bypass/mobile-acceptance.cjs acceptance
+      - name: Automatic rollback on a failed promotion or acceptance gate
+        if: failure()
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 -o ConnectionAttempts=3 "$USER@$HOST" "if test -f \$HOME/trustfolio_backend_backups/catalog-bypass-deploy-$GITHUB_RUN_ID/rollback.sh; then bash \$HOME/trustfolio_backend_backups/catalog-bypass-deploy-$GITHUB_RUN_ID/rollback.sh; else echo 'No production promotion occurred'; fi"
+      - name: Collect production evidence
+        if: always()
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          mkdir -p acceptance
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST:/tmp/trustfolio-catalog-bypass-deploy-$GITHUB_RUN_ID/*-after.json" acceptance/ || true
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST:/tmp/trustfolio-catalog-bypass-deploy-$GITHUB_RUN_ID/deployed-call-proof.json" acceptance/ || true
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST:/tmp/trustfolio-catalog-bypass-deploy-$GITHUB_RUN_ID/catalog-before.json" acceptance/ || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: catalog-bypass-production-acceptance
+          path: acceptance/
