@@ -17,7 +17,7 @@ for(const proto of [mongoose.Collection.prototype,mongoose.mongo.Collection.prot
   console.log('BASELINE',JSON.stringify({products:rec.products.map(p=>({id:p.id,price:p.price_inr,url:p.product_url})),workerHost:new URL(env.PRICE_WORKER_URL).hostname,backendPort:Number(runtime.PORT||env.PORT||8081)}));
  }else{
   const before=JSON.parse(fs.readFileSync(path.join(pkg,'catalog-before.json')));
-  assert.deepEqual(rec.products,before.products,'IDs, prices, fields, links and rank unchanged');
+  assert.deepEqual(JSON.parse(JSON.stringify(rec.products)),before.products,'IDs, prices, fields, links and rank unchanged');
   const file=require.resolve(path.join(root,'services/LivePriceService'));
   require.cache[file]={id:file,filename:file,loaded:true,exports:{getLivePrices(){calls++;throw Error('Target must not invoke verification');}}};
   const helper=require(path.join(root,'services/LiveBudgetRecommendationService'));
