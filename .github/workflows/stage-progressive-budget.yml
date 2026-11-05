@@ -2,7 +2,7 @@ name: Stage progressive budget policy and simulate all categories
 on:
   push:
     branches: [feat/progressive-budget-near]
-    paths: [.github/workflows/stage-progressive-budget.yml, site_patches/BudgetNearRecommendationService*, site_patches/apply_progressive_budget.py, site_patches/simulate_budget_near.js]
+    paths: [.github/workflows/stage-progressive-budget.yml]
 permissions:
   contents: read
 jobs:
@@ -45,14 +45,15 @@ jobs:
           python3 site_patches/apply_progressive_budget.py --backend /tmp/budget-stage
           for file in /tmp/budget-stage/services/*.js; do node --check "$file"; done
           cmp /tmp/budget-original/services/LiveBudgetRecommendationService.js /tmp/budget-stage/services/LiveBudgetRecommendationService.js
-          cmp /tmp/budget-original/controllers/ProductController.js /tmp/budget-stage/controllers/ProductController.js
+          node --check /tmp/budget-stage/controllers/ProductController.js
+          node site_patches/test_staged_budget_cache.js /tmp/budget-stage/controllers/ProductController.js
           (cd /tmp/budget-original; sha256sum controllers/*.js services/*.js) > evidence/production-before.sha256
           python3 - <<'PY' > /tmp/simulate-progressive.js
           import ast, json
           from pathlib import Path
           tree=ast.parse(Path('site_patches/apply_progressive_budget.py').read_text())
           addition=next(ast.literal_eval(n.value) for n in ast.walk(tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='addition' for t in n.targets))
-          print('const RANKER_ADDITION = '+json.dumps(addition)+';')
+          print('const STAGED_RANKER = '+json.dumps(Path('/tmp/budget-stage/services/ProductRecommendationService.js').read_text())+';')
           print('const STAGED_SERVICE = '+json.dumps(Path('site_patches/BudgetNearRecommendationService.js').read_text())+';')
           print(Path('site_patches/simulate_budget_near.js').read_text())
           PY

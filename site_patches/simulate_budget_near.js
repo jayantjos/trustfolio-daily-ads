@@ -30,7 +30,7 @@ function compile(source, name) {
   const rankerSource = fs.readFileSync('services/ProductRecommendationService.js','utf8');
   const campaignSource = fs.readFileSync('services/LiveBudgetRecommendationService.js','utf8');
   const ranker = compile(rankerSource, 'ReadOnlyOriginalRanker.js');
-  const stagedRanker = compile(rankerSource.replace('module.exports = {', RANKER_ADDITION + '\nmodule.exports = {\n getBudgetNearCandidates,'), 'ReadOnlyStagedRanker.js');
+  const stagedRanker = compile(STAGED_RANKER, 'ReadOnlyStagedRanker.js');
   const campaign = compile(campaignSource, 'ReadOnlyCampaign.js');
   const staged = compile(STAGED_SERVICE, 'ReadOnlyProgressive.js');
   const collection = mongoose.connection.collection('my_products');

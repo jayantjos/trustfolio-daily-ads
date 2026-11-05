@@ -71,7 +71,13 @@ async function select(category, originalBudget, opts, dependencies) {
         returned.add(id);
         rowsById.set(id, row);
         if (!verified(row, clock(), configuredFreshness)) {
-          const reason = row.deleted ? 'unavailable' : row.live?.status || 'verification_failed';
+          const live = row.live;
+          let reason = 'verification_failed';
+          if (row.deleted || live?.status === 'out_of_stock') reason = 'unavailable';
+          else if (/timeout|aborted/i.test(live?.error || '')) reason = 'timeout';
+          else if (live?.status === 'ok' && live.in_stock === false) reason = 'unavailable';
+          else if (live?.status === 'ok') reason = 'expired_or_invalid_verified_cache';
+          else if (!live || live.status === 'no_price') reason = 'catalog_only';
           rejected[reason] = (rejected[reason] || 0) + 1;
         }
       }
@@ -104,18 +110,30 @@ async function select(category, originalBudget, opts, dependencies) {
     if (selected.length >= limit) { stopReason = 'filled'; break; }
     if (stopReason === 'candidate_limit' || stopReason === 'time_budget') break;
   }
+  const products = selected.filter(p => verified(rowsById.get(String(p.id)), clock(), configuredFreshness))
+    .map((p, i) => ({ ...p, rank: i + 1 }));
+  const verifiedUntil = products.length ? Math.min(...products.map(p => {
+    const live = rowsById.get(String(p.id)).live;
+    return Math.min(new Date(live.priced_at).getTime(), new Date(live.checked_at).getTime()) + configuredFreshness;
+  })) : null;
+  const verifiedCount = candidates.filter(p => {
+    const row = rowsById.get(String(p.id));
+    const price = Number(row?.live?.price_inr);
+    return verified(row, clock(), configuredFreshness) && price >= finalMin && price <= budget;
+  }).length;
   return {
-    products: selected, totalMatches: selected.length, eligibleCandidateCount: selected.length,
-    count: selected.length, initialWindowCandidateCount: candidates.filter(p => p.price_inr >= Math.ceil(budget * 0.9)).length,
+    products, totalMatches: verifiedCount, eligibleCandidateCount: verifiedCount,
+    count: products.length, initialWindowCandidateCount: candidates.filter(p => p.price_inr >= Math.ceil(budget * 0.9)).length,
     catalogCandidateCount: candidates.length, catalogCandidateCountLimited: pool.truncated === true,
     originalBudget: Number(originalBudget), initialPriceWindow: { min: Math.ceil(budget * 0.9), max: budget },
     priceWindow: { min: finalMin, max: budget }, finalPriceWindow: { min: finalMin, max: budget },
-    matchType: selected.length ? (opts.brand ? 'within_budget_and_brand' : 'within_budget') : 'none',
+    matchType: products.length ? (opts.brand ? 'within_budget_and_brand' : 'within_budget') : 'none',
     fallbackApplied: waves > 1, expansionApplied: waves > 1, livePriceWaves: waves,
     requestedBrand: opts.brand || null, partialBrandFill: false,
-    brandMatchCount: opts.brand ? selected.length : 0, similarFillCount: 0,
+    brandMatchCount: opts.brand ? products.length : 0, similarFillCount: 0,
     livePriceRefreshCompleted: true, livePriceCandidatesChecked: checked.size,
-    priceVerificationStatus: selected.length ? 'verified' : 'none_verified',
+    priceVerificationStatus: products.length ? 'verified' : 'none_verified',
+    priceVerificationExpiresAt: verifiedUntil,
     verificationFailures: rejected, stopReason, livePriceBatches: liveBatches,
     selectionElapsedMs: clock() - started, selectionPolicy: 'progressive-budget-near-v1',
   };
