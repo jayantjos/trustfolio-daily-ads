@@ -1,0 +1,49 @@
+name: Stage both smartphone campaign rollbacks
+on:
+  push:
+    branches: [rollback/smartphone-15000-two-changes]
+    paths:
+      - 'site_patches/two-smartphone-rollback/**'
+      - '.github/workflows/stage-two-smartphone-rollbacks.yml'
+permissions:
+  contents: read
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+
+      - name: Back up affected files and validate isolated original dynamic path
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          package="/tmp/trustfolio-two-rollback-stage-$GITHUB_RUN_ID"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 -o ConnectionAttempts=3 "$USER@$HOST" "mkdir -p '$package'"
+          tar -C site_patches/two-smartphone-rollback -czf package.tgz .
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 package.tgz "$USER@$HOST:$package/package.tgz"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST" "tar -xzf '$package/package.tgz' -C '$package' && bash '$package/stage.sh' '$package' '$GITHUB_RUN_ID'"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST:$package/staging.json" staging.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: two-smartphone-rollback-staging
+          path: staging.json
