@@ -97,12 +97,12 @@ for (const [category,budget,brand] of [['smart-phones',15000,'Samsung'],['smart-
   });
 }
 
-test('bounded checks, accurate stopping metadata and maximum batch of five',async()=>{
+test('bounded checks, accurate stopping metadata and maximum batch of two',async()=>{
   const products=Array.from({length:100},(_,i)=>product(String(i),19000));
   const f=fixture(products,Object.fromEntries(products.map(p=>[p.id,{status:'error'}])));
   const r=await top('drones',20000,{},f.dependencies);
-  assert.equal(r.livePriceCandidatesChecked,15); assert.equal(r.stopReason,'candidate_limit');
-  assert.ok(f.calls.every(ids=>ids.length<=5));
+  assert.equal(r.livePriceCandidatesChecked,10); assert.equal(r.stopReason,'candidate_limit');
+  assert.ok(f.calls.every(ids=>ids.length<=2));
 });
 
 test('slow verification stops additional batches',async()=>{
@@ -117,7 +117,7 @@ test('slow verification stops additional batches',async()=>{
 test('request deadline returns safely even if verification remains pending',async()=>{
   const f=fixture([product('a',19000)]);
   let ticks=0;
-  f.dependencies.now=()=>ticks++===0 ? NOW : NOW+7495;
+  f.dependencies.now=()=>ticks++===0 ? NOW : NOW+6495;
   f.dependencies.prices={async getLivePrices(){return new Promise(()=>{});}};
   const r=await top('drones',20000,{},f.dependencies);
   assert.equal(r.products.length,0);
