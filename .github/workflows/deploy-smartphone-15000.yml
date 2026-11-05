@@ -123,7 +123,11 @@ jobs:
           done
           pm2 restart trustfolio-backend
           sleep 5
-          verify after
+          for attempt in 1 2 3; do
+            if verify after; then break; fi
+            [[ "$attempt" != 3 ]] || exit 1
+            sleep 35
+          done
           pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let p=JSON.parse(s);for(let name of ["trustfolio-backend","trustfolio-price-watcher"]){if(!p.some(x=>x.name===name&&x.pm2_env.status==="online"))process.exit(1);console.log(name+" online")}})'
           changed=0
           echo DEPLOYED_AND_API_VERIFIED
