@@ -1,7 +1,7 @@
-name: Read only drones budget investigation
+name: Confirm production unchanged after failed progressive canary
 on:
   push:
-    branches: [fix/smartphones-exact-15000]
+    branches: [feat/progressive-budget-near]
     paths: [.github/workflows/inspect-drones-20000.yml]
 permissions:
   contents: read
@@ -33,58 +33,11 @@ jobs:
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST" bash -s <<'REMOTE'
           set -euo pipefail
           cd "$HOME/apps/trustfolio/node-backend"
-          backup="$HOME/trustfolio_backend_backups/smartphone-15000-41967337139"
-          for file in controllers/ProductController.js services/ProductRecommendationService.js services/LiveBudgetRecommendationService.js; do
-            sha256sum "$file" "$backup/$file"
-            diff -u "$backup/$file" "$file" || [[ $? == 1 ]]
-          done
-          node <<'JS'
-          const fs = require('fs');
-          for (const file of ['services/ProductRecommendationService.js','services/LiveBudgetRecommendationService.js','controllers/ProductController.js']) {
-           let source=fs.readFileSync(file,'utf8');
-           let lines=source.split('\n');
-           console.log('SOURCE',file);
-           if(file.includes('Controller')) {
-            for(let i=0;i<lines.length;i++) if(/topCacheKey|normalizedCategory =|getTopProductsForCategoryAndBudget|recommendation|selection_note|priceWindow/.test(lines[i])) console.log(lines.slice(Math.max(0,i-3),i+9).join('\n'));
-           } else console.log(source.replace(/(key|secret|password|token)\s*[:=]\s*['"][^'"]+['"]/gi,'$1="[REDACTED]"'));
-          }
-          JS
-          node <<'JS'
-          const fs=require('fs'), path=require('path'), Module=require('module');
-          const mongoose=require('mongoose');
-          const runtime=JSON.parse(require('child_process').execFileSync('pm2',['jlist'],{encoding:'utf8'})).find(p=>p.name==='trustfolio-backend').pm2_env;
-          const env={...require('dotenv').parse(fs.readFileSync('.env')),...runtime};
-          const uri=Object.entries(env).find(([k,v])=>/mongo/i.test(k)&&typeof v==='string'&&/^mongodb(\+srv)?:\/\//.test(v))?.[1];
-          if(!uri)throw new Error('Existing MongoDB binding unavailable');
-          const root=process.cwd();
-          function load(source, filename){
-           const m=new Module(filename,module);
-           m.filename=filename; m.paths=Module._nodeModulePaths(path.dirname(filename));
-           m._compile(source,filename);
-           return m.exports;
-          }
-          (async()=>{
-           await mongoose.connect(uri,{dbName:'trustfolio',autoIndex:false,autoCreate:false});
-           const collection=mongoose.connection.collection('my_products');
-           const prices={async getLivePrices(ids){
-             const rows=await collection.find({_id:{$in:ids.map(id=>new mongoose.Types.ObjectId(id))}},{projection:{live:1,platform:1,price_inr:1}}).toArray();
-             return rows.map(d=>({id:String(d._id),live:d.live||null,stored_price_inr:d.price_inr,deleted:false}));
-           }};
-           const backup=path.join(process.env.HOME,'trustfolio_backend_backups/smartphone-15000-41967337139');
-           for(const [label,base] of [['current',root],['backup',backup]]){
-             const ranker=load(fs.readFileSync(path.join(base,'services/ProductRecommendationService.js'),'utf8'),path.join(root,'services/ReadOnlyRanker.js'));
-             const helper=load(fs.readFileSync(path.join(base,'services/LiveBudgetRecommendationService.js'),'utf8'),path.join(root,'services/ReadOnlyLiveBudget.js'));
-             const trace=[];
-             const tracked={async getTopProductsForCategoryAndBudget(...args){
-               const rec=await ranker.getTopProductsForCategoryAndBudget(...args);
-               trace.push({exclude:args[2].excludeProductIds,window:rec.priceWindow,totalMatches:rec.totalMatches,fallbackApplied:rec.fallbackApplied,ids:rec.products.map(p=>p.id)});
-               return rec;
-             }};
-             const result=await helper.getTopProductsForCategoryAndBudget('drones',20000,{limit:5},{ranker:tracked,prices});
-             console.log('READ_ONLY_REPLAY',label,JSON.stringify({trace,result}));
-             console.log('CRITICAL_SPECS',label,await collection.find({$or:[{category:'drones'},{category_slug:'drones'}],price_inr:{$gte:18000,$lte:20000}}).toArray().then(ds=>ds.map(d=>({id:String(d._id),price:d.price_inr,active:d.isActive,critical:ranker.hasCriticalSpecs(d,'drones'),live:d.live}))));
-           }
-           await mongoose.disconnect();
-          })().catch(async e=>{console.error(e.message);await mongoose.disconnect();process.exitCode=1});
-          JS
+          sha256sum -c <<'HASHES'
+          453c4ff83d1b03aaf4ae97adef5f06f81e5547a315c9f966460e92e6af1d2842  controllers/ProductController.js
+          4668c32c090ca43daacb2226e680540eb059fbbc7e3209e77b11ff871fe9bd67  services/ProductRecommendationService.js
+          e26856f73df8bc66bcc0e8d0002569f9eb8c61d5eeca7f6b84cd7e22ccbfc232  services/LiveBudgetRecommendationService.js
+          HASHES
+          test ! -e services/BudgetNearRecommendationService.js
+          pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let p=JSON.parse(s);for(let name of ["trustfolio-backend","trustfolio-price-watcher"]){let x=p.find(p=>p.name===name);if(!x||x.pm2_env.status!=="online")process.exitCode=1;console.log(JSON.stringify({name,status:x?.pm2_env.status,restarts:x?.pm2_env.restart_time}))}})'
           REMOTE

@@ -1,0 +1,43 @@
+name: Final production protection audit after verification diagnosis
+on:
+  push:
+    branches: [feat/progressive-budget-near]
+    paths: [.github/workflows/diagnose-budget-verification.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Verify production hashes and health without retailer calls
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          sha256sum -c <<'HASHES'
+          453c4ff83d1b03aaf4ae97adef5f06f81e5547a315c9f966460e92e6af1d2842  controllers/ProductController.js
+          4668c32c090ca43daacb2226e680540eb059fbbc7e3209e77b11ff871fe9bd67  services/ProductRecommendationService.js
+          e26856f73df8bc66bcc0e8d0002569f9eb8c61d5eeca7f6b84cd7e22ccbfc232  services/LiveBudgetRecommendationService.js
+          HASHES
+          test ! -e services/BudgetNearRecommendationService.js
+          pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let p=JSON.parse(s);for(let name of ["trustfolio-backend","trustfolio-price-watcher"]){let x=p.find(p=>p.name===name);if(!x||x.pm2_env.status!=="online")process.exitCode=1;console.log(JSON.stringify({name,status:x?.pm2_env.status,restarts:x?.pm2_env.restart_time}))}})'
+          REMOTE

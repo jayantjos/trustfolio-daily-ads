@@ -1,0 +1,67 @@
+name: Isolate verification transport and audit all shared service callers
+on:
+  push:
+    branches: [feat/progressive-budget-near]
+    paths: [.github/workflows/isolate-verification-transport.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Read-only caller audit and controlled transport probes
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          rg -n 'getLivePrices\(|LivePriceService' controllers services --glob '*.js'
+          node <<'JS'
+          const fs=require('fs'),os=require('os'),mongoose=require('mongoose');
+          console.log('LIVE_SERVICE_SOURCE',fs.readFileSync('services/LivePriceService.js','utf8').replace(/((?:key|secret|password|token)\s*[:=]\s*)['"][^'"]+['"]/gi,'$1"[REDACTED]"'));
+          const runtime=JSON.parse(require('child_process').execFileSync('pm2',['jlist'],{encoding:'utf8'})).find(p=>p.name==='trustfolio-backend').pm2_env;
+          const env={...require('dotenv').parse(fs.readFileSync('.env')),...runtime};
+          for(const [key,value] of Object.entries(env))if(/^(PRICE_WORKER_|LIVE_PRICE_|CROMA_)/.test(key))process.env[key]=String(value);
+          const uri=Object.entries(env).find(([key,value])=>/mongo/i.test(key)&&typeof value==='string'&&/^mongodb(\+srv)?:\/\//.test(value))?.[1];
+          const {workerItem}=require('./services/LivePriceService');
+          (async()=>{
+           await mongoose.connect(uri,{dbName:'trustfolio',autoIndex:false,autoCreate:false});
+           const endpoint=String(env.PRICE_WORKER_URL||'').replace(/\/+$/,'')+'/api/check';
+           console.log('RUNTIME',JSON.stringify({node:process.version,workerHost:new URL(endpoint).hostname,load:os.loadavg(),freeMemoryGB:os.freemem()/1e9,proxyConfigured:Boolean(process.env.HTTP_PROXY||process.env.HTTPS_PROXY)}));
+           const docs=await mongoose.connection.collection('my_products').find({_id:{$in:['6a9e4a2e0933a0daedaddd80','6a2ed790ee20fca78fefdfde'].map(id=>new mongoose.Types.ObjectId(id))}}).toArray();
+           async function check(doc,mode){
+             const start=Date.now();
+             try{
+               const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json',...(env.PRICE_WORKER_KEY?{'x-api-key':env.PRICE_WORKER_KEY}:{})},
+                 body:JSON.stringify({items:[workerItem(doc)],useCache:true}),signal:AbortSignal.timeout(12000)});
+               const headersMs=Date.now()-start;
+               let body=await response.text();
+               if(env.PRICE_WORKER_KEY)body=body.split(String(env.PRICE_WORKER_KEY)).join('[REDACTED]');
+               console.log('TRANSPORT_PROBE',JSON.stringify({id:String(doc._id),mode,status:response.status,headersMs,totalMs:Date.now()-start,
+                 server:response.headers.get('server'),ray:response.headers.get('cf-ray'),retryAfter:response.headers.get('retry-after'),body:body.slice(0,2200)}));
+             }catch(error){console.log('TRANSPORT_PROBE',JSON.stringify({id:String(doc._id),mode,ms:Date.now()-start,error:error.message}));}
+           }
+           for(const doc of docs)await check(doc,'serial-diagnostic-12s');
+           await Promise.all(docs.map(doc=>check(doc,'concurrent-diagnostic-12s')));
+           await mongoose.disconnect();
+          })().catch(async error=>{console.error(error.message);await mongoose.disconnect();process.exitCode=1;});
+          JS
+          REMOTE
