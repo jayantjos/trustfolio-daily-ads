@@ -1,8 +1,11 @@
 {
+  "brand": "Fastrack",
+  "budget_inr": 5000,
   "campaign_id": "tfauto-9febc17be11ec80891",
+  "category": "smartwatches",
+  "meta_photo_or_post_id": "122213719676911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-9febc17be11ec80891.jpg",
-  "reserved_at": "2026-11-05T15:35:27.515554+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-05T15:35:35.930776+05:30",
+  "status": "api_accepted_published"
 }
