@@ -1,4 +1,4 @@
-name: Controlled live-price transport recovery diagnosis
+name: Live-price resource and caller audit
 on:
   push:
     branches: [fix/live-price-verification-recovery]
@@ -25,7 +25,7 @@ jobs:
           printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
           printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
-      - name: Four spaced read-only probes with response and transport evidence
+      - name: One curl control and read-only resource/caller audit
         env:
           HOST: ${{ secrets.TF_DEPLOY_HOST }}
           USER: ${{ secrets.TF_DEPLOY_USER }}
@@ -34,52 +34,40 @@ jobs:
           set -euo pipefail
           cd "$HOME/apps/trustfolio/node-backend"
           node <<'JS'
-          const fs=require('fs'),dns=require('dns'),net=require('net'),mongoose=require('mongoose'),cp=require('child_process');
+          const fs=require('fs'),mongoose=require('mongoose'),cp=require('child_process');
           const runtime=JSON.parse(cp.execFileSync('pm2',['jlist'],{encoding:'utf8'})).find(p=>p.name==='trustfolio-backend').pm2_env;
           const env={...require('dotenv').parse(fs.readFileSync('.env')),...runtime};
           for(const [key,value] of Object.entries(env))if(/^(PRICE_WORKER_|LIVE_PRICE_|CROMA_)/.test(key))process.env[key]=String(value);
           const uri=Object.entries(env).find(([k,v])=>/mongo/i.test(k)&&typeof v==='string'&&/^mongodb(\+srv)?:\/\//.test(v))?.[1];
-          const {workerItem}=require('./services/LivePriceService');
           (async()=>{
            await mongoose.connect(uri,{dbName:'trustfolio',autoIndex:false,autoCreate:false});
-           const endpoint=String(env.PRICE_WORKER_URL||'').replace(/\/+$/,'')+'/api/check',host=new URL(endpoint).hostname;
-           console.log('NETWORK_CONFIG',JSON.stringify({node:process.version,host,dnsOrder:dns.getDefaultResultOrder?.(),autoFamily:net.getDefaultAutoSelectFamily?.(),proxyConfigured:Boolean(process.env.HTTP_PROXY||process.env.HTTPS_PROXY),nodeEnvProxy:process.env.NODE_USE_ENV_PROXY||null,dns:await dns.promises.lookup(host,{all:true})}));
-           const docs=await mongoose.connection.collection('my_products').find({_id:{$in:['6a9e4a2e0933a0daedaddd80','6a2ed790ee20fca78fefdfde'].map(x=>new mongoose.Types.ObjectId(x))}}).toArray();
+           const doc=await mongoose.connection.collection('my_products').findOne({_id:new mongoose.Types.ObjectId('6a2ed790ee20fca78fefdfde')});
+           const {workerItem}=require('./services/LivePriceService');
+           const endpoint=String(env.PRICE_WORKER_URL||'').replace(/\/+$/,'')+'/api/check';
            const redact=s=>env.PRICE_WORKER_KEY?String(s).split(String(env.PRICE_WORKER_KEY)).join('[REDACTED]'):String(s);
-           const payload=doc=>({items:[workerItem(doc)],useCache:true});
-           async function nodeProbe(doc,phase){
-            const start=Date.now(),requestId='tf-'+Date.now()+'-'+String(doc._id).slice(-6);
-            try{
-             const response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json',...(env.PRICE_WORKER_KEY?{'x-api-key':env.PRICE_WORKER_KEY}:{})},body:JSON.stringify(payload(doc)),signal:AbortSignal.timeout(12000)});
-             const firstByteMs=Date.now()-start,body=redact(await response.text());
-             console.log('CONTROLLED_PROBE',JSON.stringify({requestId,id:String(doc._id),transport:'node-fetch',phase,status:response.status,firstByteMs,totalMs:Date.now()-start,server:response.headers.get('server'),cfRay:response.headers.get('cf-ray'),retryAfter:response.headers.get('retry-after'),body:body.slice(0,2500)}));
-            }catch(error){console.log('CONTROLLED_PROBE',JSON.stringify({requestId,id:String(doc._id),transport:'node-fetch',phase,totalMs:Date.now()-start,error:error.message,cause:error.cause?.code||null}));}
-           }
-           // The preceding run already captured a successful Node single probe.
-          
-           const config=['url = '+JSON.stringify(endpoint),'request = "POST"','header = '+JSON.stringify('content-type: application/json'),...(env.PRICE_WORKER_KEY?['header = '+JSON.stringify('x-api-key: '+env.PRICE_WORKER_KEY)]:[]),'data = '+JSON.stringify(JSON.stringify(payload(docs[0])))].join('\n');
+           const config=['url = '+JSON.stringify(endpoint),'request = "POST"','header = '+JSON.stringify('content-type: application/json'),...(env.PRICE_WORKER_KEY?['header = '+JSON.stringify('x-api-key: '+env.PRICE_WORKER_KEY)]:[]),'data = '+JSON.stringify(JSON.stringify({items:[workerItem(doc)],useCache:true}))].join('\n');
            const start=Date.now();
            const result=cp.spawnSync('curl',['--config','-','--silent','--show-error','--connect-timeout','5','--max-time','12','--dump-header','-','--write-out','\nCURL_METRICS %{http_code} %{time_namelookup} %{time_connect} %{time_starttransfer} %{time_total}'],{input:config,encoding:'utf8'});
            const headers=redact(result.stdout+'\n'+result.stderr).split('\n').filter(x=>/^(HTTP\/|server:|cf-ray:|retry-after:|curl:)/i.test(x));
-           console.log('CONTROLLED_PROBE',JSON.stringify({requestId:'tf-curl-'+start,id:String(docs[0]._id),transport:'curl',phase:'single',totalMs:Date.now()-start,exitCode:result.status,headers,body:redact(result.stdout).slice(0,3000)}));
-           await new Promise(resolve=>setTimeout(resolve,10000));
+           const body=redact(result.stdout).split(/\r?\n\r?\n/).slice(1).join('\n').slice(0,2800);
+           console.log('CURL_CONTROL',JSON.stringify({id:String(doc._id),totalMs:Date.now()-start,exitCode:result.status,headers,body}));
            const procs=JSON.parse(cp.execFileSync('pm2',['jlist'],{encoding:'utf8'}));
- for(const name of ['trustfolio-backend','trustfolio-price-watcher']){
-   const p=procs.find(p=>p.name===name);
-   let descriptors=null,sockets=null;
-   try{const fds=fs.readdirSync('/proc/'+p.pid+'/fd');descriptors=fds.length;sockets=fds.filter(fd=>{try{return fs.readlinkSync('/proc/'+p.pid+'/fd/'+fd).startsWith('socket:');}catch{return false;}}).length;}catch{}
-   console.log('RESOURCE_AUDIT',JSON.stringify({name,pid:p.pid,status:p.pm2_env.status,restarts:p.pm2_env.restart_time,cpu:p.monit?.cpu,memory:p.monit?.memory,descriptors,sockets}));
- }
- for(const directory of ['controllers','services']){
-   for(const file of fs.readdirSync(directory).filter(n=>n.endsWith('.js'))){
-     const content=fs.readFileSync(directory+'/'+file,'utf8');
-     content.split('\n').forEach((line,index)=>{if(/getLivePrices\(|LivePriceService/.test(line))console.log('CALLER',directory+'/'+file+':'+(index+1),line.trim());});
-   }
- }
- for(const file of ['services/LivePriceService.js','services/ProductAvailabilityPolicy.js']){
-   console.log('SOURCE',file);
-   console.log(fs.readFileSync(file,'utf8').replace(/((?:key|secret|password|token)\s*[:=]\s*)['"][^'"]+['"]/gi,'$1"[REDACTED]"'));
- }
+           for(const name of ['trustfolio-backend','trustfolio-price-watcher']){
+             const p=procs.find(p=>p.name===name);
+             let descriptors=null,sockets=null;
+             try{const fds=fs.readdirSync('/proc/'+p.pid+'/fd');descriptors=fds.length;sockets=fds.filter(fd=>{try{return fs.readlinkSync('/proc/'+p.pid+'/fd/'+fd).startsWith('socket:');}catch{return false;}}).length;}catch{}
+             console.log('RESOURCE_AUDIT',JSON.stringify({name,pid:p.pid,status:p.pm2_env.status,restarts:p.pm2_env.restart_time,cpu:p.monit?.cpu,memory:p.monit?.memory,descriptors,sockets}));
+           }
+           for(const directory of ['controllers','services']){
+             for(const file of fs.readdirSync(directory).filter(n=>n.endsWith('.js'))){
+               const content=fs.readFileSync(directory+'/'+file,'utf8');
+               content.split('\n').forEach((line,index)=>{if(/getLivePrices\(|LivePriceService/.test(line))console.log('CALLER',directory+'/'+file+':'+(index+1),line.trim());});
+             }
+           }
+           for(const file of ['services/LivePriceService.js','services/ProductAvailabilityPolicy.js']){
+             console.log('SOURCE',file);
+             console.log(fs.readFileSync(file,'utf8').replace(/((?:key|secret|password|token)\s*[:=]\s*)['"][^'"]+['"]/gi,'$1"[REDACTED]"'));
+           }
            await mongoose.disconnect();
           })().catch(async error=>{console.error(error.stack);await mongoose.disconnect();process.exitCode=1;});
           JS
