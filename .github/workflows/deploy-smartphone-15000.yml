@@ -114,6 +114,34 @@ jobs:
                       assert ids == [p['id'] for p in before['data']['products']], ('baseline changed', params)
           PY
           }
+          node - "$stage/services/LiveBudgetRecommendationService.js" <<'JS'
+          const assert = require('node:assert/strict');
+          const service = require(process.argv[2]);
+          const products = ['1','2','3','4','5'].map(id => ({ id, price_inr: 14000 }));
+          async function check(category, budget, brand, expected, fail = false) {
+            const calls = [];
+            const ranker = { async getTopProductsForCategoryAndBudget(c, b, opts) {
+              assert.equal(opts.exactSmartphoneBudget, expected);
+              return { products: products.filter(p => !opts.excludeProductIds.includes(p.id)) };
+            }};
+            const prices = { async getLivePrices(ids) {
+              calls.push(ids.length);
+              return ids.map(id => ({ id, live: { status: fail && id === '2' ? 'error' : 'ok',
+                in_stock: !(fail && id === '3'), price_inr: fail && id === '4' ? 15001 : 14000 } }));
+            }};
+            const result = await service.getTopProductsForCategoryAndBudget(category, budget, {brand}, {ranker, prices});
+            assert.deepEqual(calls, expected ? [2,2,1] : [5]);
+            assert.deepEqual(result.products.map(p => p.id), fail ? ['1','5'] : ['1','2','3','4','5']);
+          }
+          (async () => {
+            await check('smart-phones',15000,'',true);
+            await check('smart-phones',15000,'',true,true);
+            await check('smart-phones',15000.5,'',false);
+            await check('smart-phones',15000,'Samsung',false);
+            await check('washing-machines',15000,'',false);
+            console.log('STAGED_RUNTIME_TESTS_PASS');
+          })().catch(error => { console.error(error); process.exitCode = 1; });
+          JS
           verify before
           for file in "${files[@]}"; do cmp "$backup/$file" "$file"; done
           changed=1
@@ -126,7 +154,7 @@ jobs:
           for attempt in 1 2 3; do
             if verify after; then break; fi
             [[ "$attempt" != 3 ]] || exit 1
-            sleep 35
+            sleep 65
           done
           pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let p=JSON.parse(s);for(let name of ["trustfolio-backend","trustfolio-price-watcher"]){if(!p.some(x=>x.name===name&&x.pm2_env.status==="online"))process.exit(1);console.log(name+" online")}})'
           changed=0
