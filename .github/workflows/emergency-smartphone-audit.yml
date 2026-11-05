@@ -1,0 +1,50 @@
+name: Emergency smartphone source audit
+on:
+  push:
+    branches: [fix/restore-smartphone-15000-verification]
+    paths: [.github/workflows/emergency-smartphone-audit.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Verify override release and read current verification code
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          sha256sum controllers/ProductController.js services/ProductRecommendationService.js services/LiveBudgetRecommendationService.js services/LivePriceService.js
+          test ! -e services/BudgetNearRecommendationService.js
+          node <<'JS'
+          const fs=require('fs');
+          for(const name of ['services/LiveBudgetRecommendationService.js','services/LivePriceService.js']){
+           console.log('SOURCE',name);
+           console.log(fs.readFileSync(name,'utf8').replace(/((?:key|secret|password|token)\s*[:=]\s*)['"][^'"]+['"]/gi,'$1"[REDACTED]"'));
+          }
+          const procs=JSON.parse(require('child_process').execFileSync('pm2',['jlist'],{encoding:'utf8'}));
+          for(const name of ['trustfolio-backend','trustfolio-price-watcher']){
+           const p=procs.find(p=>p.name===name);
+           console.log('HEALTH',JSON.stringify({name,status:p?.pm2_env.status,restarts:p?.pm2_env.restart_time}));
+          }
+          JS
+          REMOTE
