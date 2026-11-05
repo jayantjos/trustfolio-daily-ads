@@ -1,0 +1,65 @@
+name: Stage progressive budget policy and simulate all categories
+on:
+  push:
+    branches: [feat/progressive-budget-near]
+    paths: [.github/workflows/stage-progressive-budget.yml, site_patches/BudgetNearRecommendationService*, site_patches/apply_progressive_budget.py, site_patches/simulate_budget_near.js]
+permissions:
+  contents: read
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test progressive policy
+        run: |
+          node --test site_patches/BudgetNearRecommendationService.test.js
+          python3 -m py_compile site_patches/apply_progressive_budget.py
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Stage against actual production and simulate without production writes
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/budget-stage evidence
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" 'tar -c -C "$HOME/apps/trustfolio/node-backend" controllers/ProductController.js services/ProductRecommendationService.js services/LiveBudgetRecommendationService.js' | tar -x -C /tmp/budget-stage
+          cp -a /tmp/budget-stage /tmp/budget-original
+          python3 site_patches/apply_progressive_budget.py --backend /tmp/budget-stage
+          for file in /tmp/budget-stage/services/*.js; do node --check "$file"; done
+          cmp /tmp/budget-original/services/LiveBudgetRecommendationService.js /tmp/budget-stage/services/LiveBudgetRecommendationService.js
+          cmp /tmp/budget-original/controllers/ProductController.js /tmp/budget-stage/controllers/ProductController.js
+          (cd /tmp/budget-original; sha256sum controllers/*.js services/*.js) > evidence/production-before.sha256
+          python3 - <<'PY' > /tmp/simulate-progressive.js
+          import ast, json
+          from pathlib import Path
+          tree=ast.parse(Path('site_patches/apply_progressive_budget.py').read_text())
+          addition=next(ast.literal_eval(n.value) for n in ast.walk(tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='addition' for t in n.targets))
+          print('const RANKER_ADDITION = '+json.dumps(addition)+';')
+          print('const STAGED_SERVICE = '+json.dumps(Path('site_patches/BudgetNearRecommendationService.js').read_text())+';')
+          print(Path('site_patches/simulate_budget_near.js').read_text())
+          PY
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && node' < /tmp/simulate-progressive.js | tee evidence/simulation.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: progressive-budget-staging-evidence
+          path: evidence/
+          retention-days: 30
