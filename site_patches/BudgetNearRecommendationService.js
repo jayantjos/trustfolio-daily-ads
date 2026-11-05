@@ -3,7 +3,6 @@
 const PERCENTAGES = [90, 80, 70, 60, 50];
 const MAX_CHECKS = 15;
 const REQUEST_MS = 7500;
-const FETCH_TIMEOUT_MS = 6000;
 const inFlight = new Map();
 
 function priceTier(price, budget) {
@@ -56,13 +55,22 @@ async function select(category, originalBudget, opts, dependencies) {
     let pending = candidates.filter(p => !checked.has(String(p.id)) && p.price_inr >= finalMin);
     while (selected.length + eligible().length < limit && pending.length) {
       if (checked.size >= MAX_CHECKS) { stopReason = 'candidate_limit'; break; }
-      if (clock() - started > REQUEST_MS - FETCH_TIMEOUT_MS) {
+      if (clock() - started >= REQUEST_MS) {
         stopReason = 'time_budget'; break;
       }
       const ids = pending.slice(0, Math.min(5, MAX_CHECKS - checked.size)).map(p => String(p.id));
       ids.forEach(id => checked.add(id));
-      const fetched = await prices.getLivePrices(ids);
+      let timer;
+      const fetched = await Promise.race([
+        prices.getLivePrices(ids),
+        new Promise(resolve => { timer = setTimeout(() => resolve(null), Math.max(1, REQUEST_MS - (clock() - started))); }),
+      ]).finally(() => clearTimeout(timer));
       liveBatches++;
+      if (fetched === null || clock() - started >= REQUEST_MS) {
+        rejected.timeout = (rejected.timeout || 0) + ids.length;
+        stopReason = 'time_budget';
+        break;
+      }
       if (!Array.isArray(fetched)) throw new Error('Invalid live price response');
       const returned = new Set();
       for (const row of fetched) {
