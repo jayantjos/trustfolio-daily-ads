@@ -1,4 +1,4 @@
-name: Diagnose staged budget verification failures
+name: Final production protection audit after verification diagnosis
 on:
   push:
     branches: [feat/progressive-budget-near]
@@ -25,7 +25,7 @@ jobs:
           printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
           printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
-      - name: Read-only three-product Worker diagnosis
+      - name: Verify production hashes and health without retailer calls
         env:
           HOST: ${{ secrets.TF_DEPLOY_HOST }}
           USER: ${{ secrets.TF_DEPLOY_USER }}
@@ -33,34 +33,11 @@ jobs:
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" bash -s <<'REMOTE'
           set -euo pipefail
           cd "$HOME/apps/trustfolio/node-backend"
-          node <<'JS'
-          const fs=require('fs'),mongoose=require('mongoose');
-          const runtime=JSON.parse(require('child_process').execFileSync('pm2',['jlist'],{encoding:'utf8'})).find(p=>p.name==='trustfolio-backend').pm2_env;
-          const env={...require('dotenv').parse(fs.readFileSync('.env')),...runtime};
-          for(const [key,value] of Object.entries(env))if(/^(PRICE_WORKER_|LIVE_PRICE_|CROMA_)/.test(key))process.env[key]=String(value);
-          const uri=Object.entries(env).find(([k,v])=>/mongo/i.test(k)&&typeof v==='string'&&/^mongodb(\+srv)?:\/\//.test(v))?.[1];
-          const {workerItem}=require('./services/LivePriceService');
-          (async()=>{
-           await mongoose.connect(uri,{dbName:'trustfolio',autoIndex:false,autoCreate:false});
-           const endpoint=String(env.PRICE_WORKER_URL||'').replace(/\/+$/,'')+'/api/check';
-           console.log('CONFIG',JSON.stringify({workerHost:new URL(endpoint).hostname,freshMs:env.LIVE_PRICE_FRESH_MS||60000,timeoutMs:6000}));
-           const ids=['6a9e4a2e0933a0daedaddd80','6a2ed790ee20fca78fefdfde','69fb4aed6529299d30429bd7'];
-           await Promise.all(ids.slice(0,2).map(async id=>{
-             const doc=await mongoose.connection.collection('my_products').findOne({_id:new mongoose.Types.ObjectId(id)});
-             if(!doc){console.log('MISSING',id);return;}
-             const start=Date.now(),item=workerItem(doc);
-             if(!item){console.log('UNSUPPORTED',id);return;}
-             try{
-              const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',...(env.PRICE_WORKER_KEY?{'x-api-key':env.PRICE_WORKER_KEY}:{})},
-                body:JSON.stringify({items:[item],useCache:true}),signal:AbortSignal.timeout(6000)});
-              let body=await response.text();
-              if(env.PRICE_WORKER_KEY)body=body.split(String(env.PRICE_WORKER_KEY)).join('[REDACTED]');
-              console.log('WORKER_DIAGNOSTIC',JSON.stringify({id,title:doc.title,platform:doc.platform,status:response.status,
-                ms:Date.now()-start,retryAfter:response.headers.get('retry-after'),server:response.headers.get('server'),
-                contentType:response.headers.get('content-type'),body:body.slice(0,2500)}));
-             }catch(error){console.log('WORKER_DIAGNOSTIC',JSON.stringify({id,ms:Date.now()-start,error:error.message}));}
-           }));
-           await mongoose.disconnect();
-          })().catch(async error=>{console.error(error.message);await mongoose.disconnect();process.exitCode=1;});
-          JS
+          sha256sum -c <<'HASHES'
+          453c4ff83d1b03aaf4ae97adef5f06f81e5547a315c9f966460e92e6af1d2842  controllers/ProductController.js
+          4668c32c090ca43daacb2226e680540eb059fbbc7e3209e77b11ff871fe9bd67  services/ProductRecommendationService.js
+          e26856f73df8bc66bcc0e8d0002569f9eb8c61d5eeca7f6b84cd7e22ccbfc232  services/LiveBudgetRecommendationService.js
+          HASHES
+          test ! -e services/BudgetNearRecommendationService.js
+          pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let p=JSON.parse(s);for(let name of ["trustfolio-backend","trustfolio-price-watcher"]){let x=p.find(p=>p.name===name);if(!x||x.pm2_env.status!=="online")process.exitCode=1;console.log(JSON.stringify({name,status:x?.pm2_env.status,restarts:x?.pm2_env.restart_time}))}})'
           REMOTE
