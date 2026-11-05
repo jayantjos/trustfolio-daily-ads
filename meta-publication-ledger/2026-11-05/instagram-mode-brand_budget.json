@@ -1,8 +1,12 @@
 {
+  "brand": "Fastrack",
+  "budget_inr": 5000,
   "campaign_id": "tfauto-9febc17be11ec80891",
+  "category": "smartwatches",
   "container_id": "17919544122530469",
+  "meta_media_id": "18108762251110946",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-05T15:35:19.895254+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-05T15:35:25.489979+05:30",
+  "status": "api_accepted_published"
 }
