@@ -41,6 +41,8 @@ function compile(source,name){
           live=toLive(result,prior); memory.set(id,live);
         }
       }
+      console.log('PRICE_EVIDENCE',JSON.stringify({id,status:live.status,error:live.error,
+        price:live.price_inr,in_stock:live.in_stock,checked_at:live.checked_at,priced_at:live.priced_at}));
       return {id,live,deleted:false};
     }));
   }};
