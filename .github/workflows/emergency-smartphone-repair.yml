@@ -1,0 +1,160 @@
+name: Guarded emergency smartphone verification repair
+on:
+  push:
+    branches: [fix/restore-smartphone-15000-verification]
+    paths: [.github/workflows/emergency-smartphone-repair.yml]
+permissions:
+  contents: read
+concurrency:
+  group: trustfolio-production
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Targeted regression tests
+        run: |
+          cp site_patches/LiveBudgetRecommendationService.test.js site_patches/emergency/
+          node --test site_patches/emergency/*.test.js
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Verify real source and run read-only live campaign canary
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && sha256sum controllers/ProductController.js services/ProductRecommendationService.js services/LiveBudgetRecommendationService.js services/LivePriceService.js' | tee evidence/production-before.sha256
+          python3 - <<'PY' > /tmp/emergency-canary.js
+          import json
+          from pathlib import Path
+          print('const CANDIDATE_SOURCE = '+json.dumps(Path('site_patches/emergency/LiveBudgetRecommendationService.js').read_text())+';')
+          print(Path('site_patches/emergency/canary_smartphone_emergency.js').read_text())
+          PY
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" 'cd "$HOME/apps/trustfolio/node-backend" && node' < /tmp/emergency-canary.js | tee evidence/live-canary.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emergency-smartphone-staging
+          path: evidence/
+  deploy:
+    needs: stage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Back up, promote only the campaign helper, and verify production
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          remote="$USER@$HOST"
+          destination="trustfolio_releases/smartphone-emergency-$GITHUB_RUN_ID"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$remote" "mkdir -p \"\$HOME/$destination\""
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes site_patches/emergency/LiveBudgetRecommendationService.js site_patches/emergency/EmergencySmartphoneVerification.test.js "$remote:$destination/"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$remote" bash -s -- "$GITHUB_RUN_ID" <<'REMOTE'
+          set -Eeuo pipefail
+          run="$1"
+          release="$HOME/trustfolio_releases/smartphone-emergency-$run"
+          root="$HOME/apps/trustfolio/node-backend"
+          backup="$HOME/trustfolio_backend_backups/smartphone-emergency-$(date -u +%Y%m%dT%H%M%SZ)-$run"
+          cd "$root"
+          exec 9>"$HOME/trustfolio_backend_backups/.smartphone-emergency.lock"
+          flock -n 9
+          sha256sum -c <<'HASHES'
+          453c4ff83d1b03aaf4ae97adef5f06f81e5547a315c9f966460e92e6af1d2842  controllers/ProductController.js
+          4668c32c090ca43daacb2226e680540eb059fbbc7e3209e77b11ff871fe9bd67  services/ProductRecommendationService.js
+          e26856f73df8bc66bcc0e8d0002569f9eb8c61d5eeca7f6b84cd7e22ccbfc232  services/LiveBudgetRecommendationService.js
+          03d5c3c8ac73f7df281162bdaea467fef4f94859427938db1fbde65fef637f0d  services/LivePriceService.js
+          HASHES
+          test ! -e services/BudgetNearRecommendationService.js
+          node --check "$release/LiveBudgetRecommendationService.js"
+          node --test "$release/EmergencySmartphoneVerification.test.js"
+          mkdir "$backup"
+          files=(controllers/ProductController.js services/ProductRecommendationService.js services/LiveBudgetRecommendationService.js services/LivePriceService.js)
+          cp -p --parents "${files[@]}" "$backup"
+          (cd "$backup"; sha256sum "${files[@]}" > SHA256SUMS)
+          printf 'EMERGENCY_BACKUP=%s\n' "$backup"
+          applied=0
+          cleanup(){
+           status=$?
+           trap - EXIT
+           if (( applied )); then
+             cp -p "$backup/services/LiveBudgetRecommendationService.js" services/LiveBudgetRecommendationService.js
+             pm2 restart trustfolio-backend
+             echo EMERGENCY_ROLLBACK_APPLIED
+           fi
+           exit "$status"
+          }
+          trap cleanup EXIT
+          for file in "${files[@]}"; do cmp "$file" "$backup/$file"; done
+          applied=1
+          cp -p "$release/LiveBudgetRecommendationService.js" services/LiveBudgetRecommendationService.js.emergency-next
+          mv services/LiveBudgetRecommendationService.js.emergency-next services/LiveBudgetRecommendationService.js
+          pm2 restart trustfolio-backend
+          sleep 3
+          python3 - "$backup" <<'PY'
+          import json, sys, time
+          from pathlib import Path
+          from urllib.parse import urlencode
+          from urllib.request import urlopen
+          backup=Path(sys.argv[1])
+          targets=['69f9e9f56529299d30426ac8','69f9ea1f6529299d30426ae4','6a9e4a2e0933a0daedaddd80','6aa56d332bb194728fab44c3','6a2ed790ee20fca78fefdfde']
+          queries=[('smart-phones',15000,''),('smart-phones',12000,''),('smart-phones',20000,''),('drones',20000,''),('washing-machines',35000,'')]
+          for i,(category,budget,brand) in enumerate(queries):
+              started=time.monotonic()
+              with urlopen('https://api.trustfolio.in/api/products/top?'+urlencode(dict(category=category,budget=budget,limit=5)),timeout=35) as response:
+                  data=json.load(response)
+              ms=round((time.monotonic()-started)*1000)
+              (backup/f'production-after-{i}.json').write_text(json.dumps(data))
+              assert data.get('success') is True
+              rows=data['data']['products']
+              print('PRODUCTION_API',json.dumps(dict(category=category,budget=budget,ms=ms,products=[dict(id=p['id'],rank=p['rank'],price=p['price_inr'],status=p.get('live_price_status'),url=p.get('product_url')) for p in rows])),flush=True)
+              if i==0:
+                  assert [p['id'] for p in rows]==targets,'Exact campaign eligibility/order gate failed'
+                  assert [p['rank'] for p in rows]==[1,2,3,4,5]
+                  assert all(p.get('live_price_status')=='ok' and 0<p['price_inr']<=15000 for p in rows)
+                  assert ms<8000,'Frontend timeout gate failed'
+              time.sleep(2)
+          PY
+          for file in controllers/ProductController.js services/ProductRecommendationService.js services/LivePriceService.js; do cmp "$file" "$backup/$file"; done
+          echo 'bf908b788197ab5e71d040e921f8023cfd0a83c856681cac2695c4949255fb7c  services/LiveBudgetRecommendationService.js' | sha256sum -c -
+          pm2 jlist | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{let p=JSON.parse(s);for(let name of ["trustfolio-backend","trustfolio-price-watcher"]){let x=p.find(p=>p.name===name);if(!x||x.pm2_env.status!=="online")process.exitCode=1;console.log(JSON.stringify({name,status:x?.pm2_env.status,restarts:x?.pm2_env.restart_time}))}})'
+          applied=0
+          echo EMERGENCY_DEPLOYMENT_AND_API_PASS
+          REMOTE
