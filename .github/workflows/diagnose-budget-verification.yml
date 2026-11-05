@@ -45,11 +45,11 @@ jobs:
            const endpoint=String(env.PRICE_WORKER_URL||'').replace(/\/+$/,'')+'/api/check';
            console.log('CONFIG',JSON.stringify({workerHost:new URL(endpoint).hostname,freshMs:env.LIVE_PRICE_FRESH_MS||60000,timeoutMs:6000}));
            const ids=['6a9e4a2e0933a0daedaddd80','6a2ed790ee20fca78fefdfde','69fb4aed6529299d30429bd7'];
-           for(const id of ids){
+           await Promise.all(ids.slice(0,2).map(async id=>{
              const doc=await mongoose.connection.collection('my_products').findOne({_id:new mongoose.Types.ObjectId(id)});
-             if(!doc){console.log('MISSING',id);continue;}
+             if(!doc){console.log('MISSING',id);return;}
              const start=Date.now(),item=workerItem(doc);
-             if(!item){console.log('UNSUPPORTED',id);continue;}
+             if(!item){console.log('UNSUPPORTED',id);return;}
              try{
               const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',...(env.PRICE_WORKER_KEY?{'x-api-key':env.PRICE_WORKER_KEY}:{})},
                 body:JSON.stringify({items:[item],useCache:true}),signal:AbortSignal.timeout(6000)});
@@ -59,7 +59,7 @@ jobs:
                 ms:Date.now()-start,retryAfter:response.headers.get('retry-after'),server:response.headers.get('server'),
                 contentType:response.headers.get('content-type'),body:body.slice(0,2500)}));
              }catch(error){console.log('WORKER_DIAGNOSTIC',JSON.stringify({id,ms:Date.now()-start,error:error.message}));}
-           }
+           }));
            await mongoose.disconnect();
           })().catch(async error=>{console.error(error.message);await mongoose.disconnect();process.exitCode=1;});
           JS
