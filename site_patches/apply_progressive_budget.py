@@ -44,7 +44,10 @@ async function getBudgetNearCandidates(categorySlug, budgetCap, options = {}) {
     controller = controller_path.read_text()
     controller = once(controller,
         "const LiveBudgetRecommendationService = require('../services/LiveBudgetRecommendationService');",
-        "const LiveBudgetRecommendationService = require('../services/BudgetNearRecommendationService');")
+        "const BudgetNearRecommendationService = require('../services/BudgetNearRecommendationService');")
+    controller = once(controller,
+        "LiveBudgetRecommendationService.getTopProductsForCategoryAndBudget(",
+        "BudgetNearRecommendationService.getTopProductsForCategoryAndBudget(")
     controller = once(controller,
         "const topCacheKey = `cat-guard-live-budget-v1|${normalizedCategory}|${exactSmartphoneBudgetKey}|${limit}|${brandKey}`;",
         """const campaignRequest = normalizedCategory === 'smart-phones' && Number(budget) === 15000 && !brandKey;
