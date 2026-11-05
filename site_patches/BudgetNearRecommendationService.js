@@ -1,8 +1,8 @@
 'use strict';
 
 const PERCENTAGES = [90, 80, 70, 60, 50];
-const MAX_CHECKS = 15;
-const REQUEST_MS = 7500;
+const MAX_CHECKS = 10;
+const REQUEST_MS = 6500;
 const inFlight = new Map();
 
 function priceTier(price, budget) {
@@ -58,7 +58,7 @@ async function select(category, originalBudget, opts, dependencies) {
       if (clock() - started >= REQUEST_MS) {
         stopReason = 'time_budget'; break;
       }
-      const ids = pending.slice(0, Math.min(5, MAX_CHECKS - checked.size)).map(p => String(p.id));
+      const ids = pending.slice(0, Math.min(2, MAX_CHECKS - checked.size)).map(p => String(p.id));
       ids.forEach(id => checked.add(id));
       let timer;
       const fetched = await Promise.race([
