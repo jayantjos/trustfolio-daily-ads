@@ -1,0 +1,52 @@
+name: Read only drones budget investigation
+on:
+  push:
+    branches: [fix/smartphones-exact-15000]
+    paths: [.github/workflows/inspect-drones-20000.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Read backend and compare pre-override backup
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          backup="$HOME/trustfolio_backend_backups/smartphone-15000-41967337139"
+          for file in controllers/ProductController.js services/ProductRecommendationService.js services/LiveBudgetRecommendationService.js; do
+            sha256sum "$file" "$backup/$file"
+            diff -u "$backup/$file" "$file" || [[ $? == 1 ]]
+          done
+          node <<'JS'
+          const fs = require('fs');
+          for (const file of ['services/ProductRecommendationService.js','services/LiveBudgetRecommendationService.js','controllers/ProductController.js']) {
+           let source=fs.readFileSync(file,'utf8');
+           let lines=source.split('\n');
+           console.log('SOURCE',file);
+           if(file.includes('Controller')) {
+            for(let i=0;i<lines.length;i++) if(/topCacheKey|normalizedCategory =|getTopProductsForCategoryAndBudget|recommendation|selection_note|priceWindow/.test(lines[i])) console.log(lines.slice(Math.max(0,i-3),i+9).join('\n'));
+           } else console.log(source.replace(/(key|secret|password|token)\s*[:=]\s*['"][^'"]+['"]/gi,'$1="[REDACTED]"'));
+          }
+          JS
+          REMOTE
