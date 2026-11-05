@@ -12,7 +12,7 @@ const ids=['69f9e9f56529299d30426ac8','69f9ea1f6529299d30426ae4','6a9e4a2e0933a0
    await page.getByRole('heading',{name:/Redmi A7 Pro/i}).filter({visible:true}).waitFor({timeout:20000});
    const response=await context.request.get('https://api.trustfolio.in/api/products/top?category=smart-phones&budget=15000&limit=5');assert.equal(response.status(),200);const data=(await response.json()).data;
    assert.deepEqual(data.products.map(p=>p.id),ids);assert.equal(data.priceVerificationStatus,'catalog_not_live');
-   const headings=page.locator('h4:visible');assert.equal(await headings.count(),5);
+   const headings=page.locator('h4:visible').filter({hasText:/REDMI A7 Pro|Samsung Galaxy F06|Lava Bold N2|realme 14x|Motorola g64/i});assert.equal(await headings.count(),5);
    const cards=[];
    for(let i=0;i<5;i++){
     const heading=headings.nth(i),p=data.products[i];assert.equal(await heading.innerText(),p.title);

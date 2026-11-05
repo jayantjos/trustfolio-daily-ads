@@ -3,6 +3,19 @@ const fs=require('fs'),assert=require('assert/strict');
 const pkg=process.argv[2],base=process.argv[3]||'https://api.trustfolio.in';
 const before=JSON.parse(fs.readFileSync(pkg+'/catalog-before.json'));
 (async()=>{
+ const readiness=[];
+ let ready=false;
+ for(let attempt=0;attempt<20;attempt++){
+  try{
+   const r=await fetch(base+'/api/products/top?category=smart-phones&budget=15000&limit=5',{signal:AbortSignal.timeout(3000)});
+   const text=await r.text();let body;try{body=JSON.parse(text);}catch{}
+   readiness.push({attempt,status:r.status,catalog:body?.data?.priceVerificationStatus});
+   if(r.status===200&&body?.data?.priceVerificationStatus==='catalog_not_live'){ready=true;break;}
+  }catch(error){readiness.push({attempt,error:error.message});}
+  await new Promise(resolve=>setTimeout(resolve,1000));
+ }
+ fs.writeFileSync(pkg+'/readiness.json',JSON.stringify(readiness,null,2));
+ assert.equal(ready,true,'Backend did not become ready');console.log('READINESS_PASS',JSON.stringify(readiness));
  const results=[];
  for(const suffix of ['','&forceRefresh=true&useCache=false','&forceRefresh=true']){
   const start=Date.now(),r=await fetch(base+'/api/products/top?category=smart-phones&budget=15000&limit=5'+suffix,{signal:AbortSignal.timeout(15000)}),body=await r.json();

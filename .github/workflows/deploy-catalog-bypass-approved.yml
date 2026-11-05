@@ -1,4 +1,5 @@
 name: Deploy approved exact smartphone catalog bypass
+# Startup readiness is checked before acceptance; production changes remain pinned to 3edbc87.
 on:
   push:
     branches: [fix/smartphone-15000-catalog-bypass]
