@@ -1,0 +1,25 @@
+name: One-time Nov 5 missed Budget Meta recovery
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/one-time-recover-nov5-budget.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  recover-budget:
+    if: github.repository == 'jayantjos/trustfolio-daily-ads' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Trigger only today's missed budget mode using Meta Graph QA workflow
+        run: |
+          set -euo pipefail
+          [[ "$(TZ=Asia/Kolkata date +%F)" == '2026-11-05' ]] || { echo 'EXPIRED_NO_DISPATCH'; exit 1; }
+          gh api --method POST "repos/$GH_REPO/actions/workflows/auto-instagram-campaigns.yml/dispatches" \
+            -f ref=main -f 'inputs[mode]=budget' -f 'inputs[publish]=true'
+          echo 'NOV5_META_BUDGET_RECOVERY_REQUESTED=YES'
+          echo 'FINAL_POST_PUBLICATION_MUST_BE_LEDGER_VERIFIED'
