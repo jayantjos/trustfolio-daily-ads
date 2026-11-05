@@ -1,0 +1,67 @@
+name: Prepare catalog bypass backup without promotion
+on:
+  push:
+    branches: [fix/smartphone-15000-catalog-bypass]
+    paths: [.github/workflows/prepare-catalog-bypass-backup.yml]
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+      - name: Back up current files and build, verify isolated rollback restore
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 -o ConnectionAttempts=3 "$USER@$HOST" bash -s -- "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/apps/trustfolio"
+          BACKEND="$APP/node-backend"
+          WEB="$APP/trustfolio-main"
+          PACKAGE="/tmp/trustfolio-catalog-bypass-42001464650"
+          [[ -f "$PACKAGE/web-staged/.next/BUILD_ID" ]]
+          cd "$BACKEND"
+          sha256sum --check "$PACKAGE/production.sha256"
+          BACKUP="$HOME/trustfolio_backend_backups/catalog-bypass-prepare-$1"
+          mkdir -p "$BACKUP/backend/controllers" "$BACKUP/backend/services" "$BACKUP/frontend"
+          cp controllers/ProductController.js "$BACKUP/backend/controllers/"
+          cp services/LiveBudgetRecommendationService.js services/LivePriceService.js "$BACKUP/backend/services/"
+          cp "$WEB/src/components/ProductsTable.tsx" "$BACKUP/frontend/ProductsTable.tsx"
+          cp "$PACKAGE/production.sha256" "$BACKUP/production.sha256"
+          cp "$PACKAGE/staged-api.json" "$BACKUP/staged-api.json"
+          tar -C "$WEB" --exclude=.next/cache -czf "$BACKUP/frontend/next-build.tgz" .next
+          cd "$BACKUP"
+          sha256sum backend/controllers/ProductController.js backend/services/*.js frontend/ProductsTable.tsx frontend/next-build.tgz > backup.sha256
+          sha256sum --check backup.sha256
+          TESTDIR="$(mktemp -d /tmp/trustfolio-rollback-check.XXXXXX)"
+          tar -xzf frontend/next-build.tgz -C "$TESTDIR"
+          cmp "$WEB/.next/BUILD_ID" "$TESTDIR/.next/BUILD_ID"
+          cp backend/controllers/ProductController.js "$TESTDIR/controller-restored.js"
+          cmp "$BACKEND/controllers/ProductController.js" "$TESTDIR/controller-restored.js"
+          cp backend/services/LiveBudgetRecommendationService.js "$TESTDIR/helper-restored.js"
+          cmp "$BACKEND/services/LiveBudgetRecommendationService.js" "$TESTDIR/helper-restored.js"
+          cp frontend/ProductsTable.tsx "$TESTDIR/frontend-restored.tsx"
+          cmp "$WEB/src/components/ProductsTable.tsx" "$TESTDIR/frontend-restored.tsx"
+          rm -rf "$TESTDIR"
+          printf '%s\n' 'Rollback: verify backup.sha256, restore only the backed-up ProductController.js, LiveBudgetRecommendationService.js and ProductsTable.tsx; unpack frontend/next-build.tgz into a staging directory and replace the web .next build; restart trustfolio-backend and trustfolio-web only after web restart authorization. LivePriceService is backup-only and must not be overwritten because this patch does not change it.' > ROLLBACK.txt
+          printf 'BACKUP_READY %s\nROLLBACK_RESTORE_CHECK_PASS\n' "$BACKUP"
+          
+          REMOTE
