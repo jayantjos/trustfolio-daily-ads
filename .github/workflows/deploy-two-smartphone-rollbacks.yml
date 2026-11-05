@@ -1,0 +1,102 @@
+name: Deploy only two smartphone campaign rollbacks
+on:
+  push:
+    branches: [rollback/smartphone-15000-two-changes]
+    paths: [.github/workflows/deploy-two-smartphone-rollbacks.yml]
+permissions:
+  contents: read
+concurrency:
+  group: trustfolio-two-smartphone-rollback-production
+  cancel-in-progress: false
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Prepare production mobile acceptance before promotion
+        run: |
+          npm install --prefix "$RUNNER_TEMP/rollback-qa" playwright@1.56.1
+          "$RUNNER_TEMP/rollback-qa/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+
+      - name: Verify fresh backup and promote tested pre-campaign sources
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 ops/two-smartphone-rollback/promote.sh "$USER@$HOST:/tmp/trustfolio-two-rollback-stage-42040330089/promote.sh"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 -o ConnectionAttempts=3 "$USER@$HOST" "bash /tmp/trustfolio-two-rollback-stage-42040330089/promote.sh"
+      - name: Verify live dynamic API and normal frontend live verification
+        env:
+          NODE_PATH: ${{ runner.temp }}/rollback-qa/node_modules
+        run: node ops/two-smartphone-rollback/acceptance.cjs acceptance
+      - name: Restore fresh pre-operation backup on any failed gate
+        if: failure()
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 -o ConnectionAttempts=3 "$USER@$HOST" "if test -f \$HOME/trustfolio_backend_backups/two-smartphone-rollback-42040330089/DEPLOYMENT_ATTEMPTED; then bash \$HOME/trustfolio_backend_backups/two-smartphone-rollback-42040330089/recover.sh; else echo 'No production files modified'; fi"
+      - name: Confirm protected configuration and unrelated PM2 services
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/apps/trustfolio"
+          BACKUP="$HOME/trustfolio_backend_backups/two-smartphone-rollback-42040330089"
+          cd "$APP"
+          sha256sum --check "$BACKUP/protected.sha256"
+          node - "$BACKUP" <<'JS'
+          const fs=require('fs'),cp=require('child_process'),assert=require('assert/strict'),dir=process.argv[2];
+          const before=JSON.parse(fs.readFileSync(dir+'/pm2-deploy-before.json'));
+          const after=JSON.parse(cp.execFileSync('pm2',['jlist'],{encoding:'utf8'})).map(p=>({name:p.name,pid:p.pid,status:p.pm2_env.status,restarts:p.pm2_env.restart_time}));
+          for(const row of before){const current=after.find(p=>p.name===row.name);assert.equal(current.status,'online');if(!['trustfolio-backend','trustfolio-web'].includes(row.name))assert.deepEqual(current,row);}
+          fs.writeFileSync(dir+'/pm2-after.json',JSON.stringify(after,null,2));console.log('PM2_FINAL_PASS',JSON.stringify(after));
+          const runtime=JSON.parse(cp.execFileSync('pm2',['jlist'],{encoding:'utf8'})).find(p=>p.name==='trustfolio-backend').pm2_env;
+          const env={...require(process.env.HOME+'/apps/trustfolio/node-backend/node_modules/dotenv').parse(fs.readFileSync('node-backend/.env')),...runtime};
+          assert.equal(new URL(env.PRICE_WORKER_URL).hostname,'spring-shape-2759.1shailendrasoni1.workers.dev');console.log('DEVELOPER_WORKER_UNCHANGED');
+          JS
+          REMOTE
+      - name: Recover if final protected-service gate fails
+        if: failure()
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 -o ConnectionAttempts=3 "$USER@$HOST" "if test -f \$HOME/trustfolio_backend_backups/two-smartphone-rollback-42040330089/DEPLOYMENT_ATTEMPTED; then bash \$HOME/trustfolio_backend_backups/two-smartphone-rollback-42040330089/recover.sh; fi"
+      - name: Collect evidence
+        if: always()
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          mkdir -p acceptance
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST:/tmp/trustfolio-two-rollback-stage-42040330089/staging.json" acceptance/ || true
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST:trustfolio_backend_backups/two-smartphone-rollback-42040330089/pm2-after.json" acceptance/ || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: two-smartphone-rollback-production
+          path: acceptance/

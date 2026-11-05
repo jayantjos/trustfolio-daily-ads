@@ -1,0 +1,79 @@
+name: Audit two smartphone campaign rollbacks
+on:
+  push:
+    branches: [rollback/smartphone-15000-two-changes]
+    paths: [.github/workflows/audit-two-smartphone-rollbacks.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+
+
+      - name: Read current sources and designated backups without running rollback
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 -o ConnectionAttempts=3 "$USER@$HOST" bash -s -- "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/apps/trustfolio"
+          OUT="/tmp/trustfolio-two-rollback-audit-$1"
+          mkdir -p "$OUT/current" "$OUT/backups"
+          cd "$APP"
+          git rev-parse HEAD
+          python3 - "$APP" "$OUT" <<'PY'
+          from pathlib import Path
+          import shutil,sys,hashlib,os
+          app,out=map(Path,sys.argv[1:])
+          files=['node-backend/controllers/ProductController.js','node-backend/services/ProductRecommendationService.js','node-backend/services/LiveBudgetRecommendationService.js','trustfolio-main/src/components/ProductsTable.tsx']
+          for f in files:
+           p=app/f;dest=out/'current'/f;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,dest);print('CURRENT_SHA256',f,hashlib.sha256(p.read_bytes()).hexdigest())
+          names=['smartphone-15000-41967337139','catalog-bypass-deploy-42003776949','catalog-bypass-prepare-42001835136']
+          for name in names:
+           root=Path.home()/'trustfolio_backend_backups'/name
+           print('BACKUP_ROOT',name,'exists',root.exists())
+           if not root.exists():continue
+           for directory,dirs,files in os.walk(root):
+            relative=Path(directory).relative_to(root)
+            dirs[:]=[d for d in dirs if d not in ['next-build','.next','node_modules','rejected-next-build'] and len(relative.parts)<3]
+            for filename in files:
+             if filename in ['ProductController.js','ProductRecommendationService.js','LiveBudgetRecommendationService.js','ProductsTable.tsx','rollback.sh','production.sha256','frontend.sha256']:
+              src=Path(directory)/filename;dest=out/'backups'/name/relative/filename;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dest);print('BACKUP_SHA256',str(src.relative_to(root)),hashlib.sha256(src.read_bytes()).hexdigest())
+          PY
+          cd "$APP/node-backend"
+          node - "$OUT" <<'JS'
+          const fs=require('fs'),cp=require('child_process'),crypto=require('crypto');
+          const list=JSON.parse(cp.execFileSync('pm2',['jlist'],{encoding:'utf8'}));
+          const state=list.map(p=>({name:p.name,pid:p.pid,status:p.pm2_env.status,restarts:p.pm2_env.restart_time}));
+          fs.writeFileSync(process.argv[2]+'/pm2.json',JSON.stringify(state,null,2));console.log('PM2',JSON.stringify(state));
+          const runtime=list.find(p=>p.name==='trustfolio-backend').pm2_env;
+          const env={...require('dotenv').parse(fs.readFileSync('.env')),...runtime};
+          console.log('WORKER_HOST',new URL(env.PRICE_WORKER_URL).hostname);
+          for(const file of ['services/LivePriceService.js','scripts/trustfolio-category-price-watcher.js','.env'])console.log('PROTECTED_SHA256',file,crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'));
+          JS
+          tar -C "$OUT" -czf "$OUT/audit.tgz" current backups pm2.json
+          
+          REMOTE
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=12 "$USER@$HOST:/tmp/trustfolio-two-rollback-audit-$GITHUB_RUN_ID/audit.tgz" audit.tgz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: two-smartphone-rollback-source-audit
+          path: audit.tgz

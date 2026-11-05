@@ -1,0 +1,26 @@
+{
+  "node-backend/controllers/ProductController.js": {
+    "before_sha256": "715c8acfb2a209bb8750ea45d1fed394980125be5baa8c76eb4268e7b8363f46",
+    "after_sha256": "4d927892c950ba50e59d1fa53bf7110ea95c96018d63953b3ff3107ee5526562",
+    "backup_source": "smartphone-15000-41967337139/controllers/ProductController.js",
+    "file": "ProductController.js"
+  },
+  "node-backend/services/ProductRecommendationService.js": {
+    "before_sha256": "4668c32c090ca43daacb2226e680540eb059fbbc7e3209e77b11ff871fe9bd67",
+    "after_sha256": "cadaae48fe765d2535449508bba75811ffc1df172eb01f3f9b07d30ff527d6e9",
+    "backup_source": "smartphone-15000-41967337139/services/ProductRecommendationService.js",
+    "file": "ProductRecommendationService.js"
+  },
+  "node-backend/services/LiveBudgetRecommendationService.js": {
+    "before_sha256": "cd3b29f8fb0b6f24defc2471704959f2bdbe2efe6b8f9361782470fcbb3f24b0",
+    "after_sha256": "136ece5770aec60f3f712abc43983d0a5c5d56ce4065e8fcb1dd603474222184",
+    "backup_source": "smartphone-15000-41967337139/services/LiveBudgetRecommendationService.js",
+    "file": "LiveBudgetRecommendationService.js"
+  },
+  "trustfolio-main/src/components/ProductsTable.tsx": {
+    "before_sha256": "70fbd92b7f9aeae6e62c7415fc90556de807f92f80c539297ad1dbce556e513f",
+    "after_sha256": "b92c2dd292df436877b5526fc73ce9e1a0ca79abfa683fb4731cc8c0403f321a",
+    "backup_source": "catalog-bypass-deploy-42003776949/frontend/ProductsTable.tsx",
+    "file": "ProductsTable.tsx"
+  }
+}
