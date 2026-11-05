@@ -46,9 +46,9 @@ function compile(source,name){
       return {id,live,deleted:false};
     }));
   }};
-  const queries=[['drones',20000,''],['smart-phones',12000,''],['smart-phones',20000,''],
+  const queries=[['smart-phones',15000,''],['drones',20000,''],['smart-phones',12000,''],['smart-phones',20000,''],
     ['smart-phones',15000.5,''],['smart-phones',15000,'Samsung'],
-    ['washing-machines',35000,''],['smart-tvs',20000,''],['laptops',60000,''],['smart-phones',15000,'']];
+    ['washing-machines',35000,''],['smart-tvs',20000,''],['laptops',60000,'']];
   const failures=[];
   for(const [category,budget,brand] of queries){
     const before=retailerCalls, start=Date.now();
@@ -69,6 +69,7 @@ function compile(source,name){
         assert.ok(result.priceWindow.min>=Math.ceil(Math.floor(budget)*0.5));
       }
     }catch(error){failures.push({category,budget,brand,error:error.message});}
+    await new Promise(resolve=>setTimeout(resolve,2000));
   }
   console.log('CANARY_SUMMARY',JSON.stringify({failures,retailerCalls,databaseWrites:0}));
   await mongoose.disconnect();
