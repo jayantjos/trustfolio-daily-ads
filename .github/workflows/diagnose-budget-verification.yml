@@ -1,0 +1,66 @@
+name: Diagnose staged budget verification failures
+on:
+  push:
+    branches: [feat/progressive-budget-near]
+    paths: [.github/workflows/diagnose-budget-verification.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Configure pinned VPS SSH
+        env:
+          KEY: ${{ secrets.TF_DEPLOY_SSH_KEY }}
+          HOSTKEY: ${{ secrets.TF_DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$HOST" == "200.234.47.87" && "$USER" == "scraperuser" && -n "$KEY" ]]
+          expected='200.234.47.87 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMw5OgsY7J3PcG28EZ15uhvX3gwB2AC7YZ9NuvbGm0KC'
+          [[ "$HOSTKEY" == "$expected" ]]
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$HOSTKEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Read-only three-product Worker diagnosis
+        env:
+          HOST: ${{ secrets.TF_DEPLOY_HOST }}
+          USER: ${{ secrets.TF_DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" bash -s <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/apps/trustfolio/node-backend"
+          node <<'JS'
+          const fs=require('fs'),mongoose=require('mongoose');
+          const runtime=JSON.parse(require('child_process').execFileSync('pm2',['jlist'],{encoding:'utf8'})).find(p=>p.name==='trustfolio-backend').pm2_env;
+          const env={...require('dotenv').parse(fs.readFileSync('.env')),...runtime};
+          for(const [key,value] of Object.entries(env))if(/^(PRICE_WORKER_|LIVE_PRICE_|CROMA_)/.test(key))process.env[key]=String(value);
+          const uri=Object.entries(env).find(([k,v])=>/mongo/i.test(k)&&typeof v==='string'&&/^mongodb(\+srv)?:\/\//.test(v))?.[1];
+          const {workerItem}=require('./services/LivePriceService');
+          (async()=>{
+           await mongoose.connect(uri,{dbName:'trustfolio',autoIndex:false,autoCreate:false});
+           const endpoint=String(env.PRICE_WORKER_URL||'').replace(/\/+$/,'')+'/api/check';
+           console.log('CONFIG',JSON.stringify({workerHost:new URL(endpoint).hostname,freshMs:env.LIVE_PRICE_FRESH_MS||60000,timeoutMs:6000}));
+           const ids=['6a9e4a2e0933a0daedaddd80','6a2ed790ee20fca78fefdfde','69fb4aed6529299d30429bd7'];
+           for(const id of ids){
+             const doc=await mongoose.connection.collection('my_products').findOne({_id:new mongoose.Types.ObjectId(id)});
+             if(!doc){console.log('MISSING',id);continue;}
+             const start=Date.now(),item=workerItem(doc);
+             if(!item){console.log('UNSUPPORTED',id);continue;}
+             try{
+              const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json',...(env.PRICE_WORKER_KEY?{'x-api-key':env.PRICE_WORKER_KEY}:{})},
+                body:JSON.stringify({items:[item],useCache:true}),signal:AbortSignal.timeout(6000)});
+              let body=await response.text();
+              if(env.PRICE_WORKER_KEY)body=body.split(String(env.PRICE_WORKER_KEY)).join('[REDACTED]');
+              console.log('WORKER_DIAGNOSTIC',JSON.stringify({id,title:doc.title,platform:doc.platform,status:response.status,
+                ms:Date.now()-start,retryAfter:response.headers.get('retry-after'),server:response.headers.get('server'),
+                contentType:response.headers.get('content-type'),body:body.slice(0,2500)}));
+             }catch(error){console.log('WORKER_DIAGNOSTIC',JSON.stringify({id,ms:Date.now()-start,error:error.message}));}
+           }
+           await mongoose.disconnect();
+          })().catch(async error=>{console.error(error.message);await mongoose.disconnect();process.exitCode=1;});
+          JS
+          REMOTE
