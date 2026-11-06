@@ -1,8 +1,12 @@
 {
+  "brand": "Noise",
+  "budget_inr": 2492,
   "campaign_id": "tfauto-9aeba9531b3d219a10",
+  "category": "headphones-earbuds",
   "container_id": "17919709854530469",
+  "meta_media_id": "18074900870780029",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-06T16:31:19.964370+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-06T16:31:23.452248+05:30",
+  "status": "api_accepted_published"
 }
