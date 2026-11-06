@@ -1,8 +1,11 @@
 {
+  "brand": "Noise",
+  "budget_inr": 2492,
   "campaign_id": "tfauto-9aeba9531b3d219a10",
+  "category": "headphones-earbuds",
+  "meta_photo_or_post_id": "122214010802911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-9aeba9531b3d219a10.jpg",
-  "reserved_at": "2026-11-06T16:31:24.784534+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-06T16:31:32.306565+05:30",
+  "status": "api_accepted_published"
 }
