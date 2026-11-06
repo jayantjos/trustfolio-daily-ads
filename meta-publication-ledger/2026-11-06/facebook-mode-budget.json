@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 4262,
   "campaign_id": "tfauto-edddec729a615b9a54",
+  "category": "mixer-grinder",
+  "meta_photo_or_post_id": "122214005120911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-edddec729a615b9a54.jpg",
-  "reserved_at": "2026-11-06T15:41:25.904355+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-06T15:41:34.732622+05:30",
+  "status": "api_accepted_published"
 }
