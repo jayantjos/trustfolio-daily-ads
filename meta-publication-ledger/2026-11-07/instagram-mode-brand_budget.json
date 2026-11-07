@@ -1,8 +1,12 @@
 {
+  "brand": "Redmi",
+  "budget_inr": 21845,
   "campaign_id": "tfauto-2f75d8904a0db0c2b2",
+  "category": "tablets",
   "container_id": "17919846996530469",
+  "meta_media_id": "17955287010267404",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-07T15:49:12.913783+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-07T15:49:19.075892+05:30",
+  "status": "api_accepted_published"
 }
