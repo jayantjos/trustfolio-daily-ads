@@ -1,8 +1,12 @@
 {
+  "brand": "HP",
+  "budget_inr": 51326,
   "campaign_id": "tfauto-24bb49dd8096b3c67b",
+  "category": "laptops",
   "container_id": "17920025160530469",
+  "meta_media_id": "18375456658246018",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-08T16:00:44.753205+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-08T16:00:48.784332+05:30",
+  "status": "api_accepted_published"
 }
