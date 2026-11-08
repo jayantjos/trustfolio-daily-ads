@@ -1,8 +1,11 @@
 {
+  "brand": "HP",
+  "budget_inr": 51326,
   "campaign_id": "tfauto-24bb49dd8096b3c67b",
+  "category": "laptops",
+  "meta_photo_or_post_id": "122214514652911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-24bb49dd8096b3c67b.jpg",
-  "reserved_at": "2026-11-08T16:00:50.328703+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-08T16:01:00.130424+05:30",
+  "status": "api_accepted_published"
 }
