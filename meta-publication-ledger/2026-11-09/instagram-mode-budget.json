@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 16535,
   "campaign_id": "tfauto-7f9776df36788a9800",
+  "category": "drones",
   "container_id": "17920188240530469",
+  "meta_media_id": "17875490151602121",
   "mode": "budget",
   "network": "instagram",
-  "recorded_at": "2026-11-09T16:10:24.511838+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-09T16:10:29.125172+05:30",
+  "status": "api_accepted_published"
 }
