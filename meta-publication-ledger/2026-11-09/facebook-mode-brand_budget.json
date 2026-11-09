@@ -1,8 +1,11 @@
 {
+  "brand": "Samsung",
+  "budget_inr": 35000,
   "campaign_id": "tfauto-dafe555fc1d784d76c",
+  "category": "washing-machines",
+  "meta_photo_or_post_id": "122214670574911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-dafe555fc1d784d76c.jpg",
-  "reserved_at": "2026-11-09T17:09:53.212331+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-09T17:10:00.260909+05:30",
+  "status": "api_accepted_published"
 }
