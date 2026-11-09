@@ -1,8 +1,12 @@
 {
+  "brand": "Samsung",
+  "budget_inr": 35000,
   "campaign_id": "tfauto-dafe555fc1d784d76c",
+  "category": "washing-machines",
   "container_id": "17920193916530469",
+  "meta_media_id": "18003955253814047",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-09T17:09:45.528616+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-09T17:09:51.596806+05:30",
+  "status": "api_accepted_published"
 }
