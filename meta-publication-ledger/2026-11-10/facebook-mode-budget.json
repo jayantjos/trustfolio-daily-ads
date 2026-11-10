@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 5036,
   "campaign_id": "tfauto-bf65173719879803ac",
+  "category": "speakers",
+  "meta_photo_or_post_id": "122214811940911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-bf65173719879803ac.jpg",
-  "reserved_at": "2026-11-10T16:08:48.317033+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-10T16:08:54.900910+05:30",
+  "status": "api_accepted_published"
 }
