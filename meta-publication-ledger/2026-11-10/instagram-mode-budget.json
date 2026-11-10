@@ -1,8 +1,8 @@
 {
   "campaign_id": "tfauto-bf65173719879803ac",
+  "container_id": "17920355643530469",
   "mode": "budget",
   "network": "instagram",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-bf65173719879803ac.jpg",
-  "reserved_at": "2026-11-10T16:08:39.596637+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-10T16:08:40.537509+05:30",
+  "status": "container_created"
 }
