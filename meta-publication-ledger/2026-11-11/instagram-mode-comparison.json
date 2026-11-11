@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 11317,
   "campaign_id": "tfauto-cffbf3994b89d761e0",
+  "category": "smart-phones",
   "container_id": "17920599378530469",
+  "meta_media_id": "18183565414426862",
   "mode": "comparison",
   "network": "instagram",
-  "recorded_at": "2026-11-11T21:14:27.708509+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-11T21:14:32.619020+05:30",
+  "status": "api_accepted_published"
 }
