@@ -1,8 +1,11 @@
 {
+  "brand": "Redmi",
+  "budget_inr": 25000,
   "campaign_id": "tfauto-d4ef6f584672e35fd2",
+  "category": "smart-phones",
+  "meta_photo_or_post_id": "122214962990911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-d4ef6f584672e35fd2.jpg",
-  "reserved_at": "2026-11-11T16:55:10.521455+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-11T16:55:20.935473+05:30",
+  "status": "api_accepted_published"
 }
