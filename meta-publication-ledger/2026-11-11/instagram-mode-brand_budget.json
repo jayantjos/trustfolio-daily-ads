@@ -1,8 +1,12 @@
 {
+  "brand": "Redmi",
+  "budget_inr": 25000,
   "campaign_id": "tfauto-d4ef6f584672e35fd2",
+  "category": "smart-phones",
   "container_id": "17920560201530469",
+  "meta_media_id": "17946293355088256",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-11T16:55:02.448667+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-11T16:55:07.906000+05:30",
+  "status": "api_accepted_published"
 }
