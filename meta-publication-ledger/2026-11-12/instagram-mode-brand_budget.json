@@ -1,8 +1,12 @@
 {
+  "brand": "Bajaj",
+  "budget_inr": 4111,
   "campaign_id": "tfauto-6e6464d10f692fec57",
+  "category": "mixer-grinder",
   "container_id": "17920743345530469",
+  "meta_media_id": "18147151123567217",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-12T16:58:20.829621+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-12T16:58:24.874722+05:30",
+  "status": "api_accepted_published"
 }
