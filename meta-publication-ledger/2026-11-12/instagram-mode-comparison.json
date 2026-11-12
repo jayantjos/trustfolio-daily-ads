@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 56899,
   "campaign_id": "tfauto-9619765c22dffa0693",
+  "category": "desktop-computers",
   "container_id": "17920763700530469",
+  "meta_media_id": "18120629003091525",
   "mode": "comparison",
   "network": "instagram",
-  "recorded_at": "2026-11-12T19:07:23.358356+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-12T19:07:27.721470+05:30",
+  "status": "api_accepted_published"
 }
