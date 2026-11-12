@@ -1,8 +1,11 @@
 {
+  "brand": "Bajaj",
+  "budget_inr": 4111,
   "campaign_id": "tfauto-6e6464d10f692fec57",
+  "category": "mixer-grinder",
+  "meta_photo_or_post_id": "122215112234911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-6e6464d10f692fec57.jpg",
-  "reserved_at": "2026-11-12T16:58:26.336886+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-12T16:58:33.887287+05:30",
+  "status": "api_accepted_published"
 }
