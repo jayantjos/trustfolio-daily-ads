@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 3862,
   "campaign_id": "tfauto-a4abe77444bfbd6091",
+  "category": "smartwatches",
+  "meta_photo_or_post_id": "122215286000911225",
   "mode": "comparison",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-a4abe77444bfbd6091.jpg",
-  "reserved_at": "2026-11-13T21:17:27.277486+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-13T21:17:33.442162+05:30",
+  "status": "api_accepted_published"
 }
