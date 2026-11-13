@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 3650,
   "campaign_id": "tfauto-cd64721037299f211a",
+  "category": "induction-cooktop",
   "container_id": "17920928706530469",
+  "meta_media_id": "18083802524721366",
   "mode": "budget",
   "network": "instagram",
-  "recorded_at": "2026-11-13T15:53:40.970325+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-13T15:53:46.248653+05:30",
+  "status": "api_accepted_published"
 }
