@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 3862,
   "campaign_id": "tfauto-a4abe77444bfbd6091",
+  "category": "smartwatches",
   "container_id": "17920988814530469",
+  "meta_media_id": "18112623416627232",
   "mode": "comparison",
   "network": "instagram",
-  "recorded_at": "2026-11-13T21:17:20.460869+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-13T21:17:25.808448+05:30",
+  "status": "api_accepted_published"
 }
