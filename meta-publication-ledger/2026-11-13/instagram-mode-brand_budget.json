@@ -1,8 +1,12 @@
 {
+  "brand": "Prestige",
+  "budget_inr": 4501,
   "campaign_id": "tfauto-dbf6cf81315c7ded99",
+  "category": "induction-cooktop",
   "container_id": "17920934376530469",
+  "meta_media_id": "18119976290092352",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-13T16:39:27.498689+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-13T16:39:31.878024+05:30",
+  "status": "api_accepted_published"
 }
