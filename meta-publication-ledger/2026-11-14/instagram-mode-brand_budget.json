@@ -1,8 +1,12 @@
 {
+  "brand": "Samsung",
+  "budget_inr": 40000,
   "campaign_id": "tfauto-a35c609d18011c1706",
+  "category": "smart-tvs",
   "container_id": "17921140593530469",
+  "meta_media_id": "18041394557891648",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-14T16:01:54.470263+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-14T16:02:00.734693+05:30",
+  "status": "api_accepted_published"
 }
