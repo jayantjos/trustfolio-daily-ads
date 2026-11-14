@@ -1,8 +1,11 @@
 {
+  "brand": "Samsung",
+  "budget_inr": 40000,
   "campaign_id": "tfauto-a35c609d18011c1706",
+  "category": "smart-tvs",
+  "meta_photo_or_post_id": "122215390700911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-a35c609d18011c1706.jpg",
-  "reserved_at": "2026-11-14T16:02:01.928978+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-14T16:02:09.813481+05:30",
+  "status": "api_accepted_published"
 }
