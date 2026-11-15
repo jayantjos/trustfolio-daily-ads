@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 16459,
   "campaign_id": "tfauto-df69c20ed838f45252",
+  "category": "microwave-oven",
+  "meta_photo_or_post_id": "122215522502911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-df69c20ed838f45252.jpg",
-  "reserved_at": "2026-11-15T15:42:43.278131+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-15T15:42:49.919236+05:30",
+  "status": "api_accepted_published"
 }
