@@ -1,8 +1,11 @@
 {
+  "brand": "JBL",
+  "budget_inr": 10000,
   "campaign_id": "tfauto-9bd1722c98f2635e91",
+  "category": "speakers",
+  "meta_photo_or_post_id": "122215673636911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-9bd1722c98f2635e91.jpg",
-  "reserved_at": "2026-11-16T16:59:18.423948+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-16T16:59:27.198582+05:30",
+  "status": "api_accepted_published"
 }
