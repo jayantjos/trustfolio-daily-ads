@@ -1,8 +1,12 @@
 {
+  "brand": "JBL",
+  "budget_inr": 10000,
   "campaign_id": "tfauto-9bd1722c98f2635e91",
+  "category": "speakers",
   "container_id": "17921552409530469",
+  "meta_media_id": "18649652527007664",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-16T16:59:10.634373+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-16T16:59:16.318675+05:30",
+  "status": "api_accepted_published"
 }
