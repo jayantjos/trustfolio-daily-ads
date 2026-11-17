@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 15488,
   "campaign_id": "tfauto-2728fb75745a00b87e",
+  "category": "smart-phones",
+  "meta_photo_or_post_id": "122215814186911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-2728fb75745a00b87e.jpg",
-  "reserved_at": "2026-11-17T16:53:02.995597+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-17T16:53:09.438626+05:30",
+  "status": "api_accepted_published"
 }
