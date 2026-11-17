@@ -1,8 +1,11 @@
 {
+  "brand": "IFB",
+  "budget_inr": 14621,
   "campaign_id": "tfauto-90b811dcf1cd42bfaa",
+  "category": "microwave-oven",
+  "meta_photo_or_post_id": "122215818326911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-90b811dcf1cd42bfaa.jpg",
-  "reserved_at": "2026-11-17T17:30:47.470078+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-17T17:30:55.277711+05:30",
+  "status": "api_accepted_published"
 }
