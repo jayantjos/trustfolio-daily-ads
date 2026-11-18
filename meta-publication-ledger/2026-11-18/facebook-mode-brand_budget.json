@@ -1,8 +1,11 @@
 {
+  "brand": "Havells",
+  "budget_inr": 3858,
   "campaign_id": "tfauto-e1c09e358e1d3d1f74",
+  "category": "ceiling-fans",
+  "meta_photo_or_post_id": "122215965236911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-e1c09e358e1d3d1f74.jpg",
-  "reserved_at": "2026-11-18T17:31:32.509698+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-18T17:31:39.457038+05:30",
+  "status": "api_accepted_published"
 }
