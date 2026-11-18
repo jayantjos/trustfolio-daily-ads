@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 40029,
   "campaign_id": "tfauto-04afa34ce015b025d6",
+  "category": "desktop-computers",
+  "meta_photo_or_post_id": "122215956014911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-04afa34ce015b025d6.jpg",
-  "reserved_at": "2026-11-18T16:26:02.724472+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-18T16:26:10.903734+05:30",
+  "status": "api_accepted_published"
 }
