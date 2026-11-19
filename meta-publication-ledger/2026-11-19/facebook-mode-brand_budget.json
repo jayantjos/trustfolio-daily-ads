@@ -1,8 +1,11 @@
 {
+  "brand": "Prestige",
+  "budget_inr": 2156,
   "campaign_id": "tfauto-2a4365ad572d281b5e",
+  "category": "induction-cooktop",
+  "meta_photo_or_post_id": "122216097626911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-2a4365ad572d281b5e.jpg",
-  "reserved_at": "2026-11-19T17:18:24.791392+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-19T17:18:31.392327+05:30",
+  "status": "api_accepted_published"
 }
