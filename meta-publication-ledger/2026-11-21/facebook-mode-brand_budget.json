@@ -1,8 +1,11 @@
 {
+  "brand": "LG",
+  "budget_inr": 15203,
   "campaign_id": "tfauto-b546a33852551a7f0c",
+  "category": "microwave-oven",
+  "meta_photo_or_post_id": "122216389316911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-b546a33852551a7f0c.jpg",
-  "reserved_at": "2026-11-21T16:41:34.372186+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-21T16:41:46.111742+05:30",
+  "status": "api_accepted_published"
 }
