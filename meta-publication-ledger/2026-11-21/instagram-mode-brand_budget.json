@@ -1,8 +1,12 @@
 {
+  "brand": "LG",
+  "budget_inr": 15203,
   "campaign_id": "tfauto-b546a33852551a7f0c",
+  "category": "microwave-oven",
   "container_id": "17922329190530469",
+  "meta_media_id": "18111240473211309",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-21T16:41:26.407238+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-21T16:41:33.161254+05:30",
+  "status": "api_accepted_published"
 }
