@@ -1,8 +1,12 @@
 {
+  "brand": "Havells",
+  "budget_inr": 3762,
   "campaign_id": "tfauto-1f14955dc799b8350c",
+  "category": "ceiling-fans",
   "container_id": "17922489147530469",
+  "meta_media_id": "17968637876981803",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-22T17:01:47.037515+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-22T17:01:51.759587+05:30",
+  "status": "api_accepted_published"
 }
