@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 75000,
   "campaign_id": "tfauto-9acbc75ba9bf89ac80",
+  "category": "laptops",
+  "meta_photo_or_post_id": "122216535440911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-9acbc75ba9bf89ac80.jpg",
-  "reserved_at": "2026-11-22T16:05:44.253222+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-22T16:05:51.508109+05:30",
+  "status": "api_accepted_published"
 }
