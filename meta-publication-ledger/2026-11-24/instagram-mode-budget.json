@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 67459,
   "campaign_id": "tfauto-638ad275eec80c36ff",
+  "category": "laptops",
   "container_id": "17922757557530469",
+  "meta_media_id": "18135878581844177",
   "mode": "budget",
   "network": "instagram",
-  "recorded_at": "2026-11-24T08:36:52.715687+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-24T08:36:57.763876+05:30",
+  "status": "api_accepted_published"
 }
