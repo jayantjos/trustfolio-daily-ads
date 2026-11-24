@@ -1,8 +1,12 @@
 {
+  "brand": "Dell",
+  "budget_inr": 61939,
   "campaign_id": "tfauto-44db3452df5184b693",
+  "category": "desktop-computers",
   "container_id": "17922847974530469",
+  "meta_media_id": "17920529688544473",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-24T18:38:59.383382+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-24T18:39:05.616907+05:30",
+  "status": "api_accepted_published"
 }
