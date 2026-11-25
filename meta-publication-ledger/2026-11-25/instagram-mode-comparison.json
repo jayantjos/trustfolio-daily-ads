@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 8000,
   "campaign_id": "tfauto-a28f96b22db48ddc58",
+  "category": "microwave-oven",
   "container_id": "17923045899530469",
+  "meta_media_id": "18014133966007245",
   "mode": "comparison",
   "network": "instagram",
-  "recorded_at": "2026-11-25T20:55:22.358425+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-25T20:55:27.204299+05:30",
+  "status": "api_accepted_published"
 }
