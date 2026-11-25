@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 5000,
   "campaign_id": "tfauto-8865e1bfbcb580e1d4",
+  "category": "drones",
+  "meta_photo_or_post_id": "122216980214911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-8865e1bfbcb580e1d4.jpg",
-  "reserved_at": "2026-11-25T17:26:16.166995+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-25T17:26:25.690921+05:30",
+  "status": "api_accepted_published"
 }
