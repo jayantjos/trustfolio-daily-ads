@@ -1,8 +1,11 @@
 {
+  "brand": "Noise",
+  "budget_inr": 3321,
   "campaign_id": "tfauto-e48099ff287559c1da",
+  "category": "smartwatches",
+  "meta_photo_or_post_id": "122216987792911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-e48099ff287559c1da.jpg",
-  "reserved_at": "2026-11-25T18:32:30.365693+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-25T18:32:37.950327+05:30",
+  "status": "api_accepted_published"
 }
