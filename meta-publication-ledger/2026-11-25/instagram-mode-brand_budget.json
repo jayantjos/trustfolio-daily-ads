@@ -1,8 +1,12 @@
 {
+  "brand": "Noise",
+  "budget_inr": 3321,
   "campaign_id": "tfauto-e48099ff287559c1da",
+  "category": "smartwatches",
   "container_id": "17923027926530469",
+  "meta_media_id": "17966960709217741",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-25T18:32:23.474371+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-25T18:32:28.823631+05:30",
+  "status": "api_accepted_published"
 }
