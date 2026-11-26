@@ -1,8 +1,11 @@
 {
+  "brand": "boAt",
+  "budget_inr": 3465,
   "campaign_id": "tfauto-f3ec2747f5ada391cb",
+  "category": "headphones-earbuds",
+  "meta_photo_or_post_id": "122217136034911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-f3ec2747f5ada391cb.jpg",
-  "reserved_at": "2026-11-26T18:13:38.770797+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-26T18:13:47.570669+05:30",
+  "status": "api_accepted_published"
 }
