@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 8942,
   "campaign_id": "tfauto-976dd5b39f6f5429cb",
+  "category": "vacuum-cleaner",
   "container_id": "17923167249530469",
+  "meta_media_id": "17909382999346370",
   "mode": "comparison",
   "network": "instagram",
-  "recorded_at": "2026-11-26T20:20:02.595877+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-26T20:20:07.774914+05:30",
+  "status": "api_accepted_published"
 }
