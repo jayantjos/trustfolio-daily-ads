@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 6000,
   "campaign_id": "tfauto-b850a6aac7512e1802",
+  "category": "mixer-grinder",
   "container_id": "17923144329530469",
+  "meta_media_id": "18111424489970136",
   "mode": "budget",
   "network": "instagram",
-  "recorded_at": "2026-11-26T17:14:05.378349+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-26T17:14:09.848485+05:30",
+  "status": "api_accepted_published"
 }
