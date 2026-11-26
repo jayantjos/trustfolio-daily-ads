@@ -1,8 +1,12 @@
 {
+  "brand": "boAt",
+  "budget_inr": 3465,
   "campaign_id": "tfauto-f3ec2747f5ada391cb",
+  "category": "headphones-earbuds",
   "container_id": "17923150119530469",
+  "meta_media_id": "17997421758059370",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-26T18:13:32.818593+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-26T18:13:37.097752+05:30",
+  "status": "api_accepted_published"
 }
