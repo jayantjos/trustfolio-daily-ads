@@ -1,8 +1,12 @@
 {
+  "brand": "Samsung",
+  "budget_inr": 20000,
   "campaign_id": "tfauto-8798c678d36518f154",
+  "category": "tablets",
   "container_id": "17923282491530469",
+  "meta_media_id": "17923865349242255",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-27T18:00:27.065175+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-27T18:00:31.839345+05:30",
+  "status": "api_accepted_published"
 }
