@@ -1,8 +1,11 @@
 {
+  "brand": "Samsung",
+  "budget_inr": 20000,
   "campaign_id": "tfauto-8798c678d36518f154",
+  "category": "tablets",
+  "meta_photo_or_post_id": "122217300986911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-8798c678d36518f154.jpg",
-  "reserved_at": "2026-11-27T18:00:33.119198+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-27T18:00:40.005973+05:30",
+  "status": "api_accepted_published"
 }
