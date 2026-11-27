@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 3815,
   "campaign_id": "tfauto-c065c93a07d14d64f7",
+  "category": "induction-cooktop",
+  "meta_photo_or_post_id": "122217292604911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-c065c93a07d14d64f7.jpg",
-  "reserved_at": "2026-11-27T17:10:54.852219+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-27T17:11:04.331601+05:30",
+  "status": "api_accepted_published"
 }
