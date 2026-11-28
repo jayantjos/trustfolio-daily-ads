@@ -1,8 +1,12 @@
 {
+  "brand": "Lenovo",
+  "budget_inr": 69813,
   "campaign_id": "tfauto-0e22275d9556eef8e0",
+  "category": "laptops",
   "container_id": "17923414617530469",
+  "meta_media_id": "18123502471949463",
   "mode": "brand_budget",
   "network": "instagram",
-  "recorded_at": "2026-11-28T17:28:18.626665+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-28T17:28:23.669003+05:30",
+  "status": "api_accepted_published"
 }
