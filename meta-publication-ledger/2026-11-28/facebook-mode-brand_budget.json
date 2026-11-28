@@ -1,8 +1,11 @@
 {
+  "brand": "Lenovo",
+  "budget_inr": 69813,
   "campaign_id": "tfauto-0e22275d9556eef8e0",
+  "category": "laptops",
+  "meta_photo_or_post_id": "122217487586911225",
   "mode": "brand_budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-0e22275d9556eef8e0.jpg",
-  "reserved_at": "2026-11-28T17:28:25.028521+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-28T17:28:32.865219+05:30",
+  "status": "api_accepted_published"
 }
