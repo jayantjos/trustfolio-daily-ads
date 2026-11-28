@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 2036,
   "campaign_id": "tfauto-b6563b70c46023f3c8",
+  "category": "ceiling-fans",
   "container_id": "17923428879530469",
+  "meta_media_id": "18022361087958305",
   "mode": "comparison",
   "network": "instagram",
-  "recorded_at": "2026-11-28T19:30:33.486715+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-28T19:30:38.424771+05:30",
+  "status": "api_accepted_published"
 }
