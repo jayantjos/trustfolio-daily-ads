@@ -1,8 +1,11 @@
 {
+  "brand": "",
+  "budget_inr": 35813,
   "campaign_id": "tfauto-f6189750afb748fee4",
+  "category": "smart-tvs",
+  "meta_photo_or_post_id": "122217482090911225",
   "mode": "budget",
   "network": "facebook",
-  "public_media_url": "https://media.trustfolio.in/trustfolio-auto/tfauto-f6189750afb748fee4.jpg",
-  "reserved_at": "2026-11-28T16:40:31.369529+05:30",
-  "status": "reserved"
+  "recorded_at": "2026-11-28T16:40:38.140375+05:30",
+  "status": "api_accepted_published"
 }
