@@ -1,8 +1,12 @@
 {
+  "brand": "",
+  "budget_inr": 35813,
   "campaign_id": "tfauto-f6189750afb748fee4",
+  "category": "smart-tvs",
   "container_id": "17923409970530469",
+  "meta_media_id": "17928521703444617",
   "mode": "budget",
   "network": "instagram",
-  "recorded_at": "2026-11-28T16:40:25.701857+05:30",
-  "status": "container_created"
+  "recorded_at": "2026-11-28T16:40:29.939931+05:30",
+  "status": "api_accepted_published"
 }
